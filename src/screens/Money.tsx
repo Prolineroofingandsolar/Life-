@@ -2,8 +2,9 @@ import { useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Plus, Trash2, Wallet } from 'lucide-react'
 import { useLife } from '../lib/store'
-import { LargeTitleHeader, IconButton, EmptyState } from '../components/ui'
+import { LargeTitleHeader, IconButton, EmptyState, SectionLabel } from '../components/ui'
 import Sheet from '../components/Sheet'
+import BillCalendar from '../components/BillCalendar'
 import { billCountdown } from '../lib/date'
 import { listItem, spring } from '../lib/motion'
 import type { Bill } from '../lib/types'
@@ -49,6 +50,7 @@ export default function Money() {
   const [name, setName] = useState('')
   const [amount, setAmount] = useState('')
   const [day, setDay] = useState('1')
+  const [selectedDay, setSelectedDay] = useState<{ day: number; bills: Bill[] } | null>(null)
 
   const bills = [...state.bills].sort((a, b) => a.dayOfMonth - b.dayOfMonth)
   const monthlyTotal = bills.reduce((s, b) => s + b.amount, 0)
@@ -79,6 +81,14 @@ export default function Money() {
           {bills.length} regular payment{bills.length === 1 ? '' : 's'}
         </div>
       </div>
+
+      {bills.length > 0 && (
+        <>
+          <SectionLabel>Calendar</SectionLabel>
+          <BillCalendar bills={bills} onSelectDay={(day, b) => setSelectedDay({ day, bills: b })} />
+          <SectionLabel>All payments</SectionLabel>
+        </>
+      )}
 
       {bills.length === 0 ? (
         <EmptyState icon={Wallet} title="No direct debits yet" subtitle="Add what leaves your account each month so nothing surprises you." />
@@ -133,6 +143,36 @@ export default function Money() {
           </motion.button>
         </div>
       </Sheet>
+
+      {/* What's due on a tapped calendar day */}
+      <Sheet
+        open={!!selectedDay}
+        onClose={() => setSelectedDay(null)}
+        title={selectedDay ? `Due on the ${ordinal(selectedDay.day)}` : undefined}
+      >
+        {selectedDay && (
+          <div className="space-y-2">
+            {selectedDay.bills.map((b) => (
+              <div key={b.id} className="flex items-center justify-between rounded-card bg-surface px-4 py-3 shadow-card">
+                <span className="text-body text-label">{b.name}</span>
+                <span className="tabular text-body font-medium text-label">{fmt(b.amount)}</span>
+              </div>
+            ))}
+            <div className="flex items-center justify-between px-4 pt-1 text-label2">
+              <span className="text-subhead">Total this day</span>
+              <span className="tabular text-subhead font-semibold">
+                {fmt(selectedDay.bills.reduce((s, b) => s + b.amount, 0))}
+              </span>
+            </div>
+          </div>
+        )}
+      </Sheet>
     </div>
   )
+}
+
+function ordinal(n: number): string {
+  const s = ['th', 'st', 'nd', 'rd']
+  const v = n % 100
+  return n + (s[(v - 20) % 10] || s[v] || s[0])
 }
