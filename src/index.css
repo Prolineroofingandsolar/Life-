@@ -1,0 +1,103 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Apple-style semantic colour tokens, expressed as space-separated RGB triples
+ * so Tailwind can apply opacity via rgb(var(--token) / <alpha-value>).
+ * :root = Light. .dark = Dark. ThemeProvider toggles the `dark` class on <html>.
+ */
+:root {
+  --bg: 255 255 255; /* systemBackground */
+  --bg-grouped: 242 242 247; /* systemGroupedBackground */
+  --surface: 255 255 255; /* secondarySystemGroupedBackground (cards) */
+  --surface-2: 255 255 255; /* elevated */
+  --label: 17 17 19; /* label */
+  --label-2: 110 110 117; /* secondaryLabel */
+  --label-3: 174 174 180; /* tertiaryLabel */
+  --separator: 198 198 200; /* opaqueSeparator */
+  --fill: 233 233 238; /* tertiarySystemFill (control backgrounds) */
+  --accent: 94 92 230; /* indigo */
+  --accent-press: 78 76 200;
+
+  --shadow-card: 0 1px 2px rgb(17 17 19 / 0.04), 0 4px 16px rgb(17 17 19 / 0.06);
+  color-scheme: light;
+}
+
+.dark {
+  --bg: 0 0 0;
+  --bg-grouped: 0 0 0;
+  --surface: 28 28 30;
+  --surface-2: 44 44 46;
+  --label: 255 255 255;
+  --label-2: 152 152 159;
+  --label-3: 110 110 118;
+  --separator: 56 56 58;
+  --fill: 58 58 60;
+  --accent: 121 119 255;
+  --accent-press: 99 97 235;
+
+  --shadow-card: none;
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: rgb(var(--bg-grouped));
+  color: rgb(var(--label));
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  /* Native-feeling: no overscroll glow, no text selection on chrome, momentum scroll */
+  overscroll-behavior-y: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Smooth theme cross-fade */
+body,
+body * {
+  transition-property: background-color, border-color, color, fill, stroke, box-shadow;
+  transition-duration: 280ms;
+  transition-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+}
+/* …but never animate transforms/opacity of moving UI through this rule */
+@media (prefers-reduced-motion: reduce) {
+  body,
+  body * {
+    transition-duration: 0ms !important;
+    animation-duration: 0ms !important;
+  }
+}
+
+.safe-top {
+  padding-top: env(safe-area-inset-top);
+}
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  /* Frosted material like iOS nav/tab bars */
+  .material {
+    background: rgb(var(--bg) / 0.72);
+    backdrop-filter: saturate(180%) blur(20px);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+  }
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
