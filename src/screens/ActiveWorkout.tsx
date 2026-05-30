@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { ChevronDown, Check, Plus, Trash2, X, Trophy } from 'lucide-react'
 import { useLife } from '../lib/store'
-import { exerciseById, lastPerformance, newPRsForSession, sessionSetCount, sessionVolume, setHint } from '../lib/workout'
+import { exerciseById, isSetPR, lastPerformance, newPRsForSession, sessionSetCount, sessionVolume, setHint } from '../lib/workout'
 import type { PRHit } from '../lib/workout'
 import type { ExerciseKind, LoggedSet, WorkoutSession } from '../lib/types'
 import ExercisePicker from '../components/ExercisePicker'
@@ -224,7 +224,7 @@ export default function ActiveWorkout({
                       <NumCell value={set.durationSec} placeholder="0" onChange={(v) => updateSet(session.id, exIdx, setIdx, { durationSec: v })} />
                     )}
 
-                    <div className="flex items-center justify-center gap-1">
+                    <div className="relative flex items-center justify-center">
                       <motion.button
                         whileTap={{ scale: 0.85 }}
                         transition={spring}
@@ -236,6 +236,11 @@ export default function ActiveWorkout({
                       >
                         <Check size={16} strokeWidth={3} />
                       </motion.button>
+                      {isSetPR(state.sessions, session.id, ex.exerciseId, set) && (
+                        <span className="pointer-events-none absolute -right-1.5 -top-1.5">
+                          <Trophy size={12} className="text-nourish" fill="currentColor" />
+                        </span>
+                      )}
                     </div>
                   </div>
                 ))}

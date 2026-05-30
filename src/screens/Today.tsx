@@ -22,8 +22,9 @@ export default function Today({ onOpenSettings }: { onOpenSettings: () => void }
   const { state, today, addWater, addMeal, markBreak } = useLife()
   const cs = state.careSettings
 
-  const openTasks  = state.tasks.filter((t) => !t.done)
-  const nextTask   = openTasks[0]
+  const openTasks   = state.tasks.filter((t) => !t.done)
+  const dueTodayOpen = openTasks.filter((t) => t.dueDate === 'today')
+  const upNextList  = dueTodayOpen.length > 0 ? dueTodayOpen.slice(0, 3) : openTasks.slice(0, 1)
 
   const todayHabits = state.habits.filter((h) => !h.archived && isScheduledOn(h, new Date()))
 
@@ -146,22 +147,31 @@ export default function Today({ onOpenSettings }: { onOpenSettings: () => void }
       </Card>
 
       <SectionLabel>Up next</SectionLabel>
-      {nextTask ? (
-        <PressableCard className="flex items-center gap-3 px-4 py-3.5">
-          <span
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] text-footnote font-bold text-white"
-            style={{ background: 'linear-gradient(135deg, rgb(var(--accent)), rgb(var(--gradient-end)))' }}
-          >
-            {CATEGORY_LABEL[nextTask.category].slice(0, 1)}
-          </span>
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-body text-label">{nextTask.title}</div>
-            <div className="text-footnote text-label2">
-              {openTasks.length} task{openTasks.length === 1 ? '' : 's'} left today
-            </div>
-          </div>
-          <ChevronRight size={18} className="text-label3" />
-        </PressableCard>
+      {upNextList.length > 0 ? (
+        <div className="space-y-2">
+          {upNextList.map((task) => (
+            <PressableCard key={task.id} className="flex items-center gap-3 px-4 py-3.5">
+              <span
+                className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] text-footnote font-bold text-white"
+                style={{ background: 'linear-gradient(135deg, rgb(var(--accent)), rgb(var(--gradient-end)))' }}
+              >
+                {CATEGORY_LABEL[task.category].slice(0, 1)}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-body text-label">{task.title}</div>
+                <div className="text-footnote" style={{ color: task.dueDate === 'today' ? 'rgb(var(--accent))' : 'rgb(var(--label-2))' }}>
+                  {task.dueDate === 'today' ? 'Due today' : `${openTasks.length} task${openTasks.length === 1 ? '' : 's'} left`}
+                </div>
+              </div>
+              <ChevronRight size={18} className="text-label3" />
+            </PressableCard>
+          ))}
+          {openTasks.length > upNextList.length && (
+            <p className="text-center text-footnote text-label3">
+              +{openTasks.length - upNextList.length} more task{openTasks.length - upNextList.length !== 1 ? 's' : ''}
+            </p>
+          )}
+        </div>
       ) : (
         <Card className="px-4 py-5 text-center text-subhead text-label2">All caught up — nothing pending.</Card>
       )}

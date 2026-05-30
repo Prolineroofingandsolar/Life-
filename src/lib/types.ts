@@ -1,9 +1,12 @@
 export type Category = 'work' | 'gym' | 'personal'
 
+export type DueDate = 'today' | 'tomorrow' | 'someday'
+
 export interface Task {
   id: string
   title: string
   category: Category
+  dueDate?: DueDate
   done: boolean
   createdAt: number
 }

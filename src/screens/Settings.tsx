@@ -1,14 +1,47 @@
-import { ChevronLeft, User, Dumbbell, Timer, Bell } from 'lucide-react'
+import { useRef } from 'react'
+import { ChevronLeft, User, Dumbbell, Timer, Bell, Download, Upload } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { useLife } from '../lib/store'
 import { useTheme } from '../lib/theme'
 import type { ThemeMode } from '../lib/theme'
+import type { LifeState } from '../lib/types'
 import { SectionLabel, ListGroup, ListRow, SegmentedControl, Switch, Stepper } from '../components/ui'
 
 export default function Settings({ onClose }: { onClose: () => void }) {
-  const { state, setName, setWorkoutSettings } = useLife()
+  const { state, setName, setWorkoutSettings, loadState } = useLife()
   const { mode, setMode } = useTheme()
   const ws = state.workoutSettings
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  const exportData = () => {
+    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `life-backup-${new Date().toISOString().slice(0, 10)}.json`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target?.result as string) as LifeState
+        if (typeof data !== 'object' || !data.tasks) throw new Error('Invalid')
+        loadState(data)
+        alert('Data imported successfully.')
+      } catch {
+        alert('Could not read backup file. Make sure it is a valid Life export.')
+      }
+    }
+    reader.readAsText(file)
+    e.target.value = ''
+  }
 
   return (
     <div>
@@ -33,13 +66,13 @@ export default function Settings({ onClose }: { onClose: () => void }) {
           value={mode}
           onChange={setMode}
           options={[
-            { value: 'auto', label: 'Automatic' },
+            { value: 'auto',  label: 'Automatic' },
             { value: 'light', label: 'Light' },
-            { value: 'dark', label: 'Dark' },
+            { value: 'dark',  label: 'Dark' },
           ]}
         />
       </div>
-      <p className="ml-4 mt-2 text-footnote text-label2">Automatic follows your device’s appearance setting.</p>
+      <p className="ml-4 mt-2 text-footnote text-label2">Automatic follows your device's appearance setting.</p>
 
       <SectionLabel>You</SectionLabel>
       <ListGroup>
@@ -97,6 +130,28 @@ export default function Settings({ onClose }: { onClose: () => void }) {
           trailing={<Switch checked={ws.restTimerEnabled} onChange={(v) => setWorkoutSettings({ restTimerEnabled: v })} />}
         />
       </ListGroup>
+
+      <SectionLabel>Data</SectionLabel>
+      <ListGroup>
+        <ListRow
+          icon={Download}
+          iconColor="rgb(var(--accent))"
+          title="Export backup"
+          subtitle="Save all your data as a JSON file"
+          onClick={exportData}
+        />
+        <ListRow
+          icon={Upload}
+          iconColor="#30d158"
+          title="Import backup"
+          subtitle="Restore from a previously exported file"
+          onClick={() => fileRef.current?.click()}
+        />
+      </ListGroup>
+      <p className="ml-4 mt-2 text-footnote text-label2">
+        Importing replaces all current data. Export first if you want to keep it.
+      </p>
+      <input ref={fileRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
 
       <p className="mt-10 text-center text-caption text-label3">Life · v1</p>
     </div>

@@ -4,6 +4,7 @@ import type {
   Bill,
   CareDay,
   Category,
+  DueDate,
   Exercise,
   ExerciseKind,
   Habit,
@@ -88,12 +89,17 @@ interface LifeContextValue {
   today: CareDay
   activeSession: WorkoutSession | undefined
   // tasks
-  addTask: (title: string, category: Category) => void
+  addTask: (title: string, category: Category, dueDate?: DueDate) => void
   toggleTask: (id: string) => void
   deleteTask: (id: string) => void
+  restoreTask: (task: Task) => void
   // bills
   addBill: (name: string, amount: number, dayOfMonth: number) => void
   deleteBill: (id: string) => void
+  restoreBill: (bill: Bill) => void
+  updateBill: (id: string, patch: Partial<Omit<Bill, 'id'>>) => void
+  // data
+  loadState: (s: LifeState) => void
   // care
   addWater: (n?: number) => void
   addMeal: () => void
@@ -194,14 +200,16 @@ export function LifeProvider({ children }: { children: ReactNode }) {
       state,
       today,
       activeSession,
-      addTask: (title, category) =>
+      addTask: (title, category, dueDate) =>
         setState((s) => ({
           ...s,
-          tasks: [{ id: uid(), title: title.trim(), category, done: false, createdAt: Date.now() }, ...s.tasks],
+          tasks: [{ id: uid(), title: title.trim(), category, dueDate, done: false, createdAt: Date.now() }, ...s.tasks],
         })),
       toggleTask: (id) =>
         setState((s) => ({ ...s, tasks: s.tasks.map((t) => (t.id === id ? { ...t, done: !t.done } : t)) })),
       deleteTask: (id) => setState((s) => ({ ...s, tasks: s.tasks.filter((t) => t.id !== id) })),
+      restoreTask: (task) =>
+        setState((s) => ({ ...s, tasks: [task, ...s.tasks.filter((t) => t.id !== task.id)] })),
       addBill: (name, amount, dayOfMonth) =>
         setState((s) => ({
           ...s,
@@ -210,6 +218,20 @@ export function LifeProvider({ children }: { children: ReactNode }) {
           ),
         })),
       deleteBill: (id) => setState((s) => ({ ...s, bills: s.bills.filter((b) => b.id !== id) })),
+      restoreBill: (bill) =>
+        setState((s) => ({
+          ...s,
+          bills: [...s.bills.filter((b) => b.id !== bill.id), bill].sort((a, b) => a.dayOfMonth - b.dayOfMonth),
+        })),
+      updateBill: (id, patch) =>
+        setState((s) => ({
+          ...s,
+          bills: s.bills
+            .map((b) => (b.id === id ? { ...b, ...patch } : b))
+            .sort((a, b) => a.dayOfMonth - b.dayOfMonth),
+        })),
+      loadState: (newState) =>
+        setState({ ...DEFAULT_STATE, ...newState, careSettings: { ...DEFAULT_STATE.careSettings, ...(newState.careSettings ?? {}) }, workoutSettings: { ...DEFAULT_STATE.workoutSettings, ...(newState.workoutSettings ?? {}) } }),
       addWater: (n = 1) => mutateToday((d) => ({ ...d, water: Math.max(0, d.water + n) })),
       addMeal: () => mutateToday((d) => ({ ...d, meals: d.meals + 1 })),
       markBreak: () => mutateToday((d) => ({ ...d, lastBreakAt: Date.now() })),

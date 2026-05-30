@@ -97,6 +97,31 @@ export function lastPerformance(sessions: WorkoutSession[], exerciseId: string):
   return undefined
 }
 
+/**
+ * Returns true if this completed set beats the all-time best for the exercise
+ * across all prior finished sessions (excluding the current one being logged).
+ */
+export function isSetPR(
+  sessions: WorkoutSession[],
+  currentSessionId: string,
+  exerciseId: string,
+  set: LoggedSet,
+): boolean {
+  if (!set.done) return false
+  const prior = computePRs(
+    sessions.filter((s) => isFinished(s) && s.id !== currentSessionId),
+    exerciseId,
+  )
+  if (set.weight != null && set.reps != null) {
+    const e1rm = estimated1RM(set.weight, set.reps)
+    return e1rm > (prior.best1RM ?? 0) || set.weight > (prior.bestWeight ?? 0)
+  }
+  if (set.reps != null) return set.reps > (prior.bestReps ?? 0)
+  if (set.distanceKm != null) return set.distanceKm > (prior.bestDistanceKm ?? 0)
+  if (set.durationSec != null) return set.durationSec > (prior.bestDurationSec ?? 0)
+  return false
+}
+
 /** Short "prev" hint for a set, e.g. "60×8" or "5 km". */
 export function setHint(set: LoggedSet | undefined): string {
   if (!set) return '—'
