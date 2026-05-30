@@ -47,8 +47,8 @@ function Shell() {
   const overlayOpen = settings || (inWorkout && !!activeSession) || !!editSession
 
   return (
-    <div className="mx-auto flex min-h-full max-w-app flex-col">
-      <main className="flex-1 overflow-y-auto px-4 pb-28 no-scrollbar">
+    <div className="mx-auto flex h-full max-w-app flex-col" style={{ height: '100dvh' }}>
+      <main className="min-h-0 flex-1 overflow-y-auto px-4 pb-6 no-scrollbar">
         <AnimatePresence mode="wait">
           {settings ? (
             <motion.div

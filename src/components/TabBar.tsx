@@ -19,7 +19,7 @@ export default function TabBar<T extends string>({
   onChange: (id: T) => void
 }) {
   return (
-    <nav className="material safe-bottom fixed inset-x-0 bottom-0 z-30 mx-auto max-w-app border-t border-separator/40">
+    <nav className="material safe-bottom shrink-0 border-t border-separator/40">
       <div className="flex">
         {tabs.map((t) => {
           const on = t.id === active
