@@ -66,11 +66,38 @@ export default function FocusTimer({ onBreak }: { onBreak?: () => void }) {
       <div className="relative h-56 w-56">
         <svg
           viewBox="0 0 200 200"
-          className={`h-full w-full -rotate-90 ${
-            running ? 'dark:[filter:drop-shadow(0_0_14px_rgb(var(--accent)/0.45))]' : ''
-          }`}
+          className="h-full w-full -rotate-90"
+          style={{
+            filter: running ? `drop-shadow(0 0 18px ${color}99)` : undefined,
+            transition: 'filter 0.7s ease',
+          }}
         >
-          <circle cx="100" cy="100" r={R} fill="none" stroke="rgb(var(--separator))" strokeOpacity={0.5} strokeWidth="10" />
+          {/* Expanding pulse ring — visible only while timer is running */}
+          {running && (
+            <motion.circle
+              cx="100"
+              cy="100"
+              fill="none"
+              stroke={color}
+              strokeWidth={3}
+              initial={{ r: R, strokeOpacity: 0.4 }}
+              animate={{ r: R + 18, strokeOpacity: 0 }}
+              transition={{ duration: 2.2, repeat: Infinity, ease: 'easeOut' }}
+            />
+          )}
+
+          {/* Track ring */}
+          <circle
+            cx="100"
+            cy="100"
+            r={R}
+            fill="none"
+            stroke="rgb(var(--separator))"
+            strokeOpacity={0.5}
+            strokeWidth="10"
+          />
+
+          {/* Progress arc */}
           <motion.circle
             cx="100"
             cy="100"
@@ -85,8 +112,10 @@ export default function FocusTimer({ onBreak }: { onBreak?: () => void }) {
             transition={{ duration: running ? 1 : 0.4, ease: 'linear' }}
           />
         </svg>
+
+        {/* Centre readout */}
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-caption font-medium uppercase tracking-widest text-label2">
+          <span className="text-caption font-semibold uppercase tracking-widest text-label2">
             {phase === 'focus' ? 'Focus' : 'Break'}
           </span>
           <span className="tabular text-[44px] font-semibold leading-none text-label">
@@ -115,11 +144,15 @@ export default function FocusTimer({ onBreak }: { onBreak?: () => void }) {
           whileTap={{ scale: 0.94 }}
           transition={spring}
           onClick={() => setRunning((r) => !r)}
-          className="flex items-center gap-2 rounded-full bg-accent px-8 py-3.5 text-headline text-white"
+          className="flex items-center gap-2 rounded-full bg-gradient-accent px-8 py-3.5 text-headline text-white"
+          style={{
+            boxShadow: running ? '0 0 28px rgb(var(--accent) / 0.45)' : '0 2px 12px rgb(var(--accent) / 0.25)',
+          }}
         >
           {running ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}
           {running ? 'Pause' : remaining < total ? 'Resume' : 'Start'}
         </motion.button>
+
         <motion.button
           whileTap={{ scale: 0.94 }}
           transition={spring}

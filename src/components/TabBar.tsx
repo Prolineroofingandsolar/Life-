@@ -19,7 +19,7 @@ export default function TabBar<T extends string>({
   onChange: (id: T) => void
 }) {
   return (
-    <nav className="material safe-bottom fixed inset-x-0 bottom-0 z-30 mx-auto max-w-app border-t border-separator/60">
+    <nav className="material safe-bottom fixed inset-x-0 bottom-0 z-30 mx-auto max-w-app border-t border-separator/40">
       <div className="flex">
         {tabs.map((t) => {
           const on = t.id === active
@@ -28,16 +28,28 @@ export default function TabBar<T extends string>({
             <button
               key={t.id}
               onClick={() => onChange(t.id)}
-              className="flex flex-1 flex-col items-center gap-0.5 pb-1.5 pt-2"
+              className="relative flex flex-1 flex-col items-center gap-0.5 pb-2 pt-2"
             >
+              {/* Sliding pill indicator that animates between tabs */}
+              {on && (
+                <motion.span
+                  layoutId="tab-pill"
+                  transition={spring}
+                  className="absolute top-1 h-8 w-12 rounded-[10px] bg-accent/10"
+                />
+              )}
               <motion.span
-                animate={{ scale: on ? 1.06 : 1, y: on ? -1 : 0 }}
+                animate={{ scale: on ? 1.08 : 1, y: on ? -1 : 0 }}
                 transition={spring}
-                className={on ? 'text-accent' : 'text-label3'}
+                className={`relative z-10 ${on ? 'text-accent' : 'text-label3'}`}
               >
-                <Icon size={25} strokeWidth={on ? 2.4 : 2} />
+                <Icon size={24} strokeWidth={on ? 2.3 : 1.8} />
               </motion.span>
-              <span className={`text-[10px] font-medium ${on ? 'text-accent' : 'text-label3'}`}>{t.label}</span>
+              <span
+                className={`relative z-10 text-[10px] font-medium leading-none ${on ? 'text-accent' : 'text-label3'}`}
+              >
+                {t.label}
+              </span>
             </button>
           )
         })}

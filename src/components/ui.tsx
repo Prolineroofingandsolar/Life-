@@ -33,7 +33,7 @@ export function LargeTitleHeader({
     <>
       <div
         className={`material safe-top sticky top-0 z-20 -mx-4 px-4 ${
-          collapsed ? 'border-b border-separator/70' : ''
+          collapsed ? 'border-b border-separator/60' : ''
         }`}
       >
         <div className="relative flex h-11 items-center justify-center">
@@ -54,14 +54,35 @@ export function LargeTitleHeader({
   )
 }
 
+/* ------------------------------ Section label ------------------------------ */
+
 export function SectionLabel({ children }: { children: ReactNode }) {
-  return <p className="mb-2 ml-4 mt-6 text-footnote font-medium uppercase tracking-wide text-label2">{children}</p>
+  return (
+    <div className="mb-2 ml-4 mt-6 flex items-center gap-2">
+      <span
+        className="h-1.5 w-1.5 shrink-0 rounded-full"
+        style={{ background: 'rgb(var(--accent) / 0.55)' }}
+      />
+      <p className="text-footnote font-semibold uppercase tracking-wider text-label2">{children}</p>
+    </div>
+  )
 }
 
 /* ------------------------------- Cards ------------------------------- */
 
 export function Card({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return <div className={`rounded-card bg-surface shadow-card ${className}`}>{children}</div>
+  return (
+    <div
+      className={`rounded-card bg-surface shadow-card ${className}`}
+      style={{ border: '0.5px solid rgb(var(--separator) / 0.5)' }}
+    >
+      {children}
+    </div>
+  )
+}
+
+export function GlassCard({ children, className = '' }: { children: ReactNode; className?: string }) {
+  return <div className={`glass rounded-xl2 ${className}`}>{children}</div>
 }
 
 export function PressableCard({
@@ -78,6 +99,7 @@ export function PressableCard({
       {...pressable}
       onClick={onClick}
       className={`block w-full rounded-card bg-surface text-left shadow-card ${className}`}
+      style={{ border: '0.5px solid rgb(var(--separator) / 0.5)' }}
     >
       {children}
     </motion.button>
@@ -87,7 +109,14 @@ export function PressableCard({
 /* ----------------------------- List group ----------------------------- */
 
 export function ListGroup({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return <div className={`overflow-hidden rounded-card bg-surface shadow-card ${className}`}>{children}</div>
+  return (
+    <div
+      className={`overflow-hidden rounded-card bg-surface shadow-card ${className}`}
+      style={{ border: '0.5px solid rgb(var(--separator) / 0.5)' }}
+    >
+      {children}
+    </div>
+  )
 }
 
 export function ListRow({
@@ -106,7 +135,7 @@ export function ListRow({
   onClick?: () => void
 }) {
   const inner = (
-    <div className="relative flex min-h-[52px] items-center gap-3 px-4 py-2.5 before:absolute before:left-4 before:right-0 before:top-0 before:h-px before:bg-separator/70 before:content-[''] first:before:hidden">
+    <div className="relative flex min-h-[52px] items-center gap-3 px-4 py-2.5 before:absolute before:left-4 before:right-0 before:top-0 before:h-px before:bg-separator/60 before:content-[''] first:before:hidden">
       {IconC && (
         <span
           className="grid h-7 w-7 shrink-0 place-items-center rounded-[7px]"
@@ -246,7 +275,9 @@ export function IconButton({
       {...pressable}
       onClick={onClick}
       aria-label={label}
-      className={`grid h-9 w-9 place-items-center rounded-full ${accent ? 'text-accent' : 'text-label2'}`}
+      className={`grid h-9 w-9 place-items-center rounded-full ${
+        accent ? 'bg-accent/10 text-accent' : 'text-label2'
+      }`}
     >
       <IconC size={22} strokeWidth={2} />
     </motion.button>
@@ -258,7 +289,13 @@ export function IconButton({
 export function EmptyState({ icon: IconC, title, subtitle }: { icon: Icon; title: string; subtitle?: string }) {
   return (
     <div className="flex flex-col items-center justify-center px-8 py-16 text-center">
-      <span className="mb-4 grid h-16 w-16 place-items-center rounded-full bg-fill text-label3">
+      <span
+        className="mb-4 grid h-16 w-16 place-items-center rounded-2xl text-label3"
+        style={{
+          background: 'linear-gradient(135deg, rgb(var(--fill)), rgb(var(--surface-2)))',
+          border: '0.5px solid rgb(var(--separator) / 0.5)',
+        }}
+      >
         <IconC size={30} strokeWidth={1.75} />
       </span>
       <p className="text-headline text-label">{title}</p>
