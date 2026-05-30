@@ -129,6 +129,7 @@ export default function Tasks() {
   }
 
   const hasOpen = open.length > 0
+  const groupCount = [todayTasks, tomorrowTasks, laterTasks].filter((g) => g.length > 0).length
 
   return (
     <div>
@@ -154,11 +155,21 @@ export default function Tasks() {
       ) : (
         <>
           {hasOpen ? (
-            <>
-              <TaskGroup label="Today"    tasks={todayTasks}    onToggle={toggleTask} onDelete={handleDelete} />
-              <TaskGroup label="Tomorrow" tasks={tomorrowTasks} onToggle={toggleTask} onDelete={handleDelete} />
-              <TaskGroup label="Later"    tasks={laterTasks}    onToggle={toggleTask} onDelete={handleDelete} />
-            </>
+            groupCount > 1 ? (
+              <>
+                <TaskGroup label="Today"    tasks={todayTasks}    onToggle={toggleTask} onDelete={handleDelete} />
+                <TaskGroup label="Tomorrow" tasks={tomorrowTasks} onToggle={toggleTask} onDelete={handleDelete} />
+                <TaskGroup label="Later"    tasks={laterTasks}    onToggle={toggleTask} onDelete={handleDelete} />
+              </>
+            ) : (
+              <motion.div layout className="overflow-hidden rounded-card bg-surface shadow-card [&>*+*]:border-t [&>*+*]:border-separator/70">
+                <AnimatePresence initial={false}>
+                  {open.map((t) => (
+                    <TaskRow key={t.id} task={t} onToggle={() => toggleTask(t.id)} onDelete={() => handleDelete(t)} />
+                  ))}
+                </AnimatePresence>
+              </motion.div>
+            )
           ) : null}
 
           {done.length > 0 && (

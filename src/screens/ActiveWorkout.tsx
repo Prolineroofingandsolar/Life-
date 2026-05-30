@@ -120,6 +120,14 @@ export default function ActiveWorkout({
     }
   }
 
+  const prFlags = useMemo(
+    () => session.exercises.map((ex) =>
+      ex.sets.map((set) => isSetPR(state.sessions, session.id, ex.exerciseId, set))
+    ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [session.exercises, state.sessions, session.id],
+  )
+
   const unitLabel = ws.unit
   const liveVolume = useMemo(() => sessionVolume(session), [session])
   const subLine = editing
@@ -236,7 +244,7 @@ export default function ActiveWorkout({
                       >
                         <Check size={16} strokeWidth={3} />
                       </motion.button>
-                      {isSetPR(state.sessions, session.id, ex.exerciseId, set) && (
+                      {prFlags[exIdx]?.[setIdx] && (
                         <span className="pointer-events-none absolute -right-1.5 -top-1.5">
                           <Trophy size={12} className="text-nourish" fill="currentColor" />
                         </span>

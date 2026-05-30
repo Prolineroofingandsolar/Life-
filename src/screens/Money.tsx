@@ -26,7 +26,6 @@ function BillRow({ bill, onDelete, onEdit }: { bill: Bill; onDelete: () => void;
         dragElastic={{ left: 0.5, right: 0 }}
         dragSnapToOrigin
         onDragEnd={(_, info) => { if (info.offset.x < -72) onDelete() }}
-        onTap={onEdit}
         className="relative flex items-center gap-3 bg-surface px-4 py-3"
       >
         <div
@@ -41,7 +40,14 @@ function BillRow({ bill, onDelete, onEdit }: { bill: Bill; onDelete: () => void;
           <div className={`text-footnote ${soon ? 'text-danger' : 'text-label2'}`}>{label}</div>
         </div>
         <div className="tabular text-body font-medium text-label">{fmt(bill.amount)}</div>
-        <Pencil size={15} className="shrink-0 text-label3" />
+        <button
+          onClick={onEdit}
+          onPointerDown={(e) => e.stopPropagation()}
+          aria-label="Edit bill"
+          className="shrink-0 p-1 text-label3 active:text-accent"
+        >
+          <Pencil size={15} />
+        </button>
       </motion.div>
     </motion.div>
   )
