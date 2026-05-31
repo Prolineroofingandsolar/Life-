@@ -47,6 +47,7 @@ function SwipableHabitRow({
         drag="x"
         dragConstraints={{ left: -96, right: 0 }}
         dragElastic={{ left: 0.5, right: 0 }}
+        dragMomentum={false}
         dragSnapToOrigin
         onDragEnd={(_, info) => { if (info.offset.x < -72) onDelete() }}
         className="relative bg-surface"

@@ -246,6 +246,7 @@ export default function Workout({
                     drag="x"
                     dragConstraints={{ left: -96, right: 0 }}
                     dragElastic={{ left: 0.5, right: 0 }}
+                    dragMomentum={false}
                     dragSnapToOrigin
                     onDragEnd={(_, info) => { if (info.offset.x < -72) handleDeleteRoutine(r) }}
                     className="rounded-card bg-surface p-4 shadow-card"
@@ -361,6 +362,7 @@ export default function Workout({
                     drag="x"
                     dragConstraints={{ left: -96, right: 0 }}
                     dragElastic={{ left: 0.5, right: 0 }}
+                    dragMomentum={false}
                     dragSnapToOrigin
                     onDragEnd={(_, info) => {
                       if (info.offset.x < -72) handleDeleteSession(s)

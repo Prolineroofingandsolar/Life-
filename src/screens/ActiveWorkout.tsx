@@ -249,8 +249,12 @@ export default function ActiveWorkout({
                   drag={canDelete ? 'x' : false}
                   dragConstraints={{ left: -72, right: 0 }}
                   dragElastic={{ left: 0.5, right: 0 }}
+                  dragMomentum={false}
                   dragSnapToOrigin
                   onDragEnd={(_, info) => { if (canDelete && info.offset.x < -52) removeSet(session.id, exIdx, setIdx) }}
+                  className="rounded-[10px] bg-surface"
+                >
+                <div
                   className={`grid items-center gap-2 rounded-[10px] px-1 py-1 ${
                     set.done
                       ? isDrop ? 'bg-accent/10' : 'bg-move/10'
@@ -315,6 +319,7 @@ export default function ActiveWorkout({
                       <Trophy size={12} className="text-nourish" fill="currentColor" />
                     </span>
                   )}
+                </div>
                 </div>
                 </motion.div>
               </div>
