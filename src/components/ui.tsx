@@ -58,7 +58,7 @@ export function LargeTitleHeader({
 
 export function SectionLabel({ children }: { children: ReactNode }) {
   return (
-    <div className="mb-2 ml-4 mt-6 flex items-center gap-2">
+    <div className="mb-2 ml-4 mt-5 flex items-center gap-2">
       <span
         className="h-1.5 w-1.5 shrink-0 rounded-full"
         style={{ background: 'rgb(var(--accent) / 0.55)' }}

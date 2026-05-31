@@ -71,7 +71,7 @@ export default function Today({ onOpenSettings }: { onOpenSettings: () => void }
 
       {/* Hero greeting — gradient accent card */}
       <div
-        className="mb-5 mt-3 overflow-hidden rounded-xl2 px-5 py-4"
+        className="mb-3 mt-2 overflow-hidden rounded-xl2 px-4 py-3"
         style={{
           background: 'linear-gradient(135deg, rgb(var(--accent) / 0.10) 0%, rgb(var(--gradient-end) / 0.05) 100%)',
           border: '0.5px solid rgb(var(--accent) / 0.18)',
@@ -83,7 +83,7 @@ export default function Today({ onOpenSettings }: { onOpenSettings: () => void }
 
       {/* Activity rings — premium hero card */}
       <div
-        className="relative mb-1 overflow-hidden rounded-card"
+        className="relative overflow-hidden rounded-card"
         style={{ boxShadow: 'var(--shadow-card)', border: '0.5px solid rgb(var(--separator) / 0.5)' }}
       >
         {/* Subtle directional gradient overlay */}
@@ -93,8 +93,8 @@ export default function Today({ onOpenSettings }: { onOpenSettings: () => void }
             background: 'linear-gradient(145deg, rgb(var(--surface)) 40%, rgb(var(--accent) / 0.05) 100%)',
           }}
         />
-        <div className="relative flex items-center gap-5 p-6">
-          <ActivityRings rings={rings} size={150} />
+        <div className="relative flex items-center gap-4 p-4">
+          <ActivityRings rings={rings} size={130} />
           <div className="flex-1 space-y-2.5">
             {RING_META.map((m) => {
               const done = m.key === 'move' ? moveValue === 1 : false
