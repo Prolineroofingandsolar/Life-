@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Briefcase, Dumbbell, Leaf, Trash2, Plus, Check, ListTodo, Pencil } from 'lucide-react'
+import { Briefcase, Dumbbell, Leaf, Trash2, Plus, Check, ListTodo } from 'lucide-react'
 import type { ComponentType } from 'react'
 import type { LucideProps } from 'lucide-react'
 import { useLife } from '../lib/store'
