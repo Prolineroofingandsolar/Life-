@@ -26,18 +26,12 @@ export default function TabBar<T extends string>({
             <button
               key={t.id}
               onClick={() => onChange(t.id)}
-              className="relative flex flex-1 flex-col items-center gap-0.5 pb-2 pt-2"
+              className="flex flex-1 flex-col items-center gap-0.5 pb-2 pt-2"
             >
-              {/* Static pill indicator */}
-              {on && (
-                <span className="absolute top-1 h-8 w-12 rounded-[10px] bg-accent/10" />
-              )}
-              <span className={`relative z-10 ${on ? 'text-accent' : 'text-label3'}`}>
+              <span className={on ? 'text-accent' : 'text-label3'}>
                 <Icon size={24} strokeWidth={on ? 2.3 : 1.8} />
               </span>
-              <span
-                className={`relative z-10 text-[10px] font-medium leading-none ${on ? 'text-accent' : 'text-label3'}`}
-              >
+              <span className={`text-[10px] font-medium leading-none ${on ? 'text-accent' : 'text-label3'}`}>
                 {t.label}
               </span>
             </button>
