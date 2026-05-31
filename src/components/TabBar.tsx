@@ -1,7 +1,5 @@
-import { motion } from 'framer-motion'
 import type { ComponentType } from 'react'
 import type { LucideProps } from 'lucide-react'
-import { spring } from '../lib/motion'
 
 export interface TabDef<T extends string> {
   id: T
