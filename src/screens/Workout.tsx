@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { motion } from 'framer-motion'
+import { AnimatePresence, motion } from 'framer-motion'
 import {
   Play, Plus, Flame, Dumbbell, MoreHorizontal, Pencil, Copy,
   Trash2, ChevronRight, Clock, Trophy, BarChart2, Zap,
@@ -31,7 +31,8 @@ import TrainCalendar from '../components/TrainCalendar'
 import MiniChart from '../components/MiniChart'
 import RoutineEditor from '../components/RoutineEditor'
 import Sheet from '../components/Sheet'
-import { spring } from '../lib/motion'
+import Toast from '../components/Toast'
+import { listItem, spring } from '../lib/motion'
 
 /* ── Muscle colour palette ─────────────────────────────────────────────── */
 
@@ -100,11 +101,19 @@ export default function Workout({
   onOpenWorkout: () => void
   onEditSession: (id: string) => void
 }) {
-  const { state, activeSession, startSession, deleteRoutine, duplicateRoutine, discardSession } = useLife()
+  const { state, activeSession, startSession, deleteRoutine, duplicateRoutine, restoreRoutine, discardSession } = useLife()
   const [editor, setEditor] = useState<{ open: boolean; routine?: Routine }>({ open: false })
   const [actions, setActions] = useState<Routine | null>(null)
   const [detail, setDetail]   = useState<WorkoutSession | null>(null)
   const [historyAll, setHistoryAll] = useState(false)
+
+  // Undo state for routines
+  const [deletedRoutine, setDeletedRoutine] = useState<Routine | null>(null)
+  const routineUndoTimer = useRef<number | null>(null)
+
+  // Undo state for sessions
+  const [deletedSession, setDeletedSession] = useState<WorkoutSession | null>(null)
+  const sessionUndoTimer = useRef<number | null>(null)
 
   const ws = state.workoutSettings
   const finished = useMemo(() => state.sessions.filter(isFinished), [state.sessions])
@@ -120,7 +129,6 @@ export default function Workout({
     [history],
   )
 
-  // Top PRs (best estimated 1RM per exercise)
   const topPRs = useMemo(() => {
     type Row = { name: string; muscle: string; weight: number; reps: number; e1rm: number }
     const rows: Row[] = []
@@ -136,6 +144,21 @@ export default function Workout({
   const start = (routineId?: string) => {
     if (!activeSession) startSession(routineId)
     onOpenWorkout()
+  }
+
+  const handleDeleteRoutine = (r: Routine) => {
+    deleteRoutine(r.id)
+    setDeletedRoutine(r)
+    if (routineUndoTimer.current) clearTimeout(routineUndoTimer.current)
+    routineUndoTimer.current = window.setTimeout(() => setDeletedRoutine(null), 4000)
+  }
+
+  const handleDeleteSession = (s: WorkoutSession) => {
+    discardSession(s.id)
+    setDetail(null)
+    setDeletedSession(s)
+    if (sessionUndoTimer.current) clearTimeout(sessionUndoTimer.current)
+    sessionUndoTimer.current = window.setTimeout(() => setDeletedSession(null), 4000)
   }
 
   const visibleHistory = historyAll ? history : history.slice(0, 5)
@@ -199,58 +222,80 @@ export default function Workout({
         <EmptyState icon={Dumbbell} title="No routines yet" subtitle="Tap + to build your first routine." />
       ) : (
         <div className="space-y-3">
-          {state.routines.map((r) => {
-            const muscles = routineMuscles(r, state.exercises)
-            const dur = estimateRoutineDuration(r)
-            const preview = r.exercises
-              .map((re) => exerciseById(state.exercises, re.exerciseId)?.name)
-              .filter(Boolean).slice(0, 4).join(' · ')
+          <AnimatePresence initial={false}>
+            {state.routines.map((r) => {
+              const muscles = routineMuscles(r, state.exercises)
+              const dur = estimateRoutineDuration(r)
+              const preview = r.exercises
+                .map((re) => exerciseById(state.exercises, re.exerciseId)?.name)
+                .filter(Boolean).slice(0, 4).join(' · ')
 
-            return (
-              <div
-                key={r.id}
-                className="rounded-card bg-surface p-4 shadow-card"
-                style={{ border: '0.5px solid rgb(var(--separator) / 0.5)' }}
-              >
-                {/* Header */}
-                <div className="mb-2 flex items-start gap-2">
-                  <div className="min-w-0 flex-1">
-                    <div className="text-headline text-label">{r.name}</div>
-                    <div className="mt-0.5 flex items-center gap-1.5 text-footnote text-label2">
-                      <span>{r.exercises.length} exercise{r.exercises.length !== 1 ? 's' : ''}</span>
-                      <span>·</span>
-                      <Clock size={11} />
-                      <span>~{dur}m</span>
+              return (
+                <motion.div
+                  key={r.id}
+                  variants={listItem}
+                  exit="exit"
+                  layout
+                  className="relative overflow-hidden rounded-card"
+                >
+                  {/* Swipe-to-delete background */}
+                  <div className="absolute inset-y-0 right-0 flex items-center rounded-r-card bg-danger pl-6 pr-5 text-white">
+                    <Trash2 size={20} />
+                  </div>
+                  <motion.div
+                    drag="x"
+                    dragConstraints={{ left: -96, right: 0 }}
+                    dragElastic={{ left: 0.5, right: 0 }}
+                    dragSnapToOrigin
+                    onDragEnd={(_, info) => { if (info.offset.x < -72) handleDeleteRoutine(r) }}
+                    className="rounded-card bg-surface p-4 shadow-card"
+                    style={{ border: '0.5px solid rgb(var(--separator) / 0.5)' }}
+                  >
+                    {/* Header */}
+                    <div className="mb-2 flex items-start gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="text-headline text-label">{r.name}</div>
+                        <div className="mt-0.5 flex items-center gap-1.5 text-footnote text-label2">
+                          <span>{r.exercises.length} exercise{r.exercises.length !== 1 ? 's' : ''}</span>
+                          <span>·</span>
+                          <Clock size={11} />
+                          <span>~{dur}m</span>
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <button
+                          onPointerDown={(e) => e.stopPropagation()}
+                          onClick={() => setActions(r)}
+                          className="grid h-8 w-8 place-items-center text-label3 active:scale-90"
+                          aria-label="More options"
+                        >
+                          <MoreHorizontal size={20} />
+                        </button>
+                        <motion.button
+                          whileTap={{ scale: 0.93 }}
+                          transition={spring}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          onClick={() => start(r.id)}
+                          className="flex items-center gap-1.5 rounded-full bg-accent px-4 py-1.5 text-subhead font-semibold text-white"
+                        >
+                          <Play size={13} fill="currentColor" /> Start
+                        </motion.button>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-1.5">
-                    <button
-                      onClick={() => setActions(r)}
-                      className="grid h-8 w-8 place-items-center text-label3 active:scale-90"
-                    >
-                      <MoreHorizontal size={20} />
-                    </button>
-                    <motion.button
-                      whileTap={{ scale: 0.93 }}
-                      transition={spring}
-                      onClick={() => start(r.id)}
-                      className="flex items-center gap-1.5 rounded-full bg-accent px-4 py-1.5 text-subhead font-semibold text-white"
-                    >
-                      <Play size={13} fill="currentColor" /> Start
-                    </motion.button>
-                  </div>
-                </div>
 
-                {muscles.length > 0 && (
-                  <div className="mb-2 flex flex-wrap gap-1.5">
-                    {muscles.map((m) => <MuscleTag key={m} muscle={m} />)}
-                  </div>
-                )}
+                    {muscles.length > 0 && (
+                      <div className="mb-2 flex flex-wrap gap-1.5">
+                        {muscles.map((m) => <MuscleTag key={m} muscle={m} />)}
+                      </div>
+                    )}
 
-                <div className="truncate text-footnote text-label3">{preview}</div>
-              </div>
-            )
-          })}
+                    <div className="truncate text-footnote text-label3">{preview}</div>
+                  </motion.div>
+                </motion.div>
+              )
+            })}
+          </AnimatePresence>
+          <p className="text-center text-caption text-label3">Swipe left to delete</p>
         </div>
       )}
 
@@ -292,44 +337,63 @@ export default function Workout({
         <EmptyState icon={Dumbbell} title="No workouts yet" subtitle="Complete a session and it'll show up here." />
       ) : (
         <div className="space-y-3">
-          {visibleHistory.map((s) => {
-            const muscles  = sessionMuscles(s, state.exercises).slice(0, 4)
-            const dur      = sessionDuration(s)
-            const preview  = s.exercises
-              .map((ex) => exerciseById(state.exercises, ex.exerciseId)?.name)
-              .filter(Boolean).slice(0, 4).join(' · ')
+          <AnimatePresence initial={false}>
+            {visibleHistory.map((s) => {
+              const muscles  = sessionMuscles(s, state.exercises).slice(0, 4)
+              const dur      = sessionDuration(s)
+              const preview  = s.exercises
+                .map((ex) => exerciseById(state.exercises, ex.exerciseId)?.name)
+                .filter(Boolean).slice(0, 4).join(' · ')
 
-            return (
-              <motion.button
-                key={s.id}
-                whileTap={{ scale: 0.99 }}
-                onClick={() => setDetail(s)}
-                className="w-full rounded-card bg-surface p-4 text-left shadow-card"
-                style={{ border: '0.5px solid rgb(var(--separator) / 0.5)' }}
-              >
-                <div className="mb-1.5 flex items-start justify-between gap-2">
-                  <div className="text-headline text-label">{s.name}</div>
-                  <div className="shrink-0 text-footnote text-label2">
-                    {new Date(s.finishedAt ?? s.startedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+              return (
+                <motion.div
+                  key={s.id}
+                  variants={listItem}
+                  exit="exit"
+                  layout
+                  className="relative overflow-hidden rounded-card"
+                >
+                  {/* Swipe-to-delete background */}
+                  <div className="absolute inset-y-0 right-0 flex items-center rounded-r-card bg-danger pl-6 pr-5 text-white">
+                    <Trash2 size={20} />
                   </div>
-                </div>
+                  <motion.div
+                    drag="x"
+                    dragConstraints={{ left: -96, right: 0 }}
+                    dragElastic={{ left: 0.5, right: 0 }}
+                    dragSnapToOrigin
+                    onDragEnd={(_, info) => {
+                      if (info.offset.x < -72) handleDeleteSession(s)
+                      else if (Math.abs(info.offset.x) < 5) setDetail(s)
+                    }}
+                    className="rounded-card bg-surface p-4 shadow-card"
+                    style={{ border: '0.5px solid rgb(var(--separator) / 0.5)' }}
+                  >
+                    <div className="mb-1.5 flex items-start justify-between gap-2">
+                      <div className="text-headline text-label">{s.name}</div>
+                      <div className="shrink-0 text-footnote text-label2">
+                        {new Date(s.finishedAt ?? s.startedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                      </div>
+                    </div>
 
-                <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-footnote text-label2">
-                  {dur && <span className="flex items-center gap-1"><Clock size={11} />{dur}</span>}
-                  <span>{sessionSetCount(s)} sets</span>
-                  <span>{sessionVolume(s)} {ws.unit}</span>
-                </div>
+                    <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-footnote text-label2">
+                      {dur && <span className="flex items-center gap-1"><Clock size={11} />{dur}</span>}
+                      <span>{sessionSetCount(s)} sets</span>
+                      <span>{sessionVolume(s)} {ws.unit}</span>
+                    </div>
 
-                {muscles.length > 0 && (
-                  <div className="mb-2 flex flex-wrap gap-1.5">
-                    {muscles.map((m) => <MuscleTag key={m} muscle={m} />)}
-                  </div>
-                )}
+                    {muscles.length > 0 && (
+                      <div className="mb-2 flex flex-wrap gap-1.5">
+                        {muscles.map((m) => <MuscleTag key={m} muscle={m} />)}
+                      </div>
+                    )}
 
-                <div className="truncate text-footnote text-label3">{preview}</div>
-              </motion.button>
-            )
-          })}
+                    <div className="truncate text-footnote text-label3">{preview}</div>
+                  </motion.div>
+                </motion.div>
+              )
+            })}
+          </AnimatePresence>
 
           {history.length > 5 && (
             <button
@@ -339,6 +403,7 @@ export default function Workout({
               {historyAll ? 'Show less' : `Show all ${history.length} workouts`}
             </button>
           )}
+          <p className="text-center text-caption text-label3">Tap to view · Swipe left to delete</p>
         </div>
       )}
 
@@ -350,27 +415,23 @@ export default function Workout({
       {/* ── Routine editor ── */}
       <RoutineEditor open={editor.open} routine={editor.routine} onClose={() => setEditor({ open: false })} />
 
-      {/* ── Routine actions sheet ── */}
+      {/* ── Routine actions sheet (edit / duplicate only) ── */}
       <Sheet open={!!actions} onClose={() => setActions(null)} title={actions?.name}>
         {actions && (
           <div className="space-y-2">
             <button
               onClick={() => { setEditor({ open: true, routine: actions }); setActions(null) }}
               className="flex w-full items-center gap-3 rounded-card bg-surface px-4 py-3.5 text-body text-label shadow-card"
+              style={{ border: '0.5px solid rgb(var(--separator) / 0.5)' }}
             >
               <Pencil size={18} className="text-label2" /> Edit
             </button>
             <button
               onClick={() => { duplicateRoutine(actions.id); setActions(null) }}
               className="flex w-full items-center gap-3 rounded-card bg-surface px-4 py-3.5 text-body text-label shadow-card"
+              style={{ border: '0.5px solid rgb(var(--separator) / 0.5)' }}
             >
               <Copy size={18} className="text-label2" /> Duplicate
-            </button>
-            <button
-              onClick={() => { deleteRoutine(actions.id); setActions(null) }}
-              className="flex w-full items-center gap-3 rounded-card bg-surface px-4 py-3.5 text-body text-danger shadow-card"
-            >
-              <Trash2 size={18} /> Delete
             </button>
           </div>
         )}
@@ -380,27 +441,25 @@ export default function Workout({
       <Sheet open={!!detail} onClose={() => setDetail(null)} title={detail?.name}>
         {detail && (
           <div className="space-y-3">
-            {/* Summary stats */}
             <div className="flex gap-2">
               {[
                 { value: sessionDuration(detail) || '—', label: 'duration' },
                 { value: String(sessionSetCount(detail)),  label: 'sets'     },
                 { value: `${sessionVolume(detail)}`,       label: `${ws.unit} vol` },
               ].map(({ value, label }) => (
-                <div key={label} className="flex-1 rounded-card bg-surface p-3 text-center shadow-card">
+                <div key={label} className="flex-1 rounded-card bg-surface p-3 text-center shadow-card" style={{ border: '0.5px solid rgb(var(--separator) / 0.5)' }}>
                   <div className="tabular text-title3 text-label">{value}</div>
                   <div className="text-caption text-label2">{label}</div>
                 </div>
               ))}
             </div>
 
-            {/* Per-exercise breakdown */}
             {detail.exercises.map((ex, i) => {
               const meta = exerciseById(state.exercises, ex.exerciseId)
               const done = ex.sets.filter((s) => s.done)
               if (done.length === 0) return null
               return (
-                <div key={i} className="rounded-card bg-surface p-3 shadow-card">
+                <div key={i} className="rounded-card bg-surface p-3 shadow-card" style={{ border: '0.5px solid rgb(var(--separator) / 0.5)' }}>
                   <div className="mb-2 flex items-center justify-between">
                     <div className="text-headline text-label">{meta?.name ?? 'Exercise'}</div>
                     {meta?.muscle && <MuscleTag muscle={meta.muscle} />}
@@ -412,8 +471,8 @@ export default function Workout({
                         <span className="tabular text-label">
                           {s.weight != null && s.reps != null
                             ? `${s.weight} ${ws.unit} × ${s.reps} reps`
-                            : s.reps != null      ? `${s.reps} reps`
-                            : s.distanceKm != null ? `${s.distanceKm} km`
+                            : s.reps != null       ? `${s.reps} reps`
+                            : s.distanceKm != null  ? `${s.distanceKm} km`
                             : s.durationSec != null ? `${s.durationSec}s`
                             : '✓'}
                         </span>
@@ -424,31 +483,35 @@ export default function Workout({
               )
             })}
 
-            <div className="flex gap-2 pt-1">
-              <motion.button
-                whileTap={{ scale: 0.97 }}
-                transition={spring}
-                onClick={() => { onEditSession(detail.id); setDetail(null) }}
-                className="flex flex-1 items-center justify-center gap-2 rounded-card bg-accent py-3 text-headline text-white"
-              >
+            <motion.button
+              whileTap={{ scale: 0.97 }}
+              transition={spring}
+              onClick={() => { onEditSession(detail.id); setDetail(null) }}
+              className="w-full rounded-card bg-accent py-3 text-headline text-white"
+            >
+              <span className="flex items-center justify-center gap-2">
                 <Pencil size={17} /> Edit workout
-              </motion.button>
-              <button
-                onClick={() => {
-                  if (confirm('Delete this workout? It will be removed from your history.')) {
-                    discardSession(detail.id)
-                    setDetail(null)
-                  }
-                }}
-                aria-label="Delete workout"
-                className="grid w-14 place-items-center rounded-card bg-fill text-danger active:scale-95"
-              >
-                <Trash2 size={18} />
-              </button>
-            </div>
+              </span>
+            </motion.button>
           </div>
         )}
       </Sheet>
+
+      <AnimatePresence>
+        {deletedRoutine && (
+          <Toast
+            message={`"${deletedRoutine.name}" deleted`}
+            onUndo={() => restoreRoutine(deletedRoutine)}
+            onDismiss={() => setDeletedRoutine(null)}
+          />
+        )}
+        {deletedSession && (
+          <Toast
+            message="Workout deleted"
+            onDismiss={() => setDeletedSession(null)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   )
 }

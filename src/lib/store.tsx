@@ -100,6 +100,8 @@ interface LifeContextValue {
   toggleTask: (id: string) => void
   deleteTask: (id: string) => void
   restoreTask: (task: Task) => void
+  restoreHabit: (habit: Habit, logs: Record<string, number> | undefined) => void
+  restoreRoutine: (routine: Routine) => void
   // bills
   addBill: (name: string, amount: number, dayOfMonth: number) => void
   deleteBill: (id: string) => void
@@ -222,6 +224,17 @@ export function LifeProvider({ children }: { children: ReactNode }) {
       deleteTask: (id) => setState((s) => ({ ...s, tasks: s.tasks.filter((t) => t.id !== id) })),
       restoreTask: (task) =>
         setState((s) => ({ ...s, tasks: [task, ...s.tasks.filter((t) => t.id !== task.id)] })),
+      restoreHabit: (habit, logs) =>
+        setState((s) => ({
+          ...s,
+          habits: [habit, ...s.habits.filter((h) => h.id !== habit.id)],
+          habitLogs: logs != null ? { ...s.habitLogs, [habit.id]: logs } : s.habitLogs,
+        })),
+      restoreRoutine: (routine) =>
+        setState((s) => ({
+          ...s,
+          routines: [...s.routines.filter((r) => r.id !== routine.id), routine],
+        })),
       addBill: (name, amount, dayOfMonth) =>
         setState((s) => ({
           ...s,

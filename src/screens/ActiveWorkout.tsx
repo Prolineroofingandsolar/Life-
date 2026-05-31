@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { ChevronDown, Check, Plus, X, Trophy, Link2 } from 'lucide-react'
+import { ChevronDown, Check, Plus, X, Trophy, Link2, Trash2 } from 'lucide-react'
 import { useLife } from '../lib/store'
 import { exerciseById, isSetPR, lastPerformance, newPRsForSession, sessionSetCount, sessionVolume, setHint } from '../lib/workout'
 import type { PRHit } from '../lib/workout'
@@ -236,27 +236,34 @@ export default function ActiveWorkout({
         <div className="space-y-1.5">
           {ex.sets.map((set, setIdx) => {
             const isDrop = !!set.isDropSet
+            const canDelete = ex.sets.length > 1
             return (
-              <div
-                key={setIdx}
-                className={`grid items-center gap-2 rounded-[10px] px-1 py-1 ${
-                  set.done
-                    ? isDrop ? 'bg-accent/10' : 'bg-move/10'
-                    : isDrop ? 'bg-accent/5' : ''
-                }`}
-                style={{ gridTemplateColumns: gridCols(kind) }}
-              >
-                {/* Set number — tap to delete (when >1 sets) */}
-                <button
-                  onClick={() => ex.sets.length > 1 ? removeSet(session.id, exIdx, setIdx) : undefined}
-                  disabled={ex.sets.length <= 1}
-                  className={`flex h-8 w-full items-center justify-center rounded-[6px] text-callout font-semibold transition-colors ${
-                    isDrop ? 'text-accent' : 'text-label2'
-                  } ${ex.sets.length > 1 ? 'active:bg-danger/10 active:text-danger' : ''}`}
-                  aria-label={ex.sets.length > 1 ? 'Delete set' : undefined}
+              <div key={setIdx} className="relative overflow-hidden rounded-[10px]">
+                {/* Swipe-to-delete background */}
+                {canDelete && (
+                  <div className="absolute inset-y-0 right-0 flex items-center bg-danger pl-4 pr-3 text-white">
+                    <Trash2 size={14} />
+                  </div>
+                )}
+                <motion.div
+                  drag={canDelete ? 'x' : false}
+                  dragConstraints={{ left: -72, right: 0 }}
+                  dragElastic={{ left: 0.5, right: 0 }}
+                  dragSnapToOrigin
+                  onDragEnd={(_, info) => { if (canDelete && info.offset.x < -52) removeSet(session.id, exIdx, setIdx) }}
+                  className={`grid items-center gap-2 rounded-[10px] px-1 py-1 ${
+                    set.done
+                      ? isDrop ? 'bg-accent/10' : 'bg-move/10'
+                      : isDrop ? 'bg-accent/5' : ''
+                  }`}
+                  style={{ gridTemplateColumns: gridCols(kind) }}
+                >
+                {/* Set number label */}
+                <div
+                  className={`text-center text-callout font-semibold ${isDrop ? 'text-accent' : 'text-label2'}`}
                 >
                   {setLabel(ex.sets, setIdx)}
-                </button>
+                </div>
 
                 <div className="text-center text-footnote text-label3">
                   {setHint(prev?.sets[setIdx])}
@@ -290,6 +297,7 @@ export default function ActiveWorkout({
                   <motion.button
                     whileTap={{ scale: 0.85 }}
                     transition={spring}
+                    onPointerDown={(e) => e.stopPropagation()}
                     onClick={() => onToggle(exIdx, setIdx, ex.exerciseId, set)}
                     aria-label="Complete set"
                     className={`grid h-8 w-8 place-items-center rounded-[8px] border-2 ${
@@ -308,6 +316,7 @@ export default function ActiveWorkout({
                     </span>
                   )}
                 </div>
+                </motion.div>
               </div>
             )
           })}
