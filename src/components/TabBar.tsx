@@ -17,7 +17,10 @@ export default function TabBar<T extends string>({
   onChange: (id: T) => void
 }) {
   return (
-    <nav className="material shrink-0 border-t border-separator/40">
+    <nav
+      className="shrink-0 border-t border-separator/40 safe-bottom"
+      style={{ background: 'rgb(var(--bg))' }}
+    >
       <div className="flex">
         {tabs.map((t) => {
           const on = t.id === active
@@ -28,8 +31,7 @@ export default function TabBar<T extends string>({
               onClick={() => onChange(t.id)}
               aria-current={on ? 'page' : undefined}
               aria-label={t.label}
-              className="flex flex-1 flex-col items-center gap-0.5 pt-2"
-              style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom))' }}
+              className="flex flex-1 flex-col items-center gap-0.5 pb-2 pt-2"
             >
               <span className={on ? 'text-accent' : 'text-label3'}>
                 <Icon size={24} strokeWidth={on ? 2.3 : 1.8} />
