@@ -382,16 +382,15 @@ export default function ActiveWorkout({
 
       <div className="space-y-4 pb-40 pt-4">
         {exerciseGroups.map((group, gi) => {
-          const isSuperset = !!group.supersetId && group.indices.length >= 2
-
-          if (!isSuperset) {
+          if (!group.supersetId || group.indices.length < 2) {
             return renderExercise(group.indices[0], false)
           }
 
           // Superset group — shared card with accent header
+          const supersetId = group.supersetId
           return (
             <div
-              key={group.supersetId + gi}
+              key={supersetId + gi}
               className="overflow-hidden rounded-card bg-surface shadow-card"
               style={{ border: '0.5px solid rgb(var(--separator) / 0.5)' }}
             >
