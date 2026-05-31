@@ -64,7 +64,7 @@ export default function Settings({ onClose }: { onClose: () => void }) {
 
   return (
     <div>
-      <div className="material safe-top sticky top-0 z-20 -mx-4">
+      <div className="material sticky top-0 z-20 -mx-4">
         <div className="relative flex h-11 items-center px-2">
           <motion.button
             whileTap={{ scale: 0.94 }}
