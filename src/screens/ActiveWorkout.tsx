@@ -365,7 +365,7 @@ export default function ActiveWorkout({
   return (
     <div className="min-h-full">
       {/* Top bar */}
-      <div className="material safe-top sticky top-0 z-20 -mx-4">
+      <div className="material sticky top-0 z-20 -mx-4">
         <div className="flex h-14 items-center gap-3 px-4">
           <motion.button whileTap={{ scale: 0.9 }} onClick={onMinimize} aria-label="Back" className="text-label2">
             <ChevronDown size={26} />

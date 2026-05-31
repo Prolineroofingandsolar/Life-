@@ -49,6 +49,10 @@ function Shell() {
 
   return (
     <div className="mx-auto flex h-full max-w-app flex-col" style={{ height: '100dvh' }}>
+      {/* Frosted-glass status-bar spacer — lives outside the scroll container so
+          safe-area padding never fights a fixed height, and sticky headers below
+          don't need their own safe-top at all. */}
+      <div className="material safe-top shrink-0" />
       <main className="min-h-0 flex-1 overflow-y-auto px-4 pb-6 no-scrollbar">
         <AnimatePresence mode="wait">
           {settings ? (

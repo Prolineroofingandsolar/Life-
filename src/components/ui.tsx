@@ -32,7 +32,7 @@ export function LargeTitleHeader({
   return (
     <>
       <div
-        className={`material safe-top sticky top-0 z-20 -mx-4 px-4 ${
+        className={`material sticky top-0 z-20 -mx-4 px-4 ${
           collapsed ? 'border-b border-separator/60' : ''
         }`}
       >
