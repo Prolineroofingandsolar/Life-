@@ -252,7 +252,7 @@ export default function ActiveWorkout({
                   dragMomentum={false}
                   dragSnapToOrigin
                   onDragEnd={(_, info) => { if (canDelete && info.offset.x < -52) removeSet(session.id, exIdx, setIdx) }}
-                  className="rounded-[10px] bg-surface"
+                  className="relative rounded-[10px] bg-surface"
                 >
                 <div
                   className={`grid items-center gap-2 rounded-[10px] px-1 py-1 ${

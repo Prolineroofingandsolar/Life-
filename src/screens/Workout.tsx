@@ -249,7 +249,7 @@ export default function Workout({
                     dragMomentum={false}
                     dragSnapToOrigin
                     onDragEnd={(_, info) => { if (info.offset.x < -72) handleDeleteRoutine(r) }}
-                    className="rounded-card bg-surface p-4 shadow-card"
+                    className="relative rounded-card bg-surface p-4 shadow-card"
                     style={{ border: '0.5px solid rgb(var(--separator) / 0.5)' }}
                   >
                     {/* Header */}
@@ -368,7 +368,7 @@ export default function Workout({
                       if (info.offset.x < -72) handleDeleteSession(s)
                       else if (Math.abs(info.offset.x) < 5) setDetail(s)
                     }}
-                    className="rounded-card bg-surface p-4 shadow-card"
+                    className="relative rounded-card bg-surface p-4 shadow-card"
                     style={{ border: '0.5px solid rgb(var(--separator) / 0.5)' }}
                   >
                     <div className="mb-1.5 flex items-start justify-between gap-2">
