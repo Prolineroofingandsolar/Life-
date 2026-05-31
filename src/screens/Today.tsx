@@ -64,9 +64,11 @@ export default function Today({ onOpenSettings, onOpenTasks }: { onOpenSettings:
   return (
     <div>
       {/* Sticky top bar */}
-      <div className="material safe-top sticky top-0 z-20 -mx-4 flex h-11 items-center justify-between px-4">
-        <span className="text-footnote font-semibold text-label2">{longDate()}</span>
-        <IconButton icon={Settings} label="Settings" onClick={onOpenSettings} />
+      <div className="material safe-top sticky top-0 z-20 -mx-4">
+        <div className="flex h-11 items-center justify-between px-4">
+          <span className="text-footnote font-semibold text-label2">{longDate()}</span>
+          <IconButton icon={Settings} label="Settings" onClick={onOpenSettings} />
+        </div>
       </div>
 
       {/* Hero greeting — gradient accent card */}

@@ -365,31 +365,33 @@ export default function ActiveWorkout({
   return (
     <div className="min-h-full">
       {/* Top bar */}
-      <div className="material safe-top sticky top-0 z-20 -mx-4 flex h-14 items-center gap-3 px-4">
-        <motion.button whileTap={{ scale: 0.9 }} onClick={onMinimize} aria-label="Back" className="text-label2">
-          <ChevronDown size={26} />
-        </motion.button>
-        <div className="min-w-0 flex-1">
-          {editing ? (
-            <input
-              value={session.name}
-              onChange={(e) => renameSession(session.id, e.target.value)}
-              className="w-full bg-transparent text-headline leading-tight text-label focus:outline-none"
-              aria-label="Workout name"
-            />
-          ) : (
-            <div className="text-headline leading-tight text-label">{session.name}</div>
-          )}
-          <div className="tabular text-footnote text-label2">{subLine}</div>
+      <div className="material safe-top sticky top-0 z-20 -mx-4">
+        <div className="flex h-14 items-center gap-3 px-4">
+          <motion.button whileTap={{ scale: 0.9 }} onClick={onMinimize} aria-label="Back" className="text-label2">
+            <ChevronDown size={26} />
+          </motion.button>
+          <div className="min-w-0 flex-1">
+            {editing ? (
+              <input
+                value={session.name}
+                onChange={(e) => renameSession(session.id, e.target.value)}
+                className="w-full bg-transparent text-headline leading-tight text-label focus:outline-none"
+                aria-label="Workout name"
+              />
+            ) : (
+              <div className="text-headline leading-tight text-label">{session.name}</div>
+            )}
+            <div className="tabular text-footnote text-label2">{subLine}</div>
+          </div>
+          <motion.button
+            whileTap={{ scale: 0.95 }}
+            transition={spring}
+            onClick={editing ? onMinimize : finish}
+            className="rounded-full bg-move px-5 py-2 text-subhead font-semibold text-white"
+          >
+            {editing ? 'Done' : 'Finish'}
+          </motion.button>
         </div>
-        <motion.button
-          whileTap={{ scale: 0.95 }}
-          transition={spring}
-          onClick={editing ? onMinimize : finish}
-          className="rounded-full bg-move px-5 py-2 text-subhead font-semibold text-white"
-        >
-          {editing ? 'Done' : 'Finish'}
-        </motion.button>
       </div>
 
       <div className="space-y-4 pb-40 pt-4">

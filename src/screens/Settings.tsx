@@ -64,17 +64,19 @@ export default function Settings({ onClose }: { onClose: () => void }) {
 
   return (
     <div>
-      <div className="material safe-top sticky top-0 z-20 -mx-4 flex h-11 items-center px-2">
-        <motion.button
-          whileTap={{ scale: 0.94 }}
-          onClick={onClose}
-          className="flex items-center gap-0.5 px-2 text-body text-accent"
-          aria-label="Back to Today"
-        >
-          <ChevronLeft size={22} />
-          Today
-        </motion.button>
-        <span className="absolute left-1/2 -translate-x-1/2 text-headline" aria-hidden>Settings</span>
+      <div className="material safe-top sticky top-0 z-20 -mx-4">
+        <div className="relative flex h-11 items-center px-2">
+          <motion.button
+            whileTap={{ scale: 0.94 }}
+            onClick={onClose}
+            className="flex items-center gap-0.5 px-2 text-body text-accent"
+            aria-label="Back to Today"
+          >
+            <ChevronLeft size={22} />
+            Today
+          </motion.button>
+          <span className="absolute left-1/2 -translate-x-1/2 text-headline" aria-hidden>Settings</span>
+        </div>
       </div>
 
       <h1 className="mb-5 mt-1 text-largetitle">Settings</h1>
