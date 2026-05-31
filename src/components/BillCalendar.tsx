@@ -27,7 +27,7 @@ export default function BillCalendar({
   const billsOnDay = (date: number) => bills.filter((b) => billDay(b, daysInMonth) === date)
 
   return (
-    <div className="rounded-card bg-surface p-4 shadow-card">
+    <div className="rounded-card bg-surface p-4 shadow-card" style={{ border: '0.5px solid rgb(var(--separator) / 0.5)' }}>
       <div className="mb-3 text-headline text-label">{monthLabel(now)}</div>
       <div className="mb-1 grid grid-cols-7 gap-1">
         {WEEKDAYS.map((d, i) => (
@@ -47,6 +47,7 @@ export default function BillCalendar({
               key={i}
               disabled={!has}
               onClick={() => onSelectDay(d.getDate(), due)}
+              aria-label={has ? `${d.getDate()}: ${due.length} payment${due.length > 1 ? 's' : ''}` : undefined}
               className="flex aspect-square items-center justify-center"
             >
               <div

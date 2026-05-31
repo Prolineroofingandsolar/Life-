@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Briefcase, Dumbbell, Leaf, Trash2, Plus, Check, ListTodo } from 'lucide-react'
+import { Briefcase, Dumbbell, Leaf, Trash2, Plus, Check, ListTodo, Pencil } from 'lucide-react'
 import type { ComponentType } from 'react'
 import type { LucideProps } from 'lucide-react'
 import { useLife } from '../lib/store'
@@ -29,7 +29,17 @@ const DUE_COLOR: Record<DueDate, string> = {
   someday: 'rgb(var(--label-3))',
 }
 
-function TaskRow({ task, onToggle, onDelete }: { task: Task; onToggle: () => void; onDelete: () => void }) {
+function TaskRow({
+  task,
+  onToggle,
+  onDelete,
+  onEdit,
+}: {
+  task: Task
+  onToggle: () => void
+  onDelete: () => void
+  onEdit: () => void
+}) {
   const Icon = CAT_ICON[task.category]
   return (
     <motion.div variants={listItem} exit="exit" layout className="relative overflow-hidden">
@@ -55,7 +65,7 @@ function TaskRow({ task, onToggle, onDelete }: { task: Task; onToggle: () => voi
         >
           {task.done && <Check size={15} strokeWidth={3} />}
         </motion.button>
-        <div className="min-w-0 flex-1">
+        <button onClick={onEdit} className="min-w-0 flex-1 text-left">
           <span className={`text-body ${task.done ? 'text-label3 line-through' : 'text-label'}`}>
             {task.title}
           </span>
@@ -64,18 +74,25 @@ function TaskRow({ task, onToggle, onDelete }: { task: Task; onToggle: () => voi
               {DUE_LABEL[task.dueDate]}
             </div>
           )}
-        </div>
-        <Icon size={17} style={{ color: CAT_COLOR[task.category] }} />
+        </button>
+        <button
+          onClick={onEdit}
+          aria-label="Edit task"
+          className="shrink-0 p-1 text-label3 active:text-accent"
+        >
+          <Icon size={17} style={{ color: CAT_COLOR[task.category] }} />
+        </button>
       </motion.div>
     </motion.div>
   )
 }
 
-function TaskGroup({ label, tasks, onToggle, onDelete }: {
+function TaskGroup({ label, tasks, onToggle, onDelete, onEdit }: {
   label: string
   tasks: Task[]
   onToggle: (id: string) => void
   onDelete: (task: Task) => void
+  onEdit: (task: Task) => void
 }) {
   if (tasks.length === 0) return null
   return (
@@ -84,7 +101,7 @@ function TaskGroup({ label, tasks, onToggle, onDelete }: {
       <motion.div layout className="overflow-hidden rounded-card bg-surface shadow-card [&>*+*]:border-t [&>*+*]:border-separator/70">
         <AnimatePresence initial={false}>
           {tasks.map((t) => (
-            <TaskRow key={t.id} task={t} onToggle={() => onToggle(t.id)} onDelete={() => onDelete(t)} />
+            <TaskRow key={t.id} task={t} onToggle={() => onToggle(t.id)} onDelete={() => onDelete(t)} onEdit={() => onEdit(t)} />
           ))}
         </AnimatePresence>
       </motion.div>
@@ -93,12 +110,22 @@ function TaskGroup({ label, tasks, onToggle, onDelete }: {
 }
 
 export default function Tasks() {
-  const { state, addTask, toggleTask, deleteTask, restoreTask } = useLife()
+  const { state, addTask, updateTask, toggleTask, deleteTask, restoreTask } = useLife()
   const [filter, setFilter] = useState<Category | 'all'>('all')
+
+  // Add sheet
   const [sheet, setSheet] = useState(false)
   const [draft, setDraft] = useState('')
   const [draftCat, setDraftCat] = useState<Category>('work')
   const [draftDue, setDraftDue] = useState<DueDate>('today')
+
+  // Edit sheet
+  const [editTask, setEditTask] = useState<Task | null>(null)
+  const [editTitle, setEditTitle] = useState('')
+  const [editCat, setEditCat] = useState<Category>('work')
+  const [editDue, setEditDue] = useState<DueDate>('today')
+
+  // Undo
   const [deletedTask, setDeletedTask] = useState<Task | null>(null)
   const undoTimer = useRef<number | null>(null)
 
@@ -115,6 +142,19 @@ export default function Tasks() {
     addTask(draft, draftCat, draftDue)
     setDraft('')
     setSheet(false)
+  }
+
+  const openEdit = (task: Task) => {
+    setEditTask(task)
+    setEditTitle(task.title)
+    setEditCat(task.category)
+    setEditDue(task.dueDate ?? 'someday')
+  }
+
+  const submitEdit = () => {
+    if (!editTask || !editTitle.trim()) return
+    updateTask(editTask.id, { title: editTitle.trim(), category: editCat, dueDate: editDue })
+    setEditTask(null)
   }
 
   const handleDelete = (task: Task) => {
@@ -157,15 +197,15 @@ export default function Tasks() {
           {hasOpen ? (
             groupCount > 1 ? (
               <>
-                <TaskGroup label="Today"    tasks={todayTasks}    onToggle={toggleTask} onDelete={handleDelete} />
-                <TaskGroup label="Tomorrow" tasks={tomorrowTasks} onToggle={toggleTask} onDelete={handleDelete} />
-                <TaskGroup label="Later"    tasks={laterTasks}    onToggle={toggleTask} onDelete={handleDelete} />
+                <TaskGroup label="Today"    tasks={todayTasks}    onToggle={toggleTask} onDelete={handleDelete} onEdit={openEdit} />
+                <TaskGroup label="Tomorrow" tasks={tomorrowTasks} onToggle={toggleTask} onDelete={handleDelete} onEdit={openEdit} />
+                <TaskGroup label="Later"    tasks={laterTasks}    onToggle={toggleTask} onDelete={handleDelete} onEdit={openEdit} />
               </>
             ) : (
               <motion.div layout className="overflow-hidden rounded-card bg-surface shadow-card [&>*+*]:border-t [&>*+*]:border-separator/70">
                 <AnimatePresence initial={false}>
                   {open.map((t) => (
-                    <TaskRow key={t.id} task={t} onToggle={() => toggleTask(t.id)} onDelete={() => handleDelete(t)} />
+                    <TaskRow key={t.id} task={t} onToggle={() => toggleTask(t.id)} onDelete={() => handleDelete(t)} onEdit={() => openEdit(t)} />
                   ))}
                 </AnimatePresence>
               </motion.div>
@@ -178,7 +218,7 @@ export default function Tasks() {
               <motion.div layout className="overflow-hidden rounded-card bg-surface shadow-card [&>*+*]:border-t [&>*+*]:border-separator/70">
                 <AnimatePresence initial={false}>
                   {done.map((t) => (
-                    <TaskRow key={t.id} task={t} onToggle={() => toggleTask(t.id)} onDelete={() => handleDelete(t)} />
+                    <TaskRow key={t.id} task={t} onToggle={() => toggleTask(t.id)} onDelete={() => handleDelete(t)} onEdit={() => openEdit(t)} />
                   ))}
                 </AnimatePresence>
               </motion.div>
@@ -187,7 +227,9 @@ export default function Tasks() {
         </>
       )}
 
-      <p className="mt-4 text-center text-caption text-label3">Swipe a task left to delete</p>
+      {(hasOpen || done.length > 0) && (
+        <p className="mt-4 text-center text-caption text-label3">Tap a task to edit · Swipe left to delete</p>
+      )}
 
       {/* Add-task sheet */}
       <Sheet open={sheet} onClose={() => setSheet(false)} title="New task">
@@ -197,7 +239,9 @@ export default function Tasks() {
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && submit()}
           placeholder="What needs doing?"
+          aria-label="Task title"
           className="w-full rounded-card bg-surface px-4 py-3.5 text-body text-label shadow-card placeholder:text-label3 focus:outline-none"
+          style={{ border: '0.5px solid rgb(var(--separator) / 0.5)' }}
         />
         <div className="mt-3">
           <SegmentedControl<DueDate>
@@ -228,6 +272,65 @@ export default function Tasks() {
         >
           Add task
         </motion.button>
+      </Sheet>
+
+      {/* Edit-task sheet */}
+      <Sheet open={!!editTask} onClose={() => setEditTask(null)} title="Edit task">
+        <input
+          autoFocus
+          value={editTitle}
+          onChange={(e) => setEditTitle(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && submitEdit()}
+          placeholder="Task title"
+          aria-label="Task title"
+          className="w-full rounded-card bg-surface px-4 py-3.5 text-body text-label shadow-card placeholder:text-label3 focus:outline-none"
+          style={{ border: '0.5px solid rgb(var(--separator) / 0.5)' }}
+        />
+        <div className="mt-3">
+          <SegmentedControl<DueDate>
+            layoutId="edit-task-due"
+            value={editDue}
+            onChange={setEditDue}
+            options={[
+              { value: 'today',    label: 'Today' },
+              { value: 'tomorrow', label: 'Tomorrow' },
+              { value: 'someday',  label: 'Later' },
+            ]}
+          />
+        </div>
+        <div className="mt-3">
+          <SegmentedControl<Category>
+            layoutId="edit-task-cat"
+            value={editCat}
+            onChange={setEditCat}
+            options={CATS.map((c) => ({ value: c, label: CATEGORY_LABEL[c] }))}
+          />
+        </div>
+        <div className="mt-4 flex gap-2">
+          <motion.button
+            whileTap={{ scale: 0.97 }}
+            transition={spring}
+            onClick={submitEdit}
+            className="flex-1 rounded-card bg-gradient-accent py-3.5 text-headline text-white disabled:opacity-40"
+            disabled={!editTitle.trim()}
+          >
+            Save
+          </motion.button>
+          {editTask && (
+            <motion.button
+              whileTap={{ scale: 0.97 }}
+              transition={spring}
+              onClick={() => {
+                if (editTask) handleDelete(editTask)
+                setEditTask(null)
+              }}
+              className="grid w-14 place-items-center rounded-card bg-fill text-danger"
+              aria-label="Delete task"
+            >
+              <Trash2 size={18} />
+            </motion.button>
+          )}
+        </div>
       </Sheet>
 
       <AnimatePresence>

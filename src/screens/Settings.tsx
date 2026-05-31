@@ -1,44 +1,63 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import { ChevronLeft, User, Dumbbell, Timer, Bell, Download, Upload } from 'lucide-react'
-import { motion } from 'framer-motion'
+import { AnimatePresence, motion } from 'framer-motion'
 import { useLife } from '../lib/store'
 import { useTheme } from '../lib/theme'
 import type { ThemeMode } from '../lib/theme'
 import type { LifeState } from '../lib/types'
 import { SectionLabel, ListGroup, ListRow, SegmentedControl, Switch, Stepper } from '../components/ui'
+import Toast from '../components/Toast'
 
 export default function Settings({ onClose }: { onClose: () => void }) {
   const { state, setName, setWorkoutSettings, loadState } = useLife()
   const { mode, setMode } = useTheme()
   const ws = state.workoutSettings
   const fileRef = useRef<HTMLInputElement>(null)
+  const [toast, setToast] = useState<string | null>(null)
+
+  const showToast = (msg: string) => {
+    setToast(msg)
+  }
 
   const exportData = () => {
-    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `life-backup-${new Date().toISOString().slice(0, 10)}.json`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
+    try {
+      const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `life-backup-${new Date().toISOString().slice(0, 10)}.json`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      showToast('Backup exported successfully')
+    } catch {
+      showToast('Export failed — please try again')
+    }
   }
 
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+    if (file.size > 10 * 1024 * 1024) {
+      showToast('File too large — max 10 MB')
+      e.target.value = ''
+      return
+    }
     const reader = new FileReader()
     reader.onload = (ev) => {
       try {
         const data = JSON.parse(ev.target?.result as string) as LifeState
-        if (typeof data !== 'object' || !data.tasks) throw new Error('Invalid')
+        if (typeof data !== 'object' || data === null || !Array.isArray(data.tasks)) {
+          throw new Error('Invalid backup format')
+        }
         loadState(data)
-        alert('Data imported successfully.')
+        showToast('Data imported successfully')
       } catch {
-        alert('Could not read backup file. Make sure it is a valid Life export.')
+        showToast('Could not read file — make sure it is a valid Life backup')
       }
     }
+    reader.onerror = () => showToast('Could not read file')
     reader.readAsText(file)
     e.target.value = ''
   }
@@ -50,17 +69,18 @@ export default function Settings({ onClose }: { onClose: () => void }) {
           whileTap={{ scale: 0.94 }}
           onClick={onClose}
           className="flex items-center gap-0.5 px-2 text-body text-accent"
+          aria-label="Back to Today"
         >
           <ChevronLeft size={22} />
           Today
         </motion.button>
-        <span className="absolute left-1/2 -translate-x-1/2 text-headline">Settings</span>
+        <span className="absolute left-1/2 -translate-x-1/2 text-headline" aria-hidden>Settings</span>
       </div>
 
       <h1 className="mb-5 mt-1 text-largetitle">Settings</h1>
 
       <SectionLabel>Appearance</SectionLabel>
-      <div className="rounded-card bg-surface p-3 shadow-card">
+      <div className="rounded-card bg-surface p-3 shadow-card" style={{ border: '0.5px solid rgb(var(--separator) / 0.5)' }}>
         <SegmentedControl<ThemeMode>
           layoutId="theme-mode"
           value={mode}
@@ -84,6 +104,7 @@ export default function Settings({ onClose }: { onClose: () => void }) {
               value={state.name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Your name"
+              aria-label="Your name"
               className="w-full bg-transparent text-body text-label placeholder:text-label3 focus:outline-none"
             />
           }
@@ -118,7 +139,7 @@ export default function Settings({ onClose }: { onClose: () => void }) {
           trailing={
             <div className="flex items-center gap-3">
               <span className="tabular w-12 text-right text-body text-label2">{ws.defaultRestSec}s</span>
-              <Stepper value={ws.defaultRestSec} step={15} min={0} onChange={(v) => setWorkoutSettings({ defaultRestSec: v })} />
+              <Stepper value={ws.defaultRestSec} step={15} min={0} max={600} onChange={(v) => setWorkoutSettings({ defaultRestSec: v })} />
             </div>
           }
         />
@@ -154,6 +175,15 @@ export default function Settings({ onClose }: { onClose: () => void }) {
       <input ref={fileRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
 
       <p className="mt-10 text-center text-caption text-label3">Life · v1</p>
+
+      <AnimatePresence>
+        {toast && (
+          <Toast
+            message={toast}
+            onDismiss={() => setToast(null)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   )
 }

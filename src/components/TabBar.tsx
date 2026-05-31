@@ -26,6 +26,8 @@ export default function TabBar<T extends string>({
             <button
               key={t.id}
               onClick={() => onChange(t.id)}
+              aria-current={on ? 'page' : undefined}
+              aria-label={t.label}
               className="flex flex-1 flex-col items-center gap-0.5 pb-2 pt-2"
             >
               <span className={on ? 'text-accent' : 'text-label3'}>

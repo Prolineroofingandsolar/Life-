@@ -32,7 +32,9 @@ function NumCell({
       placeholder={placeholder}
       onChange={(e) => {
         const v = e.target.value.trim()
-        onChange(v === '' ? undefined : Number(v))
+        if (v === '') { onChange(undefined); return }
+        const n = parseFloat(v)
+        if (!isNaN(n) && n >= 0) onChange(n)
       }}
       className="w-full rounded-[8px] bg-fill py-2 text-center text-body text-label placeholder:text-label3 focus:outline-none focus:ring-2 focus:ring-accent/60"
     />

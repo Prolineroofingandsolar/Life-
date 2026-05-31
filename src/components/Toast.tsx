@@ -22,7 +22,7 @@ export default function Toast({ message, undoLabel = 'Undo', onUndo, onDismiss }
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 16, scale: 0.97 }}
       transition={spring}
-      className="fixed inset-x-4 bottom-[88px] z-50 mx-auto max-w-app"
+      className="safe-bottom fixed inset-x-4 bottom-4 z-50 mx-auto max-w-app"
     >
       <div
         className="flex items-center gap-3 rounded-xl2 px-4 py-3.5"

@@ -11,7 +11,7 @@ export default function HabitHeatmap({ habit, logs }: { habit: Habit; logs: Habi
   const todayKey = dayKey(now)
 
   return (
-    <div className="rounded-card bg-surface p-4 shadow-card">
+    <div className="rounded-card bg-surface p-4 shadow-card" style={{ border: '0.5px solid rgb(var(--separator) / 0.5)' }}>
       <div className="mb-3 text-headline text-label">{monthLabel(now)}</div>
       <div className="mb-1 grid grid-cols-7 gap-1">
         {WEEKDAYS.map((d, i) => (
@@ -35,7 +35,7 @@ export default function HabitHeatmap({ habit, logs }: { habit: Habit; logs: Habi
             style.background = habit.color
             cls = 'font-semibold text-white'
           } else if (slip) {
-            style.background = 'rgb(255 55 95 / 0.18)'
+            style.background = 'rgb(var(--danger, 255 55 95) / 0.18)'
             cls = 'text-danger'
           } else if (missed) {
             cls = 'text-label3'

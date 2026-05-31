@@ -17,7 +17,7 @@ export default function MiniChart({
   const barW = (w - gap * (data.length - 1)) / data.length
 
   return (
-    <svg viewBox={`0 0 ${w} ${height}`} className="w-full" preserveAspectRatio="none">
+    <svg viewBox={`0 0 ${w} ${height}`} className="w-full" preserveAspectRatio="none" role="img" aria-label="Bar chart">
       {data.map((d, i) => {
         const h = Math.max(2, (d.value / max) * (height - 4))
         return (
@@ -30,6 +30,7 @@ export default function MiniChart({
             rx={Math.min(4, barW / 2)}
             fill={color}
             opacity={i === data.length - 1 ? 1 : 0.45}
+            aria-label={d.label ? `${d.label}: ${d.value}` : undefined}
           />
         )
       })}

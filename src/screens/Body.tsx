@@ -65,7 +65,7 @@ export default function Body() {
           trailing={
             <div className="flex items-center gap-3">
               <span className="tabular w-16 text-right text-body text-label2">{cs.waterGoal} glasses</span>
-              <Stepper value={cs.waterGoal} onChange={(v) => setCareSettings({ waterGoal: v })} />
+              <Stepper value={cs.waterGoal} min={1} max={20} onChange={(v) => setCareSettings({ waterGoal: v })} />
             </div>
           }
         />
@@ -76,7 +76,7 @@ export default function Body() {
           trailing={
             <div className="flex items-center gap-3">
               <span className="tabular w-16 text-right text-body text-label2">{cs.mealsGoal} meals</span>
-              <Stepper value={cs.mealsGoal} onChange={(v) => setCareSettings({ mealsGoal: v })} />
+              <Stepper value={cs.mealsGoal} min={1} max={8} onChange={(v) => setCareSettings({ mealsGoal: v })} />
             </div>
           }
         />

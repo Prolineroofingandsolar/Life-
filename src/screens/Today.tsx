@@ -18,7 +18,7 @@ const RING_META = [
   { key: 'move',    label: 'Move',    color: '#30d158', icon: Wind },
 ] as const
 
-export default function Today({ onOpenSettings }: { onOpenSettings: () => void }) {
+export default function Today({ onOpenSettings, onOpenTasks }: { onOpenSettings: () => void; onOpenTasks?: () => void }) {
   const { state, today, addWater, addMeal, markBreak } = useLife()
   const cs = state.careSettings
 
@@ -150,7 +150,7 @@ export default function Today({ onOpenSettings }: { onOpenSettings: () => void }
       {upNextList.length > 0 ? (
         <div className="space-y-2">
           {upNextList.map((task) => (
-            <PressableCard key={task.id} className="flex items-center gap-3 px-4 py-3.5">
+            <PressableCard key={task.id} onClick={onOpenTasks} className="flex items-center gap-3 px-4 py-3.5">
               <span
                 className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] text-footnote font-bold text-white"
                 style={{ background: 'linear-gradient(135deg, rgb(var(--accent)), rgb(var(--gradient-end)))' }}
@@ -167,9 +167,9 @@ export default function Today({ onOpenSettings }: { onOpenSettings: () => void }
             </PressableCard>
           ))}
           {openTasks.length > upNextList.length && (
-            <p className="text-center text-footnote text-label3">
+            <button onClick={onOpenTasks} className="w-full py-1 text-center text-footnote text-accent">
               +{openTasks.length - upNextList.length} more task{openTasks.length - upNextList.length !== 1 ? 's' : ''}
-            </p>
+            </button>
           )}
         </div>
       ) : (

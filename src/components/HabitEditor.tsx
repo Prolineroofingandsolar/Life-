@@ -68,7 +68,10 @@ export default function HabitEditor({
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder={kind === 'break' ? 'Habit to quit' : 'Habit to build'}
+            aria-label="Habit name"
+            maxLength={60}
             className="w-full rounded-card bg-surface px-4 py-3 text-body text-label shadow-card placeholder:text-label3 focus:outline-none"
+            style={{ border: '0.5px solid rgb(var(--separator) / 0.5)' }}
           />
         </div>
 
@@ -106,6 +109,8 @@ export default function HabitEditor({
               <button
                 key={c}
                 onClick={() => setColor(c)}
+                aria-label={`Colour ${c}`}
+                aria-pressed={color === c}
                 className={`h-8 w-8 rounded-full ${color === c ? 'ring-2 ring-offset-2 ring-offset-grouped' : ''}`}
                 style={{ background: c, boxShadow: color === c ? `0 0 0 2px ${c}` : undefined }}
               />
@@ -158,10 +163,10 @@ export default function HabitEditor({
               </div>
             )}
 
-            <div className="rounded-card bg-surface px-4 py-3 shadow-card">
+            <div className="rounded-card bg-surface px-4 py-3 shadow-card" style={{ border: '0.5px solid rgb(var(--separator) / 0.5)' }}>
               <div className="flex items-center justify-between">
                 <span className="text-body text-label">Daily target</span>
-                <Switch checked={hasTarget} onChange={setHasTarget} />
+                <Switch checked={hasTarget} onChange={setHasTarget} label="Daily target" />
               </div>
               {hasTarget && (
                 <div className="mt-3 flex items-center gap-3 border-t border-separator/70 pt-3">
@@ -171,6 +176,8 @@ export default function HabitEditor({
                     value={unit}
                     onChange={(e) => setUnit(e.target.value)}
                     placeholder="unit (e.g. pages)"
+                    aria-label="Unit"
+                    maxLength={20}
                     className="min-w-0 flex-1 rounded-lg bg-fill px-3 py-2 text-body text-label placeholder:text-label3 focus:outline-none"
                   />
                 </div>

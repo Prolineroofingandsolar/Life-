@@ -30,9 +30,12 @@ export default function Sheet({
           <div
             className="absolute inset-0 bg-black/40 backdrop-blur-sm"
             onClick={onClose}
-            aria-hidden
+            aria-hidden="true"
           />
           <motion.div
+            role="dialog"
+            aria-modal="true"
+            aria-label={title ?? 'Sheet'}
             className="safe-bottom relative w-full max-w-app rounded-t-sheet bg-grouped px-4 pb-6 pt-2 shadow-sheet"
             initial={{ y: '100%' }}
             animate={{ y: 0 }}

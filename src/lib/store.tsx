@@ -96,6 +96,7 @@ interface LifeContextValue {
   activeSession: WorkoutSession | undefined
   // tasks
   addTask: (title: string, category: Category, dueDate?: DueDate) => void
+  updateTask: (id: string, patch: Partial<Omit<Task, 'id' | 'createdAt'>>) => void
   toggleTask: (id: string) => void
   deleteTask: (id: string) => void
   restoreTask: (task: Task) => void
@@ -214,6 +215,8 @@ export function LifeProvider({ children }: { children: ReactNode }) {
           ...s,
           tasks: [{ id: uid(), title: title.trim(), category, dueDate, done: false, createdAt: Date.now() }, ...s.tasks],
         })),
+      updateTask: (id, patch) =>
+        setState((s) => ({ ...s, tasks: s.tasks.map((t) => (t.id === id ? { ...t, ...patch } : t)) })),
       toggleTask: (id) =>
         setState((s) => ({ ...s, tasks: s.tasks.map((t) => (t.id === id ? { ...t, done: !t.done } : t)) })),
       deleteTask: (id) => setState((s) => ({ ...s, tasks: s.tasks.filter((t) => t.id !== id) })),

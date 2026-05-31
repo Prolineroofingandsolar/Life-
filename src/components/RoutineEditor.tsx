@@ -41,10 +41,13 @@ export default function RoutineEditor({
   return (
     <Sheet open={open} onClose={onClose} title={routine ? 'Edit routine' : 'New routine'}>
       <input
+        autoFocus
         value={name}
         onChange={(e) => setName(e.target.value)}
         placeholder="Routine name"
+        aria-label="Routine name"
         className="mb-3 w-full rounded-card bg-surface px-4 py-3.5 text-body text-label shadow-card placeholder:text-label3 focus:outline-none"
+        style={{ border: '0.5px solid rgb(var(--separator) / 0.5)' }}
       />
 
       <div className="max-h-[46vh] space-y-2 overflow-y-auto no-scrollbar">
@@ -52,7 +55,7 @@ export default function RoutineEditor({
           const ex = exerciseById(state.exercises, it.exerciseId)
           const showReps = ex?.kind === 'weight' || ex?.kind === 'bodyweight'
           return (
-            <div key={i} className="rounded-card bg-surface p-3 shadow-card">
+            <div key={i} className="rounded-card bg-surface p-3 shadow-card" style={{ border: '0.5px solid rgb(var(--separator) / 0.5)' }}>
               <div className="mb-2 flex items-center justify-between">
                 <span className="text-body text-label">{ex?.name ?? 'Exercise'}</span>
                 <button onClick={() => remove(i)} aria-label="Remove" className="text-label3 active:scale-90">

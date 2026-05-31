@@ -6,6 +6,7 @@ import { LifeProvider, useLife } from './lib/store'
 import { pageVariants, ease } from './lib/motion'
 import TabBar from './components/TabBar'
 import type { TabDef } from './components/TabBar'
+import ErrorBoundary from './components/ErrorBoundary'
 import Today from './screens/Today'
 import Tasks from './screens/Tasks'
 import Workout from './screens/Workout'
@@ -89,7 +90,7 @@ function Shell() {
               exit="exit"
               transition={{ duration: 0.22, ease }}
             >
-              {tab === 'today' && <Today onOpenSettings={() => setSettings(true)} />}
+              {tab === 'today' && <Today onOpenSettings={() => setSettings(true)} onOpenTasks={() => setTab('tasks')} />}
               {tab === 'tasks' && <Tasks />}
               {tab === 'train' && <Workout onOpenWorkout={() => setInWorkout(true)} onEditSession={setEditId} />}
               {tab === 'habits' && <Habits />}
@@ -107,10 +108,12 @@ function Shell() {
 
 export default function App() {
   return (
-    <ThemeProvider>
-      <LifeProvider>
-        <Shell />
-      </LifeProvider>
-    </ThemeProvider>
+    <ErrorBoundary>
+      <ThemeProvider>
+        <LifeProvider>
+          <Shell />
+        </LifeProvider>
+      </ThemeProvider>
+    </ErrorBoundary>
   )
 }

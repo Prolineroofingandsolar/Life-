@@ -163,11 +163,12 @@ export function ListRow({
 
 /* ------------------------------- Switch ------------------------------- */
 
-export function Switch({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+export function Switch({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label?: string }) {
   return (
     <button
       role="switch"
       aria-checked={checked}
+      aria-label={label}
       onClick={() => onChange(!checked)}
       className={`relative h-[31px] w-[51px] rounded-full transition-colors ${checked ? 'bg-move' : 'bg-fill'}`}
     >

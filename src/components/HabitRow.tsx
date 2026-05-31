@@ -73,8 +73,7 @@ export default function HabitRow({ habit, onOpen }: { habit: Habit; onOpen?: () 
       <button onClick={onOpen} className="min-w-0 flex-1 text-left">
         <div className={`truncate text-body ${doneToday ? 'text-label2' : 'text-label'}`}>{habit.name}</div>
         <div className="flex items-center gap-1 text-footnote text-label2">
-          {!isBreak && streak > 0 && <Flame size={12} className="text-nourish" />}
-          {isBreak && <Flame size={12} className="text-nourish" />}
+          {streak > 0 && <Flame size={12} className="text-nourish" />}
           <span className="truncate">{subtitle}</span>
         </div>
       </button>
