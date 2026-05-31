@@ -10,7 +10,6 @@ import { spring } from '../lib/motion'
 
 const KINDS: ExerciseKind[] = ['weight', 'bodyweight', 'cardio', 'hold']
 
-/** Bottom-sheet exercise library browser with search + create-custom. */
 export default function ExercisePicker({
   open,
   onClose,
@@ -22,18 +21,30 @@ export default function ExercisePicker({
 }) {
   const { state, addCustomExercise } = useLife()
   const [q, setQ] = useState('')
+  const [muscleFilter, setMuscleFilter] = useState<string>('All')
   const [creating, setCreating] = useState(false)
   const [newName, setNewName] = useState('')
   const [newKind, setNewKind] = useState<ExerciseKind>('weight')
 
+  const allMuscles = useMemo(() => {
+    const seen = new Set<string>()
+    state.exercises.forEach((e) => { if (e.muscle) seen.add(e.muscle) })
+    return ['All', ...Array.from(seen).sort()]
+  }, [state.exercises])
+
   const results = useMemo(() => {
     const term = q.trim().toLowerCase()
-    return state.exercises.filter((e) => !term || e.name.toLowerCase().includes(term) || e.muscle?.toLowerCase().includes(term))
-  }, [q, state.exercises])
+    return state.exercises.filter((e) => {
+      if (muscleFilter !== 'All' && e.muscle !== muscleFilter) return false
+      if (!term) return true
+      return e.name.toLowerCase().includes(term) || e.muscle?.toLowerCase().includes(term)
+    })
+  }, [q, muscleFilter, state.exercises])
 
   const pick = (id: string) => {
     onPick(id)
     setQ('')
+    setMuscleFilter('All')
     onClose()
   }
 
@@ -72,15 +83,19 @@ export default function ExercisePicker({
             >
               Create & add
             </motion.button>
-            <button onClick={() => setCreating(false)} className="rounded-card bg-fill px-5 text-callout text-label2">
+            <button
+              onClick={() => setCreating(false)}
+              className="rounded-card bg-fill px-5 text-callout text-label2"
+            >
               Cancel
             </button>
           </div>
         </div>
       ) : (
         <>
-          <div className="mb-3 flex items-center gap-2 rounded-card bg-surface px-3.5 py-3 shadow-card">
-            <Search size={18} className="text-label3" />
+          {/* Search */}
+          <div className="mb-2 flex items-center gap-2 rounded-card bg-surface px-3.5 py-3 shadow-card">
+            <Search size={18} className="shrink-0 text-label3" />
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
@@ -88,7 +103,26 @@ export default function ExercisePicker({
               className="w-full bg-transparent text-body text-label placeholder:text-label3 focus:outline-none"
             />
           </div>
-          <div className="max-h-[50vh] overflow-y-auto rounded-card bg-surface shadow-card no-scrollbar [&>*+*]:border-t [&>*+*]:border-separator/70">
+
+          {/* Muscle group filter chips */}
+          <div className="mb-2 flex gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
+            {allMuscles.map((m) => (
+              <button
+                key={m}
+                onClick={() => setMuscleFilter(m)}
+                className={`shrink-0 rounded-full px-3 py-1 text-footnote font-medium transition-colors ${
+                  muscleFilter === m
+                    ? 'bg-accent text-white'
+                    : 'bg-fill text-label2'
+                }`}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+
+          {/* Exercise list */}
+          <div className="max-h-[44vh] overflow-y-auto rounded-card bg-surface shadow-card no-scrollbar [&>*+*]:border-t [&>*+*]:border-separator/70">
             {results.map((e) => (
               <button
                 key={e.id}
@@ -96,11 +130,16 @@ export default function ExercisePicker({
                 className="flex w-full items-center justify-between px-4 py-3 text-left active:bg-fill"
               >
                 <span className="text-body text-label">{e.name}</span>
-                <span className="text-footnote text-label2">{e.muscle ?? EXERCISE_KIND_LABEL[e.kind]}</span>
+                <span className="ml-3 shrink-0 text-footnote text-label2">
+                  {e.muscle ?? EXERCISE_KIND_LABEL[e.kind]}
+                </span>
               </button>
             ))}
-            {results.length === 0 && <div className="px-4 py-6 text-center text-footnote text-label3">No matches</div>}
+            {results.length === 0 && (
+              <div className="px-4 py-6 text-center text-footnote text-label3">No matches</div>
+            )}
           </div>
+
           <button
             onClick={() => {
               setNewName(q)

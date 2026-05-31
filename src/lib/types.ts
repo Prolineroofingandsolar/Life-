@@ -79,11 +79,15 @@ export interface LoggedSet {
   distanceKm?: number
   durationSec?: number
   done: boolean
+  /** When true this set immediately follows the previous one with no rest (drop set). */
+  isDropSet?: boolean
 }
 
 export interface SessionExercise {
   exerciseId: string
   sets: LoggedSet[]
+  /** Exercises sharing the same supersetId are performed back-to-back without rest. */
+  supersetId?: string
 }
 
 export interface WorkoutSession {

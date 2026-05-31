@@ -69,8 +69,14 @@ function load(): LifeState {
       ...parsed,
       careSettings: { ...DEFAULT_STATE.careSettings, ...(parsed.careSettings ?? {}) },
       workoutSettings: { ...DEFAULT_STATE.workoutSettings, ...(parsed.workoutSettings ?? {}) },
-      // Re-seed the library/templates if an older save predates the workout feature.
-      exercises: parsed.exercises?.length ? parsed.exercises : DEFAULT_STATE.exercises,
+      // Merge new seed exercises with any existing (including custom). New seeds are
+      // prepended so returning users pick up newly-added exercises automatically.
+      exercises: parsed.exercises?.length
+        ? [
+            ...SEED_EXERCISES.filter((se) => !parsed.exercises!.find((pe) => pe.id === se.id)),
+            ...parsed.exercises,
+          ]
+        : DEFAULT_STATE.exercises,
       routines: parsed.routines ?? DEFAULT_STATE.routines,
       sessions: parsed.sessions ?? [],
       // Seed example habits only for saves that predate the habits feature.
@@ -117,9 +123,12 @@ interface LifeContextValue {
   updateSet: (sessionId: string, exIdx: number, setIdx: number, patch: Partial<LoggedSet>) => void
   toggleSetDone: (sessionId: string, exIdx: number, setIdx: number) => void
   addSet: (sessionId: string, exIdx: number) => void
+  addDropSet: (sessionId: string, exIdx: number) => void
   removeSet: (sessionId: string, exIdx: number, setIdx: number) => void
   addExerciseToSession: (sessionId: string, exerciseId: string) => void
   removeExerciseFromSession: (sessionId: string, exIdx: number) => void
+  linkAsSuperset: (sessionId: string, exIdxA: number, exIdxB: number) => void
+  unlinkSuperset: (sessionId: string, exIdx: number) => void
   renameSession: (sessionId: string, name: string) => void
   finishSession: (sessionId: string) => void
   discardSession: (sessionId: string) => void
@@ -303,6 +312,20 @@ export function LifeProvider({ children }: { children: ReactNode }) {
             return { ...ex, sets: [...ex.sets, clone] }
           }),
         })),
+      addDropSet: (id, exIdx) =>
+        mutateSession(id, (s) => ({
+          ...s,
+          exercises: s.exercises.map((ex, i) => {
+            if (i !== exIdx) return ex
+            const last = ex.sets[ex.sets.length - 1]
+            const drop: LoggedSet = { done: false, isDropSet: true }
+            if (last?.weight != null) drop.weight = last.weight
+            if (last?.reps != null) drop.reps = last.reps
+            if (last?.durationSec != null) drop.durationSec = last.durationSec
+            if (last?.distanceKm != null) drop.distanceKm = last.distanceKm
+            return { ...ex, sets: [...ex.sets, drop] }
+          }),
+        })),
       removeSet: (id, exIdx, setIdx) =>
         mutateSession(id, (s) => ({
           ...s,
@@ -312,6 +335,26 @@ export function LifeProvider({ children }: { children: ReactNode }) {
         })),
       addExerciseToSession: (id, exerciseId) =>
         mutateSession(id, (s) => ({ ...s, exercises: [...s.exercises, { exerciseId, sets: [{ done: false }] }] })),
+      linkAsSuperset: (id, exIdxA, exIdxB) => {
+        const sid = uid()
+        mutateSession(id, (s) => ({
+          ...s,
+          exercises: s.exercises.map((ex, i) =>
+            i === exIdxA || i === exIdxB ? { ...ex, supersetId: sid } : ex,
+          ),
+        }))
+      },
+      unlinkSuperset: (id, exIdx) =>
+        mutateSession(id, (s) => {
+          const sid = s.exercises[exIdx]?.supersetId
+          if (!sid) return s
+          return {
+            ...s,
+            exercises: s.exercises.map((ex) =>
+              ex.supersetId === sid ? { ...ex, supersetId: undefined } : ex,
+            ),
+          }
+        }),
       removeExerciseFromSession: (id, exIdx) =>
         mutateSession(id, (s) => ({ ...s, exercises: s.exercises.filter((_, i) => i !== exIdx) })),
       renameSession: (id, name) => mutateSession(id, (s) => ({ ...s, name: name || s.name })),
