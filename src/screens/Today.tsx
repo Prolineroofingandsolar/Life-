@@ -66,7 +66,7 @@ export default function Today({ onOpenSettings }: { onOpenSettings: () => void }
       {/* Sticky top bar */}
       <div className="material safe-top sticky top-0 z-20 -mx-4 flex h-11 items-center justify-between px-4">
         <span className="text-footnote font-semibold text-label2">{longDate()}</span>
-        <IconButton icon={Settings} label="Settings" onClick={onOpenSettings} accent />
+        <IconButton icon={Settings} label="Settings" onClick={onOpenSettings} />
       </div>
 
       {/* Hero greeting — gradient accent card */}

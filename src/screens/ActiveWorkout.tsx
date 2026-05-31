@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { ChevronDown, Check, Plus, Trash2, X, Trophy, Link2 } from 'lucide-react'
+import { ChevronDown, Check, Plus, X, Trophy, Link2 } from 'lucide-react'
 import { useLife } from '../lib/store'
 import { exerciseById, isSetPR, lastPerformance, newPRsForSession, sessionSetCount, sessionVolume, setHint } from '../lib/workout'
 import type { PRHit } from '../lib/workout'
@@ -54,10 +54,10 @@ function setLabel(sets: LoggedSet[], idx: number): string {
 
 function gridCols(kind: ExerciseKind): string {
   switch (kind) {
-    case 'weight':     return '32px 52px 1fr 1fr 44px'
-    case 'cardio':     return '32px 52px 1fr 1fr 44px'
-    case 'bodyweight': return '32px 64px 1fr 44px'
-    case 'hold':       return '32px 64px 1fr 44px'
+    case 'weight':     return '40px 52px 1fr 1fr 44px'
+    case 'cardio':     return '40px 52px 1fr 1fr 44px'
+    case 'bodyweight': return '40px 64px 1fr 44px'
+    case 'hold':       return '40px 64px 1fr 44px'
   }
 }
 
@@ -244,12 +244,17 @@ export default function ActiveWorkout({
                 }`}
                 style={{ gridTemplateColumns: gridCols(kind) }}
               >
-                {/* Set number / drop indicator */}
-                <div
-                  className={`pl-1 text-callout font-semibold ${isDrop ? 'text-accent' : 'text-label2'}`}
+                {/* Set number — tap to delete (when >1 sets) */}
+                <button
+                  onClick={() => ex.sets.length > 1 ? removeSet(session.id, exIdx, setIdx) : undefined}
+                  disabled={ex.sets.length <= 1}
+                  className={`flex h-8 w-full items-center justify-center rounded-[6px] text-callout font-semibold transition-colors ${
+                    isDrop ? 'text-accent' : 'text-label2'
+                  } ${ex.sets.length > 1 ? 'active:bg-danger/10 active:text-danger' : ''}`}
+                  aria-label={ex.sets.length > 1 ? 'Delete set' : undefined}
                 >
                   {setLabel(ex.sets, setIdx)}
-                </div>
+                </button>
 
                 <div className="text-center text-footnote text-label3">
                   {setHint(prev?.sets[setIdx])}
@@ -320,15 +325,6 @@ export default function ActiveWorkout({
           >
             ↓ Drop
           </button>
-          {ex.sets.length > 1 && (
-            <button
-              onClick={() => removeSet(session.id, exIdx, ex.sets.length - 1)}
-              aria-label="Remove last set"
-              className="grid w-11 place-items-center rounded-[10px] bg-fill text-label3 active:scale-95"
-            >
-              <Trash2 size={17} />
-            </button>
-          )}
         </div>
       </>
     )
