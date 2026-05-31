@@ -166,3 +166,21 @@ export function startOfWeek(d = new Date()): Date {
   x.setDate(x.getDate() - day)
   return x
 }
+
+/** Human-readable duration string for a finished session, e.g. "42m" or "1h 12m". */
+export function sessionDuration(session: WorkoutSession): string {
+  if (!session.finishedAt) return ''
+  const mins = Math.round((session.finishedAt - session.startedAt) / 60_000)
+  if (mins < 60) return `${mins}m`
+  return `${Math.floor(mins / 60)}h ${mins % 60}m`
+}
+
+/** Unique muscle groups worked in a session, in order of first appearance. */
+export function sessionMuscles(session: WorkoutSession, exercises: Exercise[]): string[] {
+  const seen = new Set<string>()
+  for (const ex of session.exercises) {
+    const muscle = exercises.find((e) => e.id === ex.exerciseId)?.muscle
+    if (muscle) seen.add(muscle)
+  }
+  return Array.from(seen)
+}
