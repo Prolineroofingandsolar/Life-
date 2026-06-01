@@ -20,7 +20,7 @@ function toDateKey(dateString: string): string {
 }
 
 function extractSamples(output: QueryOutput<OtherData>): HealthSample[] {
-  return (output.resultData ?? []).map((s) => ({
+  return (output.resultData ?? []).map((s: OtherData) => ({
     date: toDateKey(s.startDate),
     value: Math.round(s.value * 100) / 100,
   }))
