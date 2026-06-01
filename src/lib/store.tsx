@@ -20,6 +20,7 @@ import type {
 } from './types'
 import { dayKey } from './date'
 import { SEED_EXERCISES, SEED_ROUTINES } from './workoutSeed'
+import { syncTasksToWidget } from './widgetSync'
 
 const STORAGE_KEY = 'life.v1'
 
@@ -194,6 +195,7 @@ export function LifeProvider({ children }: { children: ReactNode }) {
   // Persist on every change.
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+    syncTasksToWidget(state.tasks)
   }, [state])
 
   const today = state.care[todayKey] ?? EMPTY_DAY
