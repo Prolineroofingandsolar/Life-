@@ -18,8 +18,11 @@ export default function TabBar<T extends string>({
 }) {
   return (
     <nav
-      className="shrink-0 border-t border-separator/40 safe-bottom"
-      style={{ background: 'rgb(var(--bg))' }}
+      className="shrink-0 border-t border-separator/40"
+      style={{
+        background: 'rgb(var(--bg))',
+        paddingBottom: 'env(safe-area-inset-bottom)',
+      }}
     >
       <div className="flex">
         {tabs.map((t) => {
@@ -31,7 +34,7 @@ export default function TabBar<T extends string>({
               onClick={() => onChange(t.id)}
               aria-current={on ? 'page' : undefined}
               aria-label={t.label}
-              className="flex flex-1 flex-col items-center gap-0.5 pb-2 pt-2"
+              className="flex flex-1 flex-col items-center gap-0.5 pb-2 pt-3"
             >
               <span className={on ? 'text-accent' : 'text-label3'}>
                 <Icon size={24} strokeWidth={on ? 2.3 : 1.8} />
