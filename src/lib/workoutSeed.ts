@@ -171,4 +171,10 @@ export const SEED_ROUTINES: Routine[] = [
     createdAt: 0,
     exercises: [r('back-squat', 3, 8, 120), r('bench-press', 3, 8, 120), r('barbell-row', 3, 8, 120), r('ohp', 3, 10), r('plank', 3, undefined, 45)],
   },
+  {
+    id: 'tpl-glutes',
+    name: 'Glutes & Legs',
+    createdAt: 0,
+    exercises: [r('hip-thrust', 4, 10, 90), r('romanian-deadlift', 3, 10, 90), r('glute-bridge', 3, 15, 60), r('cable-kickback', 3, 12, 60), r('leg-curl', 3, 12, 60), r('adductor-machine', 3, 15, 45)],
+  },
 ]

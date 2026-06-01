@@ -1,14 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { ChevronDown, Check, Plus, X, Trophy, Link2, Trash2 } from 'lucide-react'
+import { ChevronDown, Check, Plus, X, Trophy, Link2, Trash2, RefreshCw } from 'lucide-react'
 import { useLife } from '../lib/store'
-import { exerciseById, isSetPR, lastPerformance, newPRsForSession, sessionSetCount, sessionVolume, setHint } from '../lib/workout'
+import {
+  exerciseById, isSetPR, lastPerformance, newPRsForSession,
+  sessionMuscles, sessionSetCount, sessionVolume, setHint,
+} from '../lib/workout'
 import type { PRHit } from '../lib/workout'
 import type { ExerciseKind, LoggedSet, WorkoutSession } from '../lib/types'
 import ExercisePicker from '../components/ExercisePicker'
 import RestTimer from '../components/RestTimer'
 import Sheet from '../components/Sheet'
 import { spring } from '../lib/motion'
+import { MuscleTag } from '../components/train/MuscleTag'
 
 function elapsedLabel(ms: number) {
   const s = Math.floor(ms / 1000)
@@ -48,7 +52,6 @@ const COLS: Record<ExerciseKind, string[]> = {
   hold:       ['Set', 'Prev', 'Sec', ''],
 }
 
-/** Display label for a set: counts non-drop sets; drop sets show ↓ */
 function setLabel(sets: LoggedSet[], idx: number): string {
   if (sets[idx].isDropSet) return '↓'
   return String(sets.slice(0, idx + 1).filter((s) => !s.isDropSet).length)
@@ -62,6 +65,102 @@ function gridCols(kind: ExerciseKind): string {
     case 'hold':       return '40px 64px 1fr 44px'
   }
 }
+
+/* ── Finish summary sheet content ─────────────────────────────────────── */
+
+function FinishSummary({
+  session,
+  sets,
+  volume,
+  prs,
+  unit,
+  exercises: allEx,
+  onSave,
+  onContinue,
+}: {
+  session: WorkoutSession
+  sets: number
+  volume: number
+  prs: PRHit[]
+  unit: string
+  exercises: ReturnType<typeof useLife>['state']['exercises']
+  onSave: () => void
+  onContinue: () => void
+}) {
+  const dur = (() => {
+    const mins = Math.round((Date.now() - session.startedAt) / 60_000)
+    if (mins < 60) return `${mins}m`
+    return `${Math.floor(mins / 60)}h ${mins % 60}m`
+  })()
+  const muscles = sessionMuscles(session, allEx)
+
+  return (
+    <div className="space-y-4">
+      {/* Stats grid */}
+      <div className="grid grid-cols-3 gap-2">
+        {[
+          { value: dur, label: 'duration' },
+          { value: String(sets), label: 'sets' },
+          { value: `${volume}`, label: `${unit} vol` },
+        ].map(({ value, label }) => (
+          <div
+            key={label}
+            className="rounded-card bg-surface p-3 text-center shadow-card"
+            style={{ border: '0.5px solid rgb(var(--separator) / 0.5)' }}
+          >
+            <div className="tabular text-title3 text-label">{value}</div>
+            <div className="text-caption text-label2">{label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Muscles trained */}
+      {muscles.length > 0 && (
+        <div>
+          <div className="mb-1.5 text-footnote font-medium text-label2">Muscles trained</div>
+          <div className="flex flex-wrap gap-1.5">
+            {muscles.map((m) => <MuscleTag key={m} muscle={m} />)}
+          </div>
+        </div>
+      )}
+
+      {/* PRs */}
+      {prs.length > 0 && (
+        <div
+          className="rounded-card bg-surface p-4 shadow-card"
+          style={{ border: '0.5px solid rgb(var(--separator) / 0.5)' }}
+        >
+          <div className="mb-2 flex items-center gap-2 text-headline text-label">
+            <Trophy size={18} className="text-nourish" /> New personal records
+          </div>
+          <div className="space-y-1">
+            {prs.map((p, i) => (
+              <div key={i} className="text-subhead text-label2">{p.label}</div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Action buttons */}
+      <motion.button
+        whileTap={{ scale: 0.97 }}
+        transition={spring}
+        onClick={onSave}
+        className="w-full rounded-card bg-accent py-3.5 text-headline text-white"
+      >
+        Save workout
+      </motion.button>
+      <button
+        onClick={onContinue}
+        className="w-full py-2.5 text-center text-subhead font-medium text-label2"
+      >
+        Continue editing
+      </button>
+    </div>
+  )
+}
+
+/* ── Main component ───────────────────────────────────────────────────── */
 
 export default function ActiveWorkout({
   session,
@@ -81,6 +180,7 @@ export default function ActiveWorkout({
     removeSet,
     addExerciseToSession,
     removeExerciseFromSession,
+    replaceExerciseInSession,
     linkAsSuperset,
     unlinkSuperset,
     renameSession,
@@ -92,6 +192,7 @@ export default function ActiveWorkout({
 
   const [now, setNow] = useState(Date.now())
   const [picker, setPicker] = useState(false)
+  const [replacingIdx, setReplacingIdx] = useState<number | null>(null)
   const [rest, setRest] = useState<{ key: number; seconds: number } | null>(null)
   const [summary, setSummary] = useState<{ volume: number; sets: number; prs: PRHit[] } | null>(null)
 
@@ -113,11 +214,9 @@ export default function ActiveWorkout({
     toggleSetDone(session.id, exIdx, setIdx)
     if (editing || set.done || !ws.restTimerEnabled) return
 
-    // No rest if the immediately next set in this exercise is a drop set
     const nextSet = session.exercises[exIdx].sets[setIdx + 1]
     if (nextSet?.isDropSet) return
 
-    // No rest if the next exercise is the second half of a superset
     const sid = session.exercises[exIdx].supersetId
     if (sid && session.exercises[exIdx + 1]?.supersetId === sid) return
 
@@ -154,7 +253,6 @@ export default function ActiveWorkout({
     [session.exercises, state.sessions, session.id],
   )
 
-  // Group consecutive exercises that share the same supersetId.
   const exerciseGroups = useMemo(() => {
     const groups: Array<{ indices: number[]; supersetId?: string }> = []
     session.exercises.forEach((ex, i) => {
@@ -174,7 +272,6 @@ export default function ActiveWorkout({
     ? `${new Date(session.finishedAt ?? session.startedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} · ${sessionSetCount(session)} sets · ${liveVolume} ${unitLabel}`
     : `${elapsedLabel(now - session.startedAt)} · ${sessionSetCount(session)} sets · ${liveVolume} ${unitLabel}`
 
-  /** Renders the inner content of one exercise (header + set grid + buttons). */
   const renderExercise = (exIdx: number, inSuperset: boolean) => {
     const ex = session.exercises[exIdx]
     const meta = exerciseById(state.exercises, ex.exerciseId)
@@ -187,12 +284,25 @@ export default function ActiveWorkout({
     const content = (
       <>
         {/* Exercise header */}
-        <div className="mb-2 flex items-center justify-between">
-          <div>
+        <div className="mb-3 flex items-start gap-2">
+          <div className="min-w-0 flex-1">
             <div className="text-headline text-label">{meta?.name ?? 'Exercise'}</div>
-            {meta?.muscle && <div className="text-footnote text-label2">{meta.muscle}</div>}
+            {meta?.muscle && (
+              <div className="mt-1">
+                <MuscleTag muscle={meta.muscle} />
+              </div>
+            )}
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex shrink-0 items-center gap-1">
+            {/* Replace exercise */}
+            <button
+              onClick={() => setReplacingIdx(exIdx)}
+              aria-label="Replace exercise"
+              title="Replace exercise"
+              className="grid h-8 w-8 place-items-center rounded-full text-label3 active:scale-90"
+            >
+              <RefreshCw size={15} strokeWidth={2} />
+            </button>
             {!editing && (
               <button
                 onClick={() =>
@@ -226,9 +336,7 @@ export default function ActiveWorkout({
           style={{ gridTemplateColumns: gridCols(kind) }}
         >
           {cols.map((c, i) => (
-            <div key={i} className={i === 0 ? '' : 'text-center'}>
-              {c}
-            </div>
+            <div key={i} className={i === 0 ? '' : 'text-center'}>{c}</div>
           ))}
         </div>
 
@@ -239,7 +347,6 @@ export default function ActiveWorkout({
             const canDelete = ex.sets.length > 1
             return (
               <div key={setIdx} className="relative overflow-hidden rounded-[10px]">
-                {/* Swipe-to-delete background */}
                 {canDelete && (
                   <div className="absolute inset-y-0 right-0 flex items-center bg-danger pl-4 pr-3 text-white">
                     <Trash2 size={14} />
@@ -251,93 +358,90 @@ export default function ActiveWorkout({
                   dragElastic={{ left: 0.5, right: 0 }}
                   dragMomentum={false}
                   dragSnapToOrigin
-                  onDragEnd={(_, info) => { if (canDelete && info.offset.x < -52) removeSet(session.id, exIdx, setIdx) }}
+                  onDragEnd={(_, info) => {
+                    if (canDelete && info.offset.x < -52) removeSet(session.id, exIdx, setIdx)
+                  }}
                   className="relative rounded-[10px] bg-surface"
                 >
-                <div
-                  className={`grid items-center gap-2 rounded-[10px] px-1 py-1 ${
-                    set.done
-                      ? isDrop ? 'bg-accent/10' : 'bg-move/10'
-                      : isDrop ? 'bg-accent/5' : ''
-                  }`}
-                  style={{ gridTemplateColumns: gridCols(kind) }}
-                >
-                {/* Set number label */}
-                <div
-                  className={`text-center text-callout font-semibold ${isDrop ? 'text-accent' : 'text-label2'}`}
-                >
-                  {setLabel(ex.sets, setIdx)}
-                </div>
-
-                <div className="text-center text-footnote text-label3">
-                  {setHint(prev?.sets[setIdx])}
-                </div>
-
-                {kind === 'weight' && (
-                  <>
-                    <NumCell value={set.weight} placeholder="0" onChange={(v) => updateSet(session.id, exIdx, setIdx, { weight: v })} />
-                    <NumCell value={set.reps}   placeholder="0" onChange={(v) => updateSet(session.id, exIdx, setIdx, { reps: v })} />
-                  </>
-                )}
-                {kind === 'bodyweight' && (
-                  <NumCell value={set.reps} placeholder="0" onChange={(v) => updateSet(session.id, exIdx, setIdx, { reps: v })} />
-                )}
-                {kind === 'cardio' && (
-                  <>
-                    <NumCell value={set.distanceKm} placeholder="0" onChange={(v) => updateSet(session.id, exIdx, setIdx, { distanceKm: v })} />
-                    <NumCell
-                      value={set.durationSec != null ? Math.round(set.durationSec / 60) : undefined}
-                      placeholder="0"
-                      onChange={(v) => updateSet(session.id, exIdx, setIdx, { durationSec: v != null ? v * 60 : undefined })}
-                    />
-                  </>
-                )}
-                {kind === 'hold' && (
-                  <NumCell value={set.durationSec} placeholder="0" onChange={(v) => updateSet(session.id, exIdx, setIdx, { durationSec: v })} />
-                )}
-
-                {/* Done checkbox */}
-                <div className="relative flex items-center justify-center">
-                  <motion.button
-                    whileTap={{ scale: 0.85 }}
-                    transition={spring}
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onClick={() => onToggle(exIdx, setIdx, ex.exerciseId, set)}
-                    aria-label="Complete set"
-                    className={`grid h-8 w-8 place-items-center rounded-[8px] border-2 ${
+                  <div
+                    className={`grid items-center gap-2 rounded-[10px] px-1 py-1 ${
                       set.done
-                        ? isDrop
-                          ? 'border-accent bg-accent text-white'
-                          : 'border-move bg-move text-white'
-                        : 'border-label3 text-transparent'
+                        ? isDrop ? 'bg-accent/10' : 'bg-move/10'
+                        : isDrop ? 'bg-accent/5' : ''
                     }`}
+                    style={{ gridTemplateColumns: gridCols(kind) }}
                   >
-                    <Check size={16} strokeWidth={3} />
-                  </motion.button>
-                  {prFlags[exIdx]?.[setIdx] && (
-                    <span className="pointer-events-none absolute -right-1.5 -top-1.5">
-                      <Trophy size={12} className="text-nourish" fill="currentColor" />
-                    </span>
-                  )}
-                </div>
-                </div>
+                    <div className={`text-center text-callout font-semibold ${isDrop ? 'text-accent' : 'text-label2'}`}>
+                      {setLabel(ex.sets, setIdx)}
+                    </div>
+
+                    <div className="text-center text-footnote text-label3">
+                      {setHint(prev?.sets[setIdx])}
+                    </div>
+
+                    {kind === 'weight' && (
+                      <>
+                        <NumCell value={set.weight} placeholder="0" onChange={(v) => updateSet(session.id, exIdx, setIdx, { weight: v })} />
+                        <NumCell value={set.reps}   placeholder="0" onChange={(v) => updateSet(session.id, exIdx, setIdx, { reps: v })} />
+                      </>
+                    )}
+                    {kind === 'bodyweight' && (
+                      <NumCell value={set.reps} placeholder="0" onChange={(v) => updateSet(session.id, exIdx, setIdx, { reps: v })} />
+                    )}
+                    {kind === 'cardio' && (
+                      <>
+                        <NumCell value={set.distanceKm} placeholder="0" onChange={(v) => updateSet(session.id, exIdx, setIdx, { distanceKm: v })} />
+                        <NumCell
+                          value={set.durationSec != null ? Math.round(set.durationSec / 60) : undefined}
+                          placeholder="0"
+                          onChange={(v) => updateSet(session.id, exIdx, setIdx, { durationSec: v != null ? v * 60 : undefined })}
+                        />
+                      </>
+                    )}
+                    {kind === 'hold' && (
+                      <NumCell value={set.durationSec} placeholder="0" onChange={(v) => updateSet(session.id, exIdx, setIdx, { durationSec: v })} />
+                    )}
+
+                    {/* Done checkbox */}
+                    <div className="relative flex items-center justify-center">
+                      <motion.button
+                        whileTap={{ scale: 0.85 }}
+                        transition={spring}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={() => onToggle(exIdx, setIdx, ex.exerciseId, set)}
+                        aria-label="Complete set"
+                        className={`grid h-8 w-8 place-items-center rounded-[8px] border-2 ${
+                          set.done
+                            ? isDrop ? 'border-accent bg-accent text-white' : 'border-move bg-move text-white'
+                            : 'border-label3 text-transparent'
+                        }`}
+                      >
+                        <Check size={16} strokeWidth={3} />
+                      </motion.button>
+                      {prFlags[exIdx]?.[setIdx] && (
+                        <span className="pointer-events-none absolute -right-1.5 -top-1.5">
+                          <Trophy size={12} className="text-nourish" fill="currentColor" />
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 </motion.div>
               </div>
             )
           })}
         </div>
 
-        {/* Add / drop / remove set buttons */}
+        {/* Set action buttons */}
         <div className="mt-2 flex gap-2">
           <button
             onClick={() => addSet(session.id, exIdx)}
-            className="flex-1 rounded-[10px] bg-fill py-2 text-subhead font-medium text-label2 active:scale-[0.99]"
+            className="flex-1 rounded-[10px] bg-fill py-2.5 text-subhead font-medium text-label2 active:scale-[0.99]"
           >
             + Add set
           </button>
           <button
             onClick={() => addDropSet(session.id, exIdx)}
-            className="rounded-[10px] bg-accent/10 px-4 py-2 text-subhead font-medium text-accent active:scale-[0.99]"
+            className="rounded-[10px] bg-accent/10 px-4 py-2.5 text-subhead font-medium text-accent active:scale-[0.99]"
           >
             ↓ Drop
           </button>
@@ -345,7 +449,6 @@ export default function ActiveWorkout({
       </>
     )
 
-    // Non-superset: content is the card itself
     if (!inSuperset) {
       return (
         <div
@@ -358,7 +461,6 @@ export default function ActiveWorkout({
       )
     }
 
-    // Inside a superset group: just padded content, no card wrapper
     return <div key={exIdx} className="p-4">{content}</div>
   }
 
@@ -394,13 +496,21 @@ export default function ActiveWorkout({
         </div>
       </div>
 
+      {/* Exercise list */}
       <div className="space-y-4 pb-40 pt-4">
+        {session.exercises.length === 0 && (
+          <div className="flex flex-col items-center py-12 text-center">
+            <div className="mb-3 text-4xl">🏋️</div>
+            <p className="text-headline text-label">No exercises yet</p>
+            <p className="mt-1 text-subhead text-label2">Tap "Add exercise" below to get started.</p>
+          </div>
+        )}
+
         {exerciseGroups.map((group, gi) => {
           if (!group.supersetId || group.indices.length < 2) {
             return renderExercise(group.indices[0], false)
           }
 
-          // Superset group — shared card with accent header
           const supersetId = group.supersetId
           return (
             <div
@@ -413,9 +523,7 @@ export default function ActiveWorkout({
                 style={{ background: 'rgb(var(--accent) / 0.08)' }}
               >
                 <Link2 size={13} className="text-accent" strokeWidth={2.2} />
-                <span className="text-caption font-semibold uppercase tracking-wider text-accent">
-                  Superset
-                </span>
+                <span className="text-caption font-semibold uppercase tracking-wider text-accent">Superset</span>
               </div>
               {group.indices.map((exIdx, i) => (
                 <div key={exIdx} className={i > 0 ? 'border-t border-separator/60' : ''}>
@@ -426,65 +534,66 @@ export default function ActiveWorkout({
           )
         })}
 
-        <button
-          onClick={() => setPicker(true)}
-          className="flex w-full items-center justify-center gap-1.5 rounded-card border border-dashed border-separator py-3.5 text-callout font-medium text-accent"
-        >
-          <Plus size={18} /> Add exercise
-        </button>
+        {/* Sticky bottom bar */}
+        <div className="flex gap-2">
+          <button
+            onClick={() => setPicker(true)}
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-card border border-dashed border-separator py-3.5 text-callout font-medium text-accent"
+          >
+            <Plus size={18} /> Add exercise
+          </button>
+          {!editing && (
+            <motion.button
+              whileTap={{ scale: 0.97 }}
+              transition={spring}
+              onClick={finish}
+              className="flex items-center gap-1.5 rounded-card bg-move px-5 py-3.5 text-callout font-semibold text-white"
+            >
+              Finish
+            </motion.button>
+          )}
+        </div>
 
         <button onClick={discard} className="w-full py-2 text-center text-subhead text-danger">
           {editing ? 'Delete workout' : 'Discard workout'}
         </button>
       </div>
 
+      {/* Add exercise picker */}
       <ExercisePicker
         open={picker}
         onClose={() => setPicker(false)}
         onPick={(id) => addExerciseToSession(session.id, id)}
       />
 
+      {/* Replace exercise picker */}
+      <ExercisePicker
+        open={replacingIdx !== null}
+        onClose={() => setReplacingIdx(null)}
+        onPick={(id) => {
+          if (replacingIdx !== null) replaceExerciseInSession(session.id, replacingIdx, id)
+          setReplacingIdx(null)
+        }}
+      />
+
+      {/* Rest timer */}
       <AnimatePresence>
         {rest && <RestTimer key={rest.key} seconds={rest.seconds} onClose={() => setRest(null)} />}
       </AnimatePresence>
 
       {/* Finish summary sheet */}
-      <Sheet open={!!summary} onClose={commitFinish} title="Workout complete">
+      <Sheet open={!!summary} onClose={() => setSummary(null)} title="Workout summary">
         {summary && (
-          <div>
-            <div className="mb-4 flex gap-3">
-              <div className="flex-1 rounded-card bg-surface p-4 text-center shadow-card">
-                <div className="tabular text-title2 text-label">{summary.sets}</div>
-                <div className="text-footnote text-label2">sets</div>
-              </div>
-              <div className="flex-1 rounded-card bg-surface p-4 text-center shadow-card">
-                <div className="tabular text-title2 text-label">{summary.volume}</div>
-                <div className="text-footnote text-label2">{unitLabel} volume</div>
-              </div>
-            </div>
-            {summary.prs.length > 0 && (
-              <div className="mb-4 rounded-card bg-surface p-4 shadow-card">
-                <div className="mb-2 flex items-center gap-2 text-headline text-label">
-                  <Trophy size={18} className="text-nourish" /> New personal records
-                </div>
-                <div className="space-y-1">
-                  {summary.prs.map((p, i) => (
-                    <div key={i} className="text-subhead text-label2">
-                      {p.label}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            <motion.button
-              whileTap={{ scale: 0.97 }}
-              transition={spring}
-              onClick={commitFinish}
-              className="w-full rounded-card bg-accent py-3.5 text-headline text-white"
-            >
-              Done
-            </motion.button>
-          </div>
+          <FinishSummary
+            session={session}
+            sets={summary.sets}
+            volume={summary.volume}
+            prs={summary.prs}
+            unit={unitLabel}
+            exercises={state.exercises}
+            onSave={commitFinish}
+            onContinue={() => setSummary(null)}
+          />
         )}
       </Sheet>
     </div>

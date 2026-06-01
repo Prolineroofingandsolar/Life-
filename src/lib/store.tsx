@@ -130,6 +130,7 @@ interface LifeContextValue {
   removeSet: (sessionId: string, exIdx: number, setIdx: number) => void
   addExerciseToSession: (sessionId: string, exerciseId: string) => void
   removeExerciseFromSession: (sessionId: string, exIdx: number) => void
+  replaceExerciseInSession: (sessionId: string, exIdx: number, newExerciseId: string) => void
   linkAsSuperset: (sessionId: string, exIdxA: number, exIdxB: number) => void
   unlinkSuperset: (sessionId: string, exIdx: number) => void
   renameSession: (sessionId: string, name: string) => void
@@ -373,6 +374,11 @@ export function LifeProvider({ children }: { children: ReactNode }) {
         }),
       removeExerciseFromSession: (id, exIdx) =>
         mutateSession(id, (s) => ({ ...s, exercises: s.exercises.filter((_, i) => i !== exIdx) })),
+      replaceExerciseInSession: (id, exIdx, newExerciseId) =>
+        mutateSession(id, (s) => ({
+          ...s,
+          exercises: s.exercises.map((ex, i) => i !== exIdx ? ex : { ...ex, exerciseId: newExerciseId }),
+        })),
       renameSession: (id, name) => mutateSession(id, (s) => ({ ...s, name: name || s.name })),
       finishSession: (id) => mutateSession(id, (s) => ({ ...s, finishedAt: Date.now() })),
       discardSession: (id) => setState((s) => ({ ...s, sessions: s.sessions.filter((x) => x.id !== id) })),
