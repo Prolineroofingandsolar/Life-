@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   Bell, Droplets, UtensilsCrossed, Timer, Wind,
-  Scale, Trophy, ChevronDown, ChevronUp, Trash2,
+  Scale, Trophy, ChevronDown, ChevronUp, Trash2, Heart,
 } from 'lucide-react'
 import { useLife } from '../lib/store'
 import {
@@ -19,6 +19,8 @@ import { muscleColor } from '../components/train/MuscleTag'
 import MiniChart from '../components/MiniChart'
 import { spring } from '../lib/motion'
 import { dayKey } from '../lib/date'
+import { isHealthKitAvailable, requestHealthKitPermissions, importFromHealthKit } from '../lib/healthkit'
+import type { BodyCompEntry } from '../lib/types'
 
 /* ── Weight tracker ──────────────────────────────────────────────────── */
 
@@ -277,13 +279,156 @@ function LiftRecords() {
   )
 }
 
+/* ── Body Composition ───────────────────────────────────────────────── */
+
+type CompMetric = { key: keyof Omit<BodyCompEntry, 'date'>; label: string; unit: string; color: string }
+
+const COMP_METRICS: CompMetric[] = [
+  { key: 'bodyFatPct', label: 'Body Fat', unit: '%', color: '#ff9f0a' },
+  { key: 'leanMassKg', label: 'Lean Mass', unit: 'kg', color: '#30d158' },
+  { key: 'bmi', label: 'BMI', unit: '', color: '#32ade6' },
+]
+
+function BodyComposition() {
+  const { state, mergeBodyCompEntries } = useLife()
+  const log = state.bodyCompLog
+  const [importing, setImporting] = useState(false)
+  const [importMsg, setImportMsg] = useState('')
+  const [activeMetric, setActiveMetric] = useState<CompMetric>(COMP_METRICS[0])
+
+  const sorted = useMemo(() => [...log].sort((a, b) => b.date.localeCompare(a.date)), [log])
+
+  const chartData = useMemo(() => {
+    return [...log]
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .slice(-30)
+      .filter((e) => e[activeMetric.key] != null)
+      .map((e) => ({ value: e[activeMetric.key] as number, label: e.date }))
+  }, [log, activeMetric])
+
+  const latest = sorted.find((e) => e[activeMetric.key] != null)
+  const latestVal = latest ? latest[activeMetric.key] : null
+
+  const handleImport = async () => {
+    setImporting(true)
+    setImportMsg('')
+    try {
+      const ok = await requestHealthKitPermissions()
+      if (!ok) { setImportMsg('Permission denied.'); setImporting(false); return }
+      const data = await importFromHealthKit(365)
+      const byDate = new Map<string, BodyCompEntry>()
+      for (const s of data.bodyFat) {
+        const e = byDate.get(s.date) ?? { date: s.date }
+        e.bodyFatPct = Math.round(s.value * 1000) / 10
+        byDate.set(s.date, e)
+      }
+      for (const s of data.leanMass) {
+        const e = byDate.get(s.date) ?? { date: s.date }
+        e.leanMassKg = s.value
+        byDate.set(s.date, e)
+      }
+      for (const s of data.bmi) {
+        const e = byDate.get(s.date) ?? { date: s.date }
+        e.bmi = s.value
+        byDate.set(s.date, e)
+      }
+      const entries = Array.from(byDate.values())
+      mergeBodyCompEntries(entries)
+      setImportMsg(`Imported ${entries.length} records.`)
+    } catch {
+      setImportMsg('Import failed. Make sure HealthKit is enabled.')
+    }
+    setImporting(false)
+  }
+
+  const available = isHealthKitAvailable()
+
+  return (
+    <div>
+      {available && (
+        <Card className="mb-3 p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-body font-semibold text-label">Apple Health</div>
+              <div className="text-footnote text-label2">Sync Renpho data via Health app</div>
+            </div>
+            <motion.button
+              whileTap={{ scale: 0.95 }}
+              transition={spring}
+              onClick={handleImport}
+              disabled={importing}
+              className="flex items-center gap-1.5 rounded-[10px] bg-[#ff375f] px-3 py-2 text-subhead font-semibold text-white disabled:opacity-40"
+            >
+              <Heart size={14} fill="currentColor" />
+              {importing ? 'Importing…' : 'Import'}
+            </motion.button>
+          </div>
+          {importMsg && <p className="mt-2 text-footnote text-label2">{importMsg}</p>}
+        </Card>
+      )}
+
+      {/* Metric picker */}
+      <div className="mb-3 flex gap-1.5">
+        {COMP_METRICS.map((m) => (
+          <button
+            key={m.key}
+            onClick={() => setActiveMetric(m)}
+            className="relative flex-1 rounded-[10px] py-2 text-footnote font-medium transition-colors"
+            style={{
+              background: activeMetric.key === m.key ? m.color + '22' : 'rgb(var(--fill))',
+              color: activeMetric.key === m.key ? m.color : 'rgb(var(--label3))',
+            }}
+          >
+            {m.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Current value card */}
+      <Card className="mb-3 p-4">
+        <div className="mb-1 text-footnote text-label2">{activeMetric.label}</div>
+        <div className="tabular text-largetitle text-label">
+          {latestVal != null ? latestVal : '—'}
+          {latestVal != null && <span className="ml-1 text-title3 text-label2">{activeMetric.unit}</span>}
+        </div>
+        {chartData.length >= 2 && (
+          <div className="mt-3">
+            <MiniChart data={chartData} color={activeMetric.color} height={56} />
+          </div>
+        )}
+        {log.length === 0 && (
+          <p className="mt-2 text-footnote text-label2">
+            {available ? 'Tap Import to pull data from Apple Health.' : 'No data yet.'}
+          </p>
+        )}
+      </Card>
+
+      {/* History */}
+      {sorted.filter((e) => e[activeMetric.key] != null).length > 0 && (
+        <div className="overflow-hidden rounded-card bg-surface shadow-card" style={{ border: '0.5px solid rgb(var(--separator) / 0.5)' }}>
+          {sorted.filter((e) => e[activeMetric.key] != null).slice(0, 10).map((entry) => (
+            <div key={entry.date} className="flex items-center justify-between px-4 py-3 [&+&]:border-t [&+&]:border-separator/60">
+              <div className="text-body text-label">
+                {new Date(entry.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+              </div>
+              <span className="tabular text-headline text-label">
+                {entry[activeMetric.key]}{activeMetric.unit}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 /* ── Screen ──────────────────────────────────────────────────────────── */
 
 export default function Body() {
   const { state, setCareSettings } = useLife()
   const cs = state.careSettings
   const [perm, setPerm] = useState(notificationPermission())
-  const [bodyTab, setBodyTab] = useState<'weight' | 'records'>('weight')
+  const [bodyTab, setBodyTab] = useState<'weight' | 'composition' | 'records'>('weight')
 
   const enableReminders = async () => {
     const p = await requestNotifications()
@@ -303,7 +448,8 @@ export default function Body() {
       <div className="mb-4 flex gap-1 rounded-[12px] bg-fill p-1">
         {[
           { id: 'weight' as const, label: 'Weight', icon: Scale },
-          { id: 'records' as const, label: 'Lift Records', icon: Trophy },
+          { id: 'composition' as const, label: 'Composition', icon: Heart },
+          { id: 'records' as const, label: 'Lifts', icon: Trophy },
         ].map((t) => {
           const Icon = t.icon
           const active = bodyTab === t.id
@@ -339,6 +485,17 @@ export default function Body() {
             transition={{ duration: 0.18 }}
           >
             <WeightTracker />
+          </motion.div>
+        )}
+        {bodyTab === 'composition' && (
+          <motion.div
+            key="composition"
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.18 }}
+          >
+            <BodyComposition />
           </motion.div>
         )}
         {bodyTab === 'records' && (

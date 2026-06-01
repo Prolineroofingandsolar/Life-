@@ -90,6 +90,13 @@ export interface WeightEntry {
   kg: number
 }
 
+export interface BodyCompEntry {
+  date: string  // YYYY-MM-DD
+  bodyFatPct?: number
+  leanMassKg?: number
+  bmi?: number
+}
+
 export interface SessionExercise {
   exerciseId: string
   sets: LoggedSet[]
@@ -158,6 +165,7 @@ export interface LifeState {
   sessions: WorkoutSession[]
   workoutSettings: WorkoutSettings
   bodyWeightLog: WeightEntry[]
+  bodyCompLog: BodyCompEntry[]
   // Habits
   habits: Habit[]
   habitLogs: HabitLogs

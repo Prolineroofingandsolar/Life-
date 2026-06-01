@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState } from 
 import type { ReactNode } from 'react'
 import type {
   Bill,
+  BodyCompEntry,
   CareDay,
   Category,
   DueDate,
@@ -14,6 +15,7 @@ import type {
   RoutineExercise,
   SessionExercise,
   Task,
+  WeightEntry,
   WorkoutSession,
 } from './types'
 import { dayKey } from './date'
@@ -58,6 +60,7 @@ const DEFAULT_STATE: LifeState = {
   ],
   habitLogs: {},
   bodyWeightLog: [],
+  bodyCompLog: [],
 }
 
 function load(): LifeState {
@@ -85,6 +88,7 @@ function load(): LifeState {
       habits: parsed.habits ?? DEFAULT_STATE.habits,
       habitLogs: parsed.habitLogs ?? {},
       bodyWeightLog: parsed.bodyWeightLog ?? [],
+      bodyCompLog: parsed.bodyCompLog ?? [],
     }
   } catch {
     return DEFAULT_STATE
@@ -139,6 +143,9 @@ interface LifeContextValue {
   // body weight
   logBodyWeight: (kg: number, date?: string) => void
   deleteWeightEntry: (date: string) => void
+  // body composition
+  mergeBodyCompEntries: (entries: BodyCompEntry[]) => void
+  mergeWeightEntries: (entries: WeightEntry[]) => void
   linkAsSuperset: (sessionId: string, exIdxA: number, exIdxB: number) => void
   unlinkSuperset: (sessionId: string, exIdx: number) => void
   renameSession: (sessionId: string, name: string) => void
@@ -415,6 +422,18 @@ export function LifeProvider({ children }: { children: ReactNode }) {
       },
       deleteWeightEntry: (date) =>
         setState((s) => ({ ...s, bodyWeightLog: s.bodyWeightLog.filter((e) => e.date !== date) })),
+      mergeWeightEntries: (entries) =>
+        setState((s) => {
+          const map = new Map(s.bodyWeightLog.map((e) => [e.date, e]))
+          for (const e of entries) if (!map.has(e.date)) map.set(e.date, e)
+          return { ...s, bodyWeightLog: Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date)) }
+        }),
+      mergeBodyCompEntries: (entries) =>
+        setState((s) => {
+          const map = new Map(s.bodyCompLog.map((e) => [e.date, e]))
+          for (const e of entries) map.set(e.date, { ...(map.get(e.date) ?? {}), ...e })
+          return { ...s, bodyCompLog: Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date)) }
+        }),
       renameSession: (id, name) => mutateSession(id, (s) => ({ ...s, name: name || s.name })),
       finishSession: (id) => mutateSession(id, (s) => ({ ...s, finishedAt: Date.now() })),
       discardSession: (id) => setState((s) => ({ ...s, sessions: s.sessions.filter((x) => x.id !== id) })),
