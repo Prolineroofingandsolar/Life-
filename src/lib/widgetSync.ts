@@ -1,4 +1,5 @@
 import { registerPlugin } from '@capacitor/core'
+import { Capacitor } from '@capacitor/core'
 
 interface LifePluginInterface {
   syncTasks(options: { tasksJSON: string }): Promise<void>
@@ -15,10 +16,11 @@ export interface WidgetTask {
 }
 
 export async function syncTasksToWidget(tasks: WidgetTask[]) {
+  if (!Capacitor.isNativePlatform()) return
   try {
     const today = tasks.filter((t) => t.dueDate === 'today' && !t.done)
     await LifePlugin.syncTasks({ tasksJSON: JSON.stringify(today) })
   } catch {
-    // silently ignore — widget sync is best-effort
+    // plugin not available yet — silently ignore
   }
 }
