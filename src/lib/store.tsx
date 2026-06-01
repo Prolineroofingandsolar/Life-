@@ -12,6 +12,7 @@ import type {
   LoggedSet,
   Routine,
   RoutineExercise,
+  SessionExercise,
   Task,
   WorkoutSession,
 } from './types'
@@ -56,6 +57,7 @@ const DEFAULT_STATE: LifeState = {
     { id: 'h4', name: 'No doomscrolling', emoji: '📵', color: '#ff375f', kind: 'break', cadence: 'daily', createdAt: Date.now() },
   ],
   habitLogs: {},
+  bodyWeightLog: [],
 }
 
 function load(): LifeState {
@@ -82,6 +84,7 @@ function load(): LifeState {
       // Seed example habits only for saves that predate the habits feature.
       habits: parsed.habits ?? DEFAULT_STATE.habits,
       habitLogs: parsed.habitLogs ?? {},
+      bodyWeightLog: parsed.bodyWeightLog ?? [],
     }
   } catch {
     return DEFAULT_STATE
@@ -127,10 +130,15 @@ interface LifeContextValue {
   toggleSetDone: (sessionId: string, exIdx: number, setIdx: number) => void
   addSet: (sessionId: string, exIdx: number) => void
   addDropSet: (sessionId: string, exIdx: number) => void
+  addWarmupSet: (sessionId: string, exIdx: number) => void
   removeSet: (sessionId: string, exIdx: number, setIdx: number) => void
   addExerciseToSession: (sessionId: string, exerciseId: string) => void
   removeExerciseFromSession: (sessionId: string, exIdx: number) => void
   replaceExerciseInSession: (sessionId: string, exIdx: number, newExerciseId: string) => void
+  reorderExercisesInSession: (sessionId: string, newExercises: SessionExercise[]) => void
+  // body weight
+  logBodyWeight: (kg: number, date?: string) => void
+  deleteWeightEntry: (date: string) => void
   linkAsSuperset: (sessionId: string, exIdxA: number, exIdxB: number) => void
   unlinkSuperset: (sessionId: string, exIdx: number) => void
   renameSession: (sessionId: string, name: string) => void
@@ -343,6 +351,20 @@ export function LifeProvider({ children }: { children: ReactNode }) {
             return { ...ex, sets: [...ex.sets, drop] }
           }),
         })),
+      addWarmupSet: (id, exIdx) =>
+        mutateSession(id, (s) => ({
+          ...s,
+          exercises: s.exercises.map((ex, i) => {
+            if (i !== exIdx) return ex
+            // Insert warmup before the first working set
+            const firstWorkingIdx = ex.sets.findIndex((set) => !set.isWarmup)
+            const insertAt = firstWorkingIdx === -1 ? ex.sets.length : firstWorkingIdx
+            const warmup: LoggedSet = { done: false, isWarmup: true }
+            const sets = [...ex.sets]
+            sets.splice(insertAt, 0, warmup)
+            return { ...ex, sets }
+          }),
+        })),
       removeSet: (id, exIdx, setIdx) =>
         mutateSession(id, (s) => ({
           ...s,
@@ -379,6 +401,20 @@ export function LifeProvider({ children }: { children: ReactNode }) {
           ...s,
           exercises: s.exercises.map((ex, i) => i !== exIdx ? ex : { ...ex, exerciseId: newExerciseId }),
         })),
+      reorderExercisesInSession: (id, newExercises) =>
+        mutateSession(id, (s) => ({ ...s, exercises: newExercises })),
+      logBodyWeight: (kg, date) => {
+        const d = date ?? dayKey()
+        setState((s) => ({
+          ...s,
+          bodyWeightLog: [
+            ...s.bodyWeightLog.filter((e) => e.date !== d),
+            { date: d, kg },
+          ].sort((a, b) => a.date.localeCompare(b.date)),
+        }))
+      },
+      deleteWeightEntry: (date) =>
+        setState((s) => ({ ...s, bodyWeightLog: s.bodyWeightLog.filter((e) => e.date !== date) })),
       renameSession: (id, name) => mutateSession(id, (s) => ({ ...s, name: name || s.name })),
       finishSession: (id) => mutateSession(id, (s) => ({ ...s, finishedAt: Date.now() })),
       discardSession: (id) => setState((s) => ({ ...s, sessions: s.sessions.filter((x) => x.id !== id) })),

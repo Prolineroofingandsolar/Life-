@@ -9,19 +9,22 @@ export function isFinished(s: WorkoutSession): boolean {
   return s.finishedAt != null
 }
 
-/** Total weight moved in a session (kg·reps over completed weighted sets). */
+/** Total weight moved in a session (kg·reps over completed working sets — warmups excluded). */
 export function sessionVolume(session: WorkoutSession): number {
   let v = 0
   for (const ex of session.exercises) {
     for (const set of ex.sets) {
-      if (set.done && set.weight && set.reps) v += set.weight * set.reps
+      if (set.done && !set.isWarmup && set.weight && set.reps) v += set.weight * set.reps
     }
   }
   return Math.round(v)
 }
 
 export function sessionSetCount(session: WorkoutSession): number {
-  return session.exercises.reduce((n, ex) => n + ex.sets.filter((s) => s.done).length, 0)
+  return session.exercises.reduce(
+    (n, ex) => n + ex.sets.filter((s) => s.done && !s.isWarmup).length,
+    0,
+  )
 }
 
 /** Epley estimated one-rep max. */
@@ -39,7 +42,7 @@ export interface ExercisePRs {
 
 function foldSets(sets: LoggedSet[], pr: ExercisePRs) {
   for (const s of sets) {
-    if (!s.done) continue
+    if (!s.done || s.isWarmup) continue
     if (s.weight != null) pr.bestWeight = Math.max(pr.bestWeight ?? 0, s.weight)
     if (s.weight != null && s.reps != null) pr.best1RM = Math.max(pr.best1RM ?? 0, estimated1RM(s.weight, s.reps))
     if (s.reps != null) pr.bestReps = Math.max(pr.bestReps ?? 0, s.reps)
@@ -107,7 +110,7 @@ export function isSetPR(
   exerciseId: string,
   set: LoggedSet,
 ): boolean {
-  if (!set.done) return false
+  if (!set.done || set.isWarmup) return false
   const prior = computePRs(
     sessions.filter((s) => isFinished(s) && s.id !== currentSessionId),
     exerciseId,

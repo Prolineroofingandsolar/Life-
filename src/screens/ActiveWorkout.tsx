@@ -1,13 +1,13 @@
-import { useEffect, useMemo, useState } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
-import { ChevronDown, Check, Plus, X, Trophy, Link2, Trash2, RefreshCw } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { AnimatePresence, motion, Reorder, useDragControls } from 'framer-motion'
+import { ChevronDown, Check, Plus, X, Trophy, Link2, Trash2, RefreshCw, GripVertical, AlertTriangle } from 'lucide-react'
 import { useLife } from '../lib/store'
 import {
   exerciseById, isSetPR, lastPerformance, newPRsForSession,
   sessionMuscles, sessionSetCount, sessionVolume, setHint,
 } from '../lib/workout'
 import type { PRHit } from '../lib/workout'
-import type { ExerciseKind, LoggedSet, WorkoutSession } from '../lib/types'
+import type { ExerciseKind, LoggedSet, SessionExercise, WorkoutSession } from '../lib/types'
 import ExercisePicker from '../components/ExercisePicker'
 import RestTimer from '../components/RestTimer'
 import Sheet from '../components/Sheet'
@@ -53,8 +53,10 @@ const COLS: Record<ExerciseKind, string[]> = {
 }
 
 function setLabel(sets: LoggedSet[], idx: number): string {
-  if (sets[idx].isDropSet) return '↓'
-  return String(sets.slice(0, idx + 1).filter((s) => !s.isDropSet).length)
+  const set = sets[idx]
+  if (set.isWarmup) return 'W'
+  if (set.isDropSet) return '↓'
+  return String(sets.slice(0, idx + 1).filter((s) => !s.isDropSet && !s.isWarmup).length)
 }
 
 function gridCols(kind: ExerciseKind): string {
@@ -66,7 +68,24 @@ function gridCols(kind: ExerciseKind): string {
   }
 }
 
-/* ── Finish summary sheet content ─────────────────────────────────────── */
+/* ── Exercise group type ──────────────────────────────────────────────── */
+
+type ExGroup = { exercises: SessionExercise[]; supersetId?: string; id: string }
+
+function buildGroups(exercises: SessionExercise[]): ExGroup[] {
+  const groups: ExGroup[] = []
+  exercises.forEach((ex, i) => {
+    const sid = ex.supersetId
+    if (sid && groups.length > 0 && groups.at(-1)?.supersetId === sid) {
+      groups.at(-1)!.exercises.push(ex)
+    } else {
+      groups.push({ exercises: [ex], supersetId: sid ?? undefined, id: `${ex.exerciseId}-${i}` })
+    }
+  })
+  return groups
+}
+
+/* ── Finish summary ───────────────────────────────────────────────────── */
 
 function FinishSummary({
   session,
@@ -96,7 +115,6 @@ function FinishSummary({
 
   return (
     <div className="space-y-4">
-      {/* Stats grid */}
       <div className="grid grid-cols-3 gap-2">
         {[
           { value: dur, label: 'duration' },
@@ -114,7 +132,6 @@ function FinishSummary({
         ))}
       </div>
 
-      {/* Muscles trained */}
       {muscles.length > 0 && (
         <div>
           <div className="mb-1.5 text-footnote font-medium text-label2">Muscles trained</div>
@@ -124,7 +141,6 @@ function FinishSummary({
         </div>
       )}
 
-      {/* PRs */}
       {prs.length > 0 && (
         <div
           className="rounded-card bg-surface p-4 shadow-card"
@@ -141,7 +157,6 @@ function FinishSummary({
         </div>
       )}
 
-      {/* Action buttons */}
       <motion.button
         whileTap={{ scale: 0.97 }}
         transition={spring}
@@ -157,6 +172,280 @@ function FinishSummary({
         Continue editing
       </button>
     </div>
+  )
+}
+
+/* ── Drag handle ──────────────────────────────────────────────────────── */
+
+function DragHandle({ controls }: { controls: ReturnType<typeof useDragControls> }) {
+  return (
+    <button
+      className="flex h-10 w-8 touch-none items-center justify-center text-label3"
+      onPointerDown={(e) => { e.preventDefault(); controls.start(e) }}
+      aria-label="Drag to reorder"
+    >
+      <GripVertical size={18} strokeWidth={1.8} />
+    </button>
+  )
+}
+
+/* ── Single exercise group item (Reorder.Item wrapper) ─────────────────── */
+
+function ExGroupItem({
+  group,
+  allExercises,
+  sessions,
+  prFlags,
+  exIndices,
+  editing,
+  onToggle,
+  onReplace,
+  onRemove,
+  onLinkSuperset,
+  onAddSet,
+  onAddWarmup,
+  onAddDrop,
+  onRemoveSet,
+  onUpdateSet,
+}: {
+  group: ExGroup
+  allExercises: ReturnType<typeof useLife>['state']['exercises']
+  sessions: WorkoutSession[]
+  prFlags: boolean[][]
+  exIndices: number[]
+  editing: boolean
+  onToggle: (exIdx: number, setIdx: number, exerciseId: string, set: LoggedSet) => void
+  onReplace: (exIdx: number) => void
+  onRemove: (exIdx: number) => void
+  onLinkSuperset: (exIdx: number) => void
+  onAddSet: (exIdx: number) => void
+  onAddWarmup: (exIdx: number) => void
+  onAddDrop: (exIdx: number) => void
+  onRemoveSet: (exIdx: number, setIdx: number) => void
+  onUpdateSet: (exIdx: number, setIdx: number, patch: Partial<LoggedSet>) => void
+}) {
+  const controls = useDragControls()
+  const isSuperset = group.exercises.length > 1
+
+  const renderExerciseContent = (ex: SessionExercise, exIdx: number) => {
+    const meta = exerciseById(allExercises, ex.exerciseId)
+    const kind = meta?.kind ?? 'weight'
+    const cols = COLS[kind]
+    const prev = lastPerformance(sessions, ex.exerciseId)
+    const isLinked = !!ex.supersetId
+    const canLink = !isLinked
+
+    return (
+      <div key={exIdx} className={isSuperset ? 'p-4' : ''}>
+        {/* Header */}
+        <div className="mb-3 flex items-start gap-1">
+          {!isSuperset && <DragHandle controls={controls} />}
+          <div className="min-w-0 flex-1">
+            <div className="text-headline text-label">{meta?.name ?? 'Exercise'}</div>
+            {meta?.muscle && <div className="mt-1"><MuscleTag muscle={meta.muscle} /></div>}
+          </div>
+          <div className="flex shrink-0 items-center gap-0.5">
+            <button
+              onClick={() => onReplace(exIdx)}
+              aria-label="Replace exercise"
+              className="grid h-8 w-8 place-items-center text-label3 active:scale-90"
+            >
+              <RefreshCw size={14} strokeWidth={2} />
+            </button>
+            {!editing && !isSuperset && (
+              <button
+                onClick={() => onLinkSuperset(exIdx)}
+                disabled={!canLink}
+                aria-label="Superset with next exercise"
+                className="grid h-8 w-8 place-items-center text-label3 disabled:opacity-25 active:scale-90"
+              >
+                <Link2 size={15} strokeWidth={2} />
+              </button>
+            )}
+            <button
+              onClick={() => onRemove(exIdx)}
+              aria-label="Remove exercise"
+              className="grid h-8 w-8 place-items-center text-label3 active:scale-90"
+            >
+              <X size={19} />
+            </button>
+          </div>
+        </div>
+
+        {/* Column headers */}
+        <div
+          className="mb-1 grid items-center gap-2 px-1 text-caption font-medium uppercase tracking-wide text-label3"
+          style={{ gridTemplateColumns: gridCols(kind) }}
+        >
+          {cols.map((c, i) => (
+            <div key={i} className={i === 0 ? '' : 'text-center'}>{c}</div>
+          ))}
+        </div>
+
+        {/* Set rows */}
+        <div className="space-y-1.5">
+          {ex.sets.map((set, setIdx) => {
+            const isDrop = !!set.isDropSet
+            const isWarmup = !!set.isWarmup
+            const canDelete = ex.sets.length > 1
+
+            const rowBg = set.done
+              ? isWarmup ? 'bg-amber-500/10' : isDrop ? 'bg-accent/10' : 'bg-move/10'
+              : isWarmup ? 'bg-amber-500/5' : isDrop ? 'bg-accent/5' : ''
+
+            const labelColor = isWarmup
+              ? 'text-amber-500'
+              : isDrop ? 'text-accent' : 'text-label2'
+
+            return (
+              <div key={setIdx} className="relative overflow-hidden rounded-[10px]">
+                {canDelete && (
+                  <div className="absolute inset-y-0 right-0 flex items-center bg-danger pl-4 pr-3 text-white">
+                    <Trash2 size={14} />
+                  </div>
+                )}
+                <motion.div
+                  drag={canDelete ? 'x' : false}
+                  dragConstraints={{ left: -72, right: 0 }}
+                  dragElastic={{ left: 0.5, right: 0 }}
+                  dragMomentum={false}
+                  dragSnapToOrigin
+                  onDragEnd={(_, info) => {
+                    if (canDelete && info.offset.x < -52) onRemoveSet(exIdx, setIdx)
+                  }}
+                  className="relative rounded-[10px] bg-surface"
+                >
+                  <div
+                    className={`grid items-center gap-2 rounded-[10px] px-1 py-1 ${rowBg}`}
+                    style={{ gridTemplateColumns: gridCols(kind) }}
+                  >
+                    <div className={`text-center text-callout font-semibold ${labelColor}`}>
+                      {setLabel(ex.sets, setIdx)}
+                    </div>
+
+                    <div className="text-center text-footnote text-label3">
+                      {setHint(prev?.sets[setIdx])}
+                    </div>
+
+                    {kind === 'weight' && (
+                      <>
+                        <NumCell value={set.weight} placeholder="0" onChange={(v) => onUpdateSet(exIdx, setIdx, { weight: v })} />
+                        <NumCell value={set.reps}   placeholder="0" onChange={(v) => onUpdateSet(exIdx, setIdx, { reps: v })} />
+                      </>
+                    )}
+                    {kind === 'bodyweight' && (
+                      <NumCell value={set.reps} placeholder="0" onChange={(v) => onUpdateSet(exIdx, setIdx, { reps: v })} />
+                    )}
+                    {kind === 'cardio' && (
+                      <>
+                        <NumCell value={set.distanceKm} placeholder="0" onChange={(v) => onUpdateSet(exIdx, setIdx, { distanceKm: v })} />
+                        <NumCell
+                          value={set.durationSec != null ? Math.round(set.durationSec / 60) : undefined}
+                          placeholder="0"
+                          onChange={(v) => onUpdateSet(exIdx, setIdx, { durationSec: v != null ? v * 60 : undefined })}
+                        />
+                      </>
+                    )}
+                    {kind === 'hold' && (
+                      <NumCell value={set.durationSec} placeholder="0" onChange={(v) => onUpdateSet(exIdx, setIdx, { durationSec: v })} />
+                    )}
+
+                    {/* Done checkbox */}
+                    <div className="relative flex items-center justify-center">
+                      <motion.button
+                        whileTap={{ scale: 0.85 }}
+                        transition={spring}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={() => onToggle(exIdx, setIdx, ex.exerciseId, set)}
+                        aria-label="Complete set"
+                        className={`grid h-8 w-8 place-items-center rounded-[8px] border-2 ${
+                          set.done
+                            ? isWarmup ? 'border-amber-500 bg-amber-500 text-white'
+                            : isDrop   ? 'border-accent bg-accent text-white'
+                                       : 'border-move bg-move text-white'
+                            : 'border-label3 text-transparent'
+                        }`}
+                      >
+                        <Check size={16} strokeWidth={3} />
+                      </motion.button>
+                      {prFlags[exIdx]?.[setIdx] && (
+                        <span className="pointer-events-none absolute -right-1.5 -top-1.5">
+                          <Trophy size={12} className="text-nourish" fill="currentColor" />
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </motion.div>
+              </div>
+            )
+          })}
+        </div>
+
+        {/* Set action buttons */}
+        <div className="mt-2 flex gap-1.5">
+          <button
+            onClick={() => onAddSet(exIdx)}
+            className="flex-1 rounded-[10px] bg-fill py-2.5 text-subhead font-medium text-label2 active:scale-[0.99]"
+          >
+            + Set
+          </button>
+          <button
+            onClick={() => onAddWarmup(exIdx)}
+            className="rounded-[10px] px-3 py-2.5 text-subhead font-medium text-amber-500 active:scale-[0.99]"
+            style={{ background: 'rgb(245 158 11 / 0.1)' }}
+          >
+            W Warm-up
+          </button>
+          <button
+            onClick={() => onAddDrop(exIdx)}
+            className="rounded-[10px] bg-accent/10 px-3 py-2.5 text-subhead font-medium text-accent active:scale-[0.99]"
+          >
+            ↓ Drop
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  if (!isSuperset) {
+    return (
+      <Reorder.Item
+        value={group}
+        dragListener={false}
+        dragControls={controls}
+        className="rounded-card bg-surface shadow-card"
+        style={{ border: '0.5px solid rgb(var(--separator) / 0.5)', listStyle: 'none' }}
+      >
+        <div className="p-4">
+          {renderExerciseContent(group.exercises[0], exIndices[0])}
+        </div>
+      </Reorder.Item>
+    )
+  }
+
+  return (
+    <Reorder.Item
+      value={group}
+      dragListener={false}
+      dragControls={controls}
+      className="overflow-hidden rounded-card bg-surface shadow-card"
+      style={{ border: '0.5px solid rgb(var(--separator) / 0.5)', listStyle: 'none' }}
+    >
+      {/* Superset header */}
+      <div
+        className="flex items-center gap-2 px-4 py-2"
+        style={{ background: 'rgb(var(--accent) / 0.08)' }}
+      >
+        <DragHandle controls={controls} />
+        <Link2 size={13} className="text-accent" strokeWidth={2.2} />
+        <span className="text-caption font-semibold uppercase tracking-wider text-accent">Superset</span>
+      </div>
+      {group.exercises.map((ex, i) => (
+        <div key={exIndices[i]} className={i > 0 ? 'border-t border-separator/60' : ''}>
+          {renderExerciseContent(ex, exIndices[i])}
+        </div>
+      ))}
+    </Reorder.Item>
   )
 }
 
@@ -177,10 +466,12 @@ export default function ActiveWorkout({
     toggleSetDone,
     addSet,
     addDropSet,
+    addWarmupSet,
     removeSet,
     addExerciseToSession,
     removeExerciseFromSession,
     replaceExerciseInSession,
+    reorderExercisesInSession,
     linkAsSuperset,
     unlinkSuperset,
     renameSession,
@@ -195,11 +486,54 @@ export default function ActiveWorkout({
   const [replacingIdx, setReplacingIdx] = useState<number | null>(null)
   const [rest, setRest] = useState<{ key: number; seconds: number } | null>(null)
   const [summary, setSummary] = useState<{ volume: number; sets: number; prs: PRHit[] } | null>(null)
+  const [discardOpen, setDiscardOpen] = useState(false)
 
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(id)
   }, [])
+
+  /* ── Drag-to-reorder state ── */
+  // exerciseStructureKey only changes when exercises are added/removed/replaced
+  const exerciseStructureKey = useMemo(
+    () => session.exercises.map((e) => `${e.exerciseId}|${e.supersetId ?? ''}`).join(','),
+    [session.exercises],
+  )
+
+  const storeGroups = useMemo(() => buildGroups(session.exercises), [exerciseStructureKey]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const [groups, setGroups] = useState<ExGroup[]>(storeGroups)
+  const isDraggingRef = useRef(false)
+
+  useEffect(() => {
+    if (!isDraggingRef.current) setGroups(storeGroups)
+  }, [storeGroups])
+
+  const handleGroupReorder = (newGroups: ExGroup[]) => {
+    setGroups(newGroups)
+    const newExercises = newGroups.flatMap((g) => g.exercises)
+    reorderExercisesInSession(session.id, newExercises)
+  }
+
+  /* ── Lookup: group → original exercise indices ── */
+  const groupToIndices = useMemo(() => {
+    const map = new Map<string, number[]>()
+    let idx = 0
+    for (const group of storeGroups) {
+      map.set(group.id, group.exercises.map((_, i) => idx + i))
+      idx += group.exercises.length
+    }
+    return map
+  }, [storeGroups])
+
+  /* ── PR flags ── */
+  const prFlags = useMemo(
+    () =>
+      session.exercises.map((ex) =>
+        ex.sets.map((set) => isSetPR(state.sessions, session.id, ex.exerciseId, set)),
+      ),
+    [session.exercises, state.sessions, session.id], // eslint-disable-line react-hooks/exhaustive-deps
+  )
 
   const restSecFor = (exerciseId: string) => {
     if (session.routineId) {
@@ -212,7 +546,7 @@ export default function ActiveWorkout({
 
   const onToggle = (exIdx: number, setIdx: number, exerciseId: string, set: LoggedSet) => {
     toggleSetDone(session.id, exIdx, setIdx)
-    if (editing || set.done || !ws.restTimerEnabled) return
+    if (editing || set.done || !ws.restTimerEnabled || set.isWarmup) return
 
     const nextSet = session.exercises[exIdx].sets[setIdx + 1]
     if (nextSet?.isDropSet) return
@@ -234,37 +568,11 @@ export default function ActiveWorkout({
     onMinimize()
   }
 
-  const discard = () => {
-    const msg = editing
-      ? 'Delete this workout? It will be removed from your history.'
-      : 'Discard this workout? Nothing will be saved.'
-    if (confirm(msg)) {
-      discardSession(session.id)
-      onMinimize()
-    }
+  const doDiscard = () => {
+    discardSession(session.id)
+    setDiscardOpen(false)
+    onMinimize()
   }
-
-  const prFlags = useMemo(
-    () =>
-      session.exercises.map((ex) =>
-        ex.sets.map((set) => isSetPR(state.sessions, session.id, ex.exerciseId, set)),
-      ),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [session.exercises, state.sessions, session.id],
-  )
-
-  const exerciseGroups = useMemo(() => {
-    const groups: Array<{ indices: number[]; supersetId?: string }> = []
-    session.exercises.forEach((ex, i) => {
-      const sid = ex.supersetId
-      if (sid && groups.length > 0 && groups[groups.length - 1].supersetId === sid) {
-        groups[groups.length - 1].indices.push(i)
-      } else {
-        groups.push({ indices: [i], supersetId: sid ?? undefined })
-      }
-    })
-    return groups
-  }, [session.exercises])
 
   const unitLabel = ws.unit
   const liveVolume = useMemo(() => sessionVolume(session), [session])
@@ -272,204 +580,12 @@ export default function ActiveWorkout({
     ? `${new Date(session.finishedAt ?? session.startedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} · ${sessionSetCount(session)} sets · ${liveVolume} ${unitLabel}`
     : `${elapsedLabel(now - session.startedAt)} · ${sessionSetCount(session)} sets · ${liveVolume} ${unitLabel}`
 
-  const renderExercise = (exIdx: number, inSuperset: boolean) => {
-    const ex = session.exercises[exIdx]
-    const meta = exerciseById(state.exercises, ex.exerciseId)
-    const kind = meta?.kind ?? 'weight'
-    const cols = COLS[kind]
-    const prev = lastPerformance(state.sessions, ex.exerciseId)
-    const isLinked = !!ex.supersetId
-    const canLink = !isLinked && exIdx < session.exercises.length - 1
-
-    const content = (
-      <>
-        {/* Exercise header */}
-        <div className="mb-3 flex items-start gap-2">
-          <div className="min-w-0 flex-1">
-            <div className="text-headline text-label">{meta?.name ?? 'Exercise'}</div>
-            {meta?.muscle && (
-              <div className="mt-1">
-                <MuscleTag muscle={meta.muscle} />
-              </div>
-            )}
-          </div>
-          <div className="flex shrink-0 items-center gap-1">
-            {/* Replace exercise */}
-            <button
-              onClick={() => setReplacingIdx(exIdx)}
-              aria-label="Replace exercise"
-              title="Replace exercise"
-              className="grid h-8 w-8 place-items-center rounded-full text-label3 active:scale-90"
-            >
-              <RefreshCw size={15} strokeWidth={2} />
-            </button>
-            {!editing && (
-              <button
-                onClick={() =>
-                  isLinked
-                    ? unlinkSuperset(session.id, exIdx)
-                    : canLink && linkAsSuperset(session.id, exIdx, exIdx + 1)
-                }
-                disabled={!isLinked && !canLink}
-                aria-label={isLinked ? 'Unlink superset' : 'Link as superset with next exercise'}
-                title={isLinked ? 'Unlink superset' : 'Superset with next exercise'}
-                className={`grid h-8 w-8 place-items-center rounded-full transition-colors ${
-                  isLinked ? 'bg-accent/15 text-accent' : 'text-label3'
-                } disabled:opacity-25`}
-              >
-                <Link2 size={16} strokeWidth={2} />
-              </button>
-            )}
-            <button
-              onClick={() => removeExerciseFromSession(session.id, exIdx)}
-              aria-label="Remove exercise"
-              className="grid h-8 w-8 place-items-center text-label3 active:scale-90"
-            >
-              <X size={20} />
-            </button>
-          </div>
-        </div>
-
-        {/* Column headers */}
-        <div
-          className="mb-1 grid items-center gap-2 px-1 text-caption font-medium uppercase tracking-wide text-label3"
-          style={{ gridTemplateColumns: gridCols(kind) }}
-        >
-          {cols.map((c, i) => (
-            <div key={i} className={i === 0 ? '' : 'text-center'}>{c}</div>
-          ))}
-        </div>
-
-        {/* Set rows */}
-        <div className="space-y-1.5">
-          {ex.sets.map((set, setIdx) => {
-            const isDrop = !!set.isDropSet
-            const canDelete = ex.sets.length > 1
-            return (
-              <div key={setIdx} className="relative overflow-hidden rounded-[10px]">
-                {canDelete && (
-                  <div className="absolute inset-y-0 right-0 flex items-center bg-danger pl-4 pr-3 text-white">
-                    <Trash2 size={14} />
-                  </div>
-                )}
-                <motion.div
-                  drag={canDelete ? 'x' : false}
-                  dragConstraints={{ left: -72, right: 0 }}
-                  dragElastic={{ left: 0.5, right: 0 }}
-                  dragMomentum={false}
-                  dragSnapToOrigin
-                  onDragEnd={(_, info) => {
-                    if (canDelete && info.offset.x < -52) removeSet(session.id, exIdx, setIdx)
-                  }}
-                  className="relative rounded-[10px] bg-surface"
-                >
-                  <div
-                    className={`grid items-center gap-2 rounded-[10px] px-1 py-1 ${
-                      set.done
-                        ? isDrop ? 'bg-accent/10' : 'bg-move/10'
-                        : isDrop ? 'bg-accent/5' : ''
-                    }`}
-                    style={{ gridTemplateColumns: gridCols(kind) }}
-                  >
-                    <div className={`text-center text-callout font-semibold ${isDrop ? 'text-accent' : 'text-label2'}`}>
-                      {setLabel(ex.sets, setIdx)}
-                    </div>
-
-                    <div className="text-center text-footnote text-label3">
-                      {setHint(prev?.sets[setIdx])}
-                    </div>
-
-                    {kind === 'weight' && (
-                      <>
-                        <NumCell value={set.weight} placeholder="0" onChange={(v) => updateSet(session.id, exIdx, setIdx, { weight: v })} />
-                        <NumCell value={set.reps}   placeholder="0" onChange={(v) => updateSet(session.id, exIdx, setIdx, { reps: v })} />
-                      </>
-                    )}
-                    {kind === 'bodyweight' && (
-                      <NumCell value={set.reps} placeholder="0" onChange={(v) => updateSet(session.id, exIdx, setIdx, { reps: v })} />
-                    )}
-                    {kind === 'cardio' && (
-                      <>
-                        <NumCell value={set.distanceKm} placeholder="0" onChange={(v) => updateSet(session.id, exIdx, setIdx, { distanceKm: v })} />
-                        <NumCell
-                          value={set.durationSec != null ? Math.round(set.durationSec / 60) : undefined}
-                          placeholder="0"
-                          onChange={(v) => updateSet(session.id, exIdx, setIdx, { durationSec: v != null ? v * 60 : undefined })}
-                        />
-                      </>
-                    )}
-                    {kind === 'hold' && (
-                      <NumCell value={set.durationSec} placeholder="0" onChange={(v) => updateSet(session.id, exIdx, setIdx, { durationSec: v })} />
-                    )}
-
-                    {/* Done checkbox */}
-                    <div className="relative flex items-center justify-center">
-                      <motion.button
-                        whileTap={{ scale: 0.85 }}
-                        transition={spring}
-                        onPointerDown={(e) => e.stopPropagation()}
-                        onClick={() => onToggle(exIdx, setIdx, ex.exerciseId, set)}
-                        aria-label="Complete set"
-                        className={`grid h-8 w-8 place-items-center rounded-[8px] border-2 ${
-                          set.done
-                            ? isDrop ? 'border-accent bg-accent text-white' : 'border-move bg-move text-white'
-                            : 'border-label3 text-transparent'
-                        }`}
-                      >
-                        <Check size={16} strokeWidth={3} />
-                      </motion.button>
-                      {prFlags[exIdx]?.[setIdx] && (
-                        <span className="pointer-events-none absolute -right-1.5 -top-1.5">
-                          <Trophy size={12} className="text-nourish" fill="currentColor" />
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </motion.div>
-              </div>
-            )
-          })}
-        </div>
-
-        {/* Set action buttons */}
-        <div className="mt-2 flex gap-2">
-          <button
-            onClick={() => addSet(session.id, exIdx)}
-            className="flex-1 rounded-[10px] bg-fill py-2.5 text-subhead font-medium text-label2 active:scale-[0.99]"
-          >
-            + Add set
-          </button>
-          <button
-            onClick={() => addDropSet(session.id, exIdx)}
-            className="rounded-[10px] bg-accent/10 px-4 py-2.5 text-subhead font-medium text-accent active:scale-[0.99]"
-          >
-            ↓ Drop
-          </button>
-        </div>
-      </>
-    )
-
-    if (!inSuperset) {
-      return (
-        <div
-          key={exIdx}
-          className="rounded-card bg-surface p-4 shadow-card"
-          style={{ border: '0.5px solid rgb(var(--separator) / 0.5)' }}
-        >
-          {content}
-        </div>
-      )
-    }
-
-    return <div key={exIdx} className="p-4">{content}</div>
-  }
-
   return (
     <div className="min-h-full">
       {/* Top bar */}
       <div className="material sticky top-0 z-20 -mx-4">
         <div className="flex h-14 items-center gap-3 px-4">
-          <motion.button whileTap={{ scale: 0.9 }} onClick={onMinimize} aria-label="Back" className="text-label2">
+          <motion.button whileTap={{ scale: 0.9 }} onClick={onMinimize} aria-label="Minimise" className="text-label2">
             <ChevronDown size={26} />
           </motion.button>
           <div className="min-w-0 flex-1">
@@ -496,8 +612,8 @@ export default function ActiveWorkout({
         </div>
       </div>
 
-      {/* Exercise list */}
-      <div className="space-y-4 pb-40 pt-4">
+      {/* Exercise list with drag reorder */}
+      <div className="pb-40 pt-4">
         {session.exercises.length === 0 && (
           <div className="flex flex-col items-center py-12 text-center">
             <div className="mb-3 text-4xl">🏋️</div>
@@ -506,36 +622,48 @@ export default function ActiveWorkout({
           </div>
         )}
 
-        {exerciseGroups.map((group, gi) => {
-          if (!group.supersetId || group.indices.length < 2) {
-            return renderExercise(group.indices[0], false)
-          }
+        <Reorder.Group
+          axis="y"
+          values={groups}
+          onReorder={handleGroupReorder}
+          className="space-y-4"
+          style={{ listStyle: 'none', padding: 0, margin: 0 }}
+        >
+          {groups.map((group) => {
+            const indices = groupToIndices.get(group.id) ?? group.exercises.map((_, i) => i)
+            return (
+              <ExGroupItem
+                key={group.id}
+                group={group}
+                allExercises={state.exercises}
+                sessions={state.sessions}
+                prFlags={prFlags}
+                exIndices={indices}
+                editing={editing}
+                onToggle={onToggle}
+                onReplace={(exIdx) => setReplacingIdx(exIdx)}
+                onRemove={(exIdx) => removeExerciseFromSession(session.id, exIdx)}
+                onLinkSuperset={(exIdx) => {
+                  const nextIdx = exIdx + 1
+                  if (nextIdx < session.exercises.length) {
+                    const linked = !!session.exercises[exIdx].supersetId
+                    linked
+                      ? unlinkSuperset(session.id, exIdx)
+                      : linkAsSuperset(session.id, exIdx, nextIdx)
+                  }
+                }}
+                onAddSet={(exIdx) => addSet(session.id, exIdx)}
+                onAddWarmup={(exIdx) => addWarmupSet(session.id, exIdx)}
+                onAddDrop={(exIdx) => addDropSet(session.id, exIdx)}
+                onRemoveSet={(exIdx, setIdx) => removeSet(session.id, exIdx, setIdx)}
+                onUpdateSet={(exIdx, setIdx, patch) => updateSet(session.id, exIdx, setIdx, patch)}
+              />
+            )
+          })}
+        </Reorder.Group>
 
-          const supersetId = group.supersetId
-          return (
-            <div
-              key={supersetId + gi}
-              className="overflow-hidden rounded-card bg-surface shadow-card"
-              style={{ border: '0.5px solid rgb(var(--separator) / 0.5)' }}
-            >
-              <div
-                className="flex items-center gap-2 px-4 py-2"
-                style={{ background: 'rgb(var(--accent) / 0.08)' }}
-              >
-                <Link2 size={13} className="text-accent" strokeWidth={2.2} />
-                <span className="text-caption font-semibold uppercase tracking-wider text-accent">Superset</span>
-              </div>
-              {group.indices.map((exIdx, i) => (
-                <div key={exIdx} className={i > 0 ? 'border-t border-separator/60' : ''}>
-                  {renderExercise(exIdx, true)}
-                </div>
-              ))}
-            </div>
-          )
-        })}
-
-        {/* Sticky bottom bar */}
-        <div className="flex gap-2">
+        {/* Bottom actions */}
+        <div className="mt-4 flex gap-2">
           <button
             onClick={() => setPicker(true)}
             className="flex flex-1 items-center justify-center gap-1.5 rounded-card border border-dashed border-separator py-3.5 text-callout font-medium text-accent"
@@ -554,19 +682,21 @@ export default function ActiveWorkout({
           )}
         </div>
 
-        <button onClick={discard} className="w-full py-2 text-center text-subhead text-danger">
-          {editing ? 'Delete workout' : 'Discard workout'}
+        {/* Cancel / delete */}
+        <button
+          onClick={() => setDiscardOpen(true)}
+          className="mt-2 w-full py-3 text-center text-subhead text-danger"
+        >
+          {editing ? 'Delete workout' : 'Cancel workout'}
         </button>
       </div>
 
-      {/* Add exercise picker */}
+      {/* Exercise pickers */}
       <ExercisePicker
         open={picker}
         onClose={() => setPicker(false)}
         onPick={(id) => addExerciseToSession(session.id, id)}
       />
-
-      {/* Replace exercise picker */}
       <ExercisePicker
         open={replacingIdx !== null}
         onClose={() => setReplacingIdx(null)}
@@ -581,7 +711,7 @@ export default function ActiveWorkout({
         {rest && <RestTimer key={rest.key} seconds={rest.seconds} onClose={() => setRest(null)} />}
       </AnimatePresence>
 
-      {/* Finish summary sheet */}
+      {/* Finish summary */}
       <Sheet open={!!summary} onClose={() => setSummary(null)} title="Workout summary">
         {summary && (
           <FinishSummary
@@ -595,6 +725,34 @@ export default function ActiveWorkout({
             onContinue={() => setSummary(null)}
           />
         )}
+      </Sheet>
+
+      {/* Discard confirmation sheet */}
+      <Sheet open={discardOpen} onClose={() => setDiscardOpen(false)} title={editing ? 'Delete workout?' : 'Cancel workout?'}>
+        <div className="space-y-3">
+          <div className="flex items-start gap-3 rounded-card bg-danger/10 p-3">
+            <AlertTriangle size={20} className="mt-0.5 shrink-0 text-danger" />
+            <p className="text-subhead text-label">
+              {editing
+                ? 'This will permanently delete this workout from your history. This cannot be undone.'
+                : 'This will discard your current workout. All sets logged so far will be lost.'}
+            </p>
+          </div>
+          <motion.button
+            whileTap={{ scale: 0.97 }}
+            transition={spring}
+            onClick={doDiscard}
+            className="w-full rounded-card bg-danger py-3.5 text-headline text-white"
+          >
+            {editing ? 'Delete workout' : 'Discard workout'}
+          </motion.button>
+          <button
+            onClick={() => setDiscardOpen(false)}
+            className="w-full py-2.5 text-center text-subhead font-medium text-label2"
+          >
+            Keep going
+          </button>
+        </div>
       </Sheet>
     </div>
   )

@@ -81,6 +81,13 @@ export interface LoggedSet {
   done: boolean
   /** When true this set immediately follows the previous one with no rest (drop set). */
   isDropSet?: boolean
+  /** Warm-up set: not counted toward volume, sets, or PRs. */
+  isWarmup?: boolean
+}
+
+export interface WeightEntry {
+  date: string  // YYYY-MM-DD
+  kg: number
 }
 
 export interface SessionExercise {
@@ -150,6 +157,7 @@ export interface LifeState {
   routines: Routine[]
   sessions: WorkoutSession[]
   workoutSettings: WorkoutSettings
+  bodyWeightLog: WeightEntry[]
   // Habits
   habits: Habit[]
   habitLogs: HabitLogs

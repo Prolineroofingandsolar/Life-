@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   Plus, Flame, Dumbbell, BarChart2, Zap, Play, ChevronRight,
-  Search, X, Pencil, Clock, Trophy, CalendarDays,
+  Search, X, Pencil, Clock, CalendarDays, ListPlus,
 } from 'lucide-react'
 import { useLife } from '../lib/store'
 import {
@@ -19,10 +19,9 @@ import Toast from '../components/Toast'
 import { spring, listItem } from '../lib/motion'
 import RoutineCard from '../components/train/RoutineCard'
 import HistoryCard from '../components/train/HistoryCard'
-import PRSection from '../components/train/PRSection'
 import { muscleColor } from '../components/train/MuscleTag'
 
-type TrainTab = 'routines' | 'history' | 'prs' | 'calendar'
+type TrainTab = 'routines' | 'history' | 'calendar'
 
 /* ── Session detail sheet ───────────────────────────────────────────────── */
 
@@ -145,8 +144,8 @@ export default function Workout({
 
   const [tab, setTab] = useState<TrainTab>('routines')
   const [query, setQuery] = useState('')
-  const [muscleFilter, setMuscleFilter] = useState('All')
   const [editor, setEditor] = useState<{ open: boolean; routine?: Routine }>({ open: false })
+  const [createSheet, setCreateSheet] = useState(false)
   const [detail, setDetail] = useState<WorkoutSession | null>(null)
 
   // Undo state
@@ -167,13 +166,6 @@ export default function Workout({
   const streak   = workoutStreak(state.sessions)
   const weekCount = sessionsThisWeek(state.sessions).length
   const weekVol  = weeklyVolume(state.sessions)
-
-  // Unique muscles across all finished sessions for PR filter
-  const allPRMuscles = useMemo(() => {
-    const seen = new Set<string>()
-    state.exercises.forEach((e) => { if (e.muscle) seen.add(e.muscle) })
-    return ['All', ...Array.from(seen).sort()]
-  }, [state.exercises])
 
   const start = (routineId?: string) => {
     if (!activeSession) startSession(routineId)
@@ -218,7 +210,6 @@ export default function Workout({
   const tabs: { id: TrainTab; label: string; icon: typeof Dumbbell }[] = [
     { id: 'routines',  label: 'Routines',  icon: Dumbbell },
     { id: 'history',   label: 'History',   icon: Clock },
-    { id: 'prs',       label: 'PRs',       icon: Trophy },
     { id: 'calendar',  label: 'Calendar',  icon: CalendarDays },
   ]
 
@@ -231,9 +222,9 @@ export default function Workout({
         trailing={
           <IconButton
             icon={Plus}
-            label="New routine"
+            label="New"
             accent
-            onClick={() => setEditor({ open: true })}
+            onClick={() => setCreateSheet(true)}
           />
         }
       />
@@ -364,32 +355,6 @@ export default function Workout({
         )}
       </AnimatePresence>
 
-      {/* ── PR muscle filter (PRs tab) ── */}
-      <AnimatePresence>
-        {tab === 'prs' && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={spring}
-            className="overflow-hidden"
-          >
-            <div className="mt-3 flex gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
-              {allPRMuscles.map((m) => (
-                <button
-                  key={m}
-                  onClick={() => setMuscleFilter(m)}
-                  className={`shrink-0 rounded-full px-3 py-1 text-footnote font-medium transition-colors ${
-                    muscleFilter === m ? 'bg-accent text-white' : 'bg-fill text-label2'
-                  }`}
-                >
-                  {m}
-                </button>
-              ))}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* ── Tab content ── */}
       <div className="mt-3 pb-8">
@@ -472,23 +437,6 @@ export default function Workout({
             </motion.div>
           )}
 
-          {tab === 'prs' && (
-            <motion.div
-              key="prs"
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.18 }}
-            >
-              <PRSection
-                sessions={state.sessions}
-                exercises={state.exercises}
-                unit={ws.unit}
-                muscleFilter={muscleFilter}
-              />
-            </motion.div>
-          )}
-
           {tab === 'calendar' && (
             <motion.div
               key="calendar"
@@ -502,6 +450,42 @@ export default function Workout({
           )}
         </AnimatePresence>
       </div>
+
+      {/* ── Creation choice sheet ── */}
+      <Sheet open={createSheet} onClose={() => setCreateSheet(false)} title="Start training">
+        <div className="space-y-2">
+          <motion.button
+            whileTap={{ scale: 0.97 }}
+            transition={spring}
+            onClick={() => { setCreateSheet(false); setEditor({ open: true }) }}
+            className="flex w-full items-center gap-4 rounded-card bg-surface px-4 py-4 text-left shadow-card"
+            style={{ border: '0.5px solid rgb(var(--separator) / 0.5)' }}
+          >
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-accent/10 text-accent">
+              <ListPlus size={20} />
+            </span>
+            <div>
+              <div className="text-headline text-label">New Routine</div>
+              <div className="text-footnote text-label2">Build a reusable template to repeat</div>
+            </div>
+          </motion.button>
+          <motion.button
+            whileTap={{ scale: 0.97 }}
+            transition={spring}
+            onClick={() => { setCreateSheet(false); start() }}
+            className="flex w-full items-center gap-4 rounded-card bg-surface px-4 py-4 text-left shadow-card"
+            style={{ border: '0.5px solid rgb(var(--separator) / 0.5)' }}
+          >
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-move/10">
+              <Zap size={20} className="text-move" fill="currentColor" />
+            </span>
+            <div>
+              <div className="text-headline text-label">Start Workout</div>
+              <div className="text-footnote text-label2">Jump straight in and log your sets</div>
+            </div>
+          </motion.button>
+        </div>
+      </Sheet>
 
       {/* ── Routine editor sheet ── */}
       <RoutineEditor
