@@ -2,7 +2,6 @@ import WidgetKit
 import SwiftUI
 
 // Paste this file into: ios/App/LifeTasksWidget/LifeTasksWidget.swift
-// This is the complete widget — small, medium and large sizes.
 
 // MARK: - Data model
 
@@ -11,6 +10,11 @@ struct WidgetTask: Codable, Identifiable {
     let title: String
     let category: String
     let done: Bool
+    let dueDate: String?
+}
+
+struct AppState: Codable {
+    let tasks: [WidgetTask]
 }
 
 // MARK: - Timeline provider
@@ -19,30 +23,44 @@ struct Provider: TimelineProvider {
     let appGroup = "group.uk.co.prolineroofingandsolar.life"
 
     func tasks() -> [WidgetTask] {
-        let defaults = UserDefaults(suiteName: appGroup)
-        guard
-            let json = defaults?.string(forKey: "life_widget_tasks"),
-            let data = json.data(using: .utf8),
-            let tasks = try? JSONDecoder().decode([WidgetTask].self, from: data)
-        else { return [] }
-        return tasks.filter { !$0.done }
+        // First try App Group UserDefaults (set by LifePlugin)
+        if let defaults = UserDefaults(suiteName: appGroup),
+           let json = defaults.string(forKey: "life_widget_tasks"),
+           let data = json.data(using: .utf8),
+           let tasks = try? JSONDecoder().decode([WidgetTask].self, from: data) {
+            return tasks.filter { !$0.done && $0.dueDate == "today" }
+        }
+
+        // Fallback: read from shared app container localStorage file
+        if let containerURL = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: appGroup
+        ) {
+            let fileURL = containerURL.appendingPathComponent("life_tasks.json")
+            if let data = try? Data(contentsOf: fileURL),
+               let tasks = try? JSONDecoder().decode([WidgetTask].self, from: data) {
+                return tasks.filter { !$0.done && $0.dueDate == "today" }
+            }
+        }
+
+        return []
     }
 
     func placeholder(in context: Context) -> TaskEntry {
         TaskEntry(date: Date(), tasks: [
-            WidgetTask(id: "1", title: "Reply to the email", category: "work", done: false),
-            WidgetTask(id: "2", title: "Push session — legs", category: "gym", done: false),
-            WidgetTask(id: "3", title: "Refill water bottle", category: "personal", done: false),
+            WidgetTask(id: "1", title: "Reply to the email", category: "work", done: false, dueDate: "today"),
+            WidgetTask(id: "2", title: "Push session — legs", category: "gym", done: false, dueDate: "today"),
+            WidgetTask(id: "3", title: "Refill water bottle", category: "personal", done: false, dueDate: "today"),
         ])
     }
 
     func getSnapshot(in context: Context, completion: @escaping (TaskEntry) -> Void) {
-        completion(TaskEntry(date: Date(), tasks: tasks()))
+        let t = tasks()
+        let entry = TaskEntry(date: Date(), tasks: t.isEmpty ? placeholder(in: context).tasks : t)
+        completion(entry)
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<TaskEntry>) -> Void) {
         let entry = TaskEntry(date: Date(), tasks: tasks())
-        // Refresh every 15 minutes in case user adds tasks
         let next = Calendar.current.date(byAdding: .minute, value: 15, to: Date())!
         completion(Timeline(entries: [entry], policy: .after(next)))
     }
@@ -58,9 +76,9 @@ struct TaskEntry: TimelineEntry {
 extension String {
     var categoryColor: Color {
         switch self {
-        case "work":     return Color(red: 0.37, green: 0.36, blue: 0.90) // purple-blue
-        case "gym":      return Color(red: 0.19, green: 0.82, blue: 0.35) // green
-        case "personal": return Color(red: 1.00, green: 0.62, blue: 0.04) // orange
+        case "work":     return Color(red: 0.37, green: 0.36, blue: 0.90)
+        case "gym":      return Color(red: 0.19, green: 0.82, blue: 0.35)
+        case "personal": return Color(red: 1.00, green: 0.62, blue: 0.04)
         default:         return .secondary
         }
     }
@@ -220,7 +238,7 @@ struct LargeWidgetView: View {
                     HStack(spacing: 5) {
                         Text(category.categoryEmoji)
                             .font(.system(size: 11))
-                        Text(category.capitalized)
+                        Text(category.categoryEmoji == "•" ? category : category.capitalized)
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundColor(category.categoryColor)
                     }
@@ -267,7 +285,6 @@ struct LifeTasksWidgetEntryView: View {
 
 // MARK: - Widget definition
 
-@main
 struct LifeTasksWidget: Widget {
     let kind: String = "LifeTasksWidget"
 

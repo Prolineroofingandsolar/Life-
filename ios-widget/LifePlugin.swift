@@ -2,8 +2,6 @@ import Capacitor
 import WidgetKit
 
 // Paste this file into: ios/App/App/LifePlugin.swift
-// This plugin lets the web app write tasks to App Group storage
-// so the widget can read them.
 
 @objc(LifePlugin)
 public class LifePlugin: CAPPlugin, CAPBridgedPlugin {
@@ -21,11 +19,20 @@ public class LifePlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
 
+        // Write to App Group UserDefaults
         let defaults = UserDefaults(suiteName: appGroup)
         defaults?.set(tasksJSON, forKey: "life_widget_tasks")
         defaults?.synchronize()
 
-        // Tell iOS to refresh the widget
+        // Also write to shared file as backup
+        if let containerURL = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: appGroup
+        ) {
+            let fileURL = containerURL.appendingPathComponent("life_tasks.json")
+            try? tasksJSON.write(to: fileURL, atomically: true, encoding: .utf8)
+        }
+
+        // Refresh widget
         WidgetCenter.shared.reloadTimelines(ofKind: "LifeTasksWidget")
 
         call.resolve()
