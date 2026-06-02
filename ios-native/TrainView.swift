@@ -504,8 +504,10 @@ struct SessionDetailView: View {
     var body: some View {
         List {
             Section {
-                if let finished = session.finishedAt {
-                    LabeledContent("Date", value: finished.formatted(date: .long, time: .shortened))
+                Group {
+                    if let finished = session.finishedAt {
+                        LabeledContent("Date", value: finished.formatted(date: .long, time: .shortened))
+                    }
                 }
                 LabeledContent("Duration", value: session.durationSeconds.formattedDurationShort)
                 LabeledContent("Sets completed", value: "\(session.totalSets)")
