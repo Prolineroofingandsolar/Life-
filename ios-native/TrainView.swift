@@ -95,7 +95,7 @@ struct TrainView: View {
             }
             .fullScreenCover(isPresented: $showActiveWorkout) {
                 if let session = appState.activeSession {
-                    ActiveWorkoutView(sessionId: session.id, isPresented: $showActiveWorkout)
+                    ActiveWorkoutView(isPresented: $showActiveWorkout, sessionId: session.id)
                 }
             }
             .sheet(isPresented: $showExerciseLibrary) {
