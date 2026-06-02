@@ -8,6 +8,7 @@ struct TrainView: View {
     @State private var showActiveWorkout = false
     @State private var showExerciseLibrary = false
     @State private var showAddRoutine = false
+    @State private var showBrowsePrograms = false
     @State private var pulseResume = false
 
     private var finishedSessions: [WorkoutSession] {
@@ -84,6 +85,13 @@ struct TrainView: View {
                         Label("New Routine", systemImage: "plus")
                             .foregroundColor(Color(hex: "#30d158"))
                     }
+
+                    Button {
+                        showBrowsePrograms = true
+                    } label: {
+                        Label("Browse Programs", systemImage: "square.grid.2x2")
+                            .foregroundColor(Color(hex: "#30d158"))
+                    }
                 } header: {
                     Text("Routines")
                 }
@@ -123,6 +131,9 @@ struct TrainView: View {
             }
             .sheet(isPresented: $showAddRoutine) {
                 AddRoutineSheet()
+            }
+            .sheet(isPresented: $showBrowsePrograms) {
+                BrowseProgramsSheet()
             }
         }
     }
@@ -519,62 +530,166 @@ struct SessionDetailView: View {
 
     var body: some View {
         List {
-            Section("Summary") {
-                if let finished = session.finishedAt {
-                    LabeledContent("Date", value: finished.formatted(date: .long, time: .shortened))
-                }
-                LabeledContent("Duration", value: session.durationSeconds.formattedDurationShort)
-                LabeledContent("Sets completed", value: "\(session.totalSets)")
-                LabeledContent("Volume", value: session.totalVolumeKg > 0 ? "\(Int(session.totalVolumeKg)) kg" : "—")
-            }
-
+            SessionSummarySection(session: session)
             ForEach(session.exercises) { ex in
-                if let exercise = appState.exercises.first(where: { $0.id == ex.exerciseId }) {
-                    Section {
-                        ForEach(Array(ex.sets.enumerated()), id: \.element.id) { idx, set in
-                            HStack {
-                                Group {
-                                    if set.isWarmup {
-                                        Text("W").font(.caption.bold()).foregroundColor(.orange)
-                                    } else {
-                                        Text("\(idx + 1)").font(.caption).foregroundColor(.secondary)
-                                    }
-                                }
-                                .frame(width: 20)
-
-                                if exercise.kind == .cardio {
-                                    Text(set.durationSec > 0 ? "\(set.durationSec / 60):\(String(format: "%02d", set.durationSec % 60))" : "—")
-                                    if set.distanceKm > 0 {
-                                        Text("· \(set.distanceKm.formatted1) km").foregroundColor(.secondary)
-                                    }
-                                } else {
-                                    Text(set.weight > 0 ? "\(set.weight.formatted1) kg" : "BW")
-                                    Text("×")
-                                    Text(set.reps > 0 ? "\(set.reps)" : "—")
-                                }
-
-                                Spacer()
-
-                                if set.done {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .foregroundColor(.green)
-                                        .font(.caption)
-                                }
-                            }
-                            .font(.subheadline)
-                        }
-                    } header: {
-                        HStack {
-                            Circle().fill(exercise.muscle.muscleColor).frame(width: 8, height: 8)
-                            Text(exercise.name)
-                        }
-                    }
-                }
+                SessionExerciseSection(ex: ex)
             }
         }
         .listStyle(.insetGrouped)
         .navigationTitle(session.name)
         .navigationBarTitleDisplayMode(.large)
+    }
+}
+
+private struct SessionSummarySection: View {
+    let session: WorkoutSession
+    var body: some View {
+        Section {
+            InfoRow(label: "Date", value: session.finishedAt.map { $0.formatted(date: .long, time: .shortened) } ?? "In progress")
+            InfoRow(label: "Duration", value: session.durationSeconds.formattedDurationShort)
+            InfoRow(label: "Sets completed", value: "\(session.totalSets)")
+            InfoRow(label: "Volume", value: session.totalVolumeKg > 0 ? "\(Int(session.totalVolumeKg)) kg" : "—")
+        } header: {
+            Text("Summary")
+        }
+    }
+}
+
+private struct SessionExerciseSection: View {
+    @Environment(AppState.self) private var appState
+    let ex: SessionExercise
+    var body: some View {
+        Group {
+            if let exercise = appState.exercises.first(where: { $0.id == ex.exerciseId }) {
+                Section {
+                    ForEach(Array(ex.sets.enumerated()), id: \.element.id) { idx, set in
+                        SessionSetRow(set: set, index: idx, kind: exercise.kind)
+                    }
+                } header: {
+                    HStack {
+                        Circle().fill(exercise.muscle.muscleColor).frame(width: 8, height: 8)
+                        Text(exercise.name)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct SessionSetRow: View {
+    let set: LoggedSet
+    let index: Int
+    let kind: ExerciseKind
+    var body: some View {
+        HStack {
+            Group {
+                if set.isWarmup {
+                    Text("W").font(.caption.bold()).foregroundColor(.orange)
+                } else {
+                    Text("\(index + 1)").font(.caption).foregroundColor(.secondary)
+                }
+            }
+            .frame(width: 20)
+            if kind == .cardio {
+                Text(set.durationSec > 0 ? "\(set.durationSec / 60):\(String(format: "%02d", set.durationSec % 60))" : "—")
+                if set.distanceKm > 0 {
+                    Text("· \(set.distanceKm.formatted1) km").foregroundColor(.secondary)
+                }
+            } else {
+                Text(set.weight > 0 ? "\(set.weight.formatted1) kg" : "BW")
+                Text("×")
+                Text(set.reps > 0 ? "\(set.reps)" : "—")
+            }
+            Spacer()
+            if set.done {
+                Image(systemName: "checkmark.circle.fill").foregroundColor(.green).font(.caption)
+            }
+        }
+        .font(.subheadline)
+    }
+}
+
+// MARK: - Browse Programs Sheet
+
+struct BrowseProgramsSheet: View {
+    @Environment(AppState.self) private var appState
+    @Environment(\.dismiss) private var dismiss
+    @State private var confirmProgram: WorkoutSeed.WorkoutProgram? = nil
+
+    private let programs = WorkoutSeed.programTemplates
+
+    var body: some View {
+        NavigationStack {
+            List(programs) { program in
+                Section {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 12) {
+                            Image(systemName: program.icon)
+                                .font(.title2)
+                                .foregroundColor(Color(hex: "#30d158"))
+                                .frame(width: 40)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(program.name)
+                                    .font(.headline)
+                                Text(program.description)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(2)
+                            }
+                        }
+                        HStack(spacing: 12) {
+                            Label("\(program.daysPerWeek)×/week", systemImage: "calendar")
+                            Label(program.difficulty, systemImage: "chart.bar")
+                            Label("\(program.routines.count) routines", systemImage: "list.bullet")
+                        }
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+
+                        Button {
+                            confirmProgram = program
+                        } label: {
+                            Text("Add Program")
+                                .font(.subheadline.bold())
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 8)
+                                .background(Color(hex: "#30d158"))
+                                .foregroundColor(.white)
+                                .cornerRadius(8)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.top, 2)
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+            .listStyle(.insetGrouped)
+            .navigationTitle("Browse Programs")
+            .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                }
+            }
+            .alert("Add Program?", isPresented: Binding(
+                get: { confirmProgram != nil },
+                set: { if !$0 { confirmProgram = nil } }
+            )) {
+                Button("Add Routines") {
+                    if let prog = confirmProgram {
+                        for routine in prog.routines {
+                            appState.addRoutine(name: routine.name, exercises: routine.exercises)
+                        }
+                        HapticManager.success()
+                        dismiss()
+                    }
+                }
+                Button("Cancel", role: .cancel) { confirmProgram = nil }
+            } message: {
+                if let prog = confirmProgram {
+                    Text("Add \(prog.routines.count) routines from \"\(prog.name)\" to your routines list?")
+                }
+            }
+        }
     }
 }
 
