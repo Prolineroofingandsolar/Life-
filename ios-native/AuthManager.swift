@@ -18,8 +18,10 @@ final class AuthManager {
         guard Self.isFirebaseReady else { return }
         isLoading = true
         handle = Auth.auth().addStateDidChangeListener { [weak self] _, user in
-            self?.user = user
-            self?.isLoading = false
+            DispatchQueue.main.async {
+                self?.user = user
+                self?.isLoading = false
+            }
         }
     }
 
