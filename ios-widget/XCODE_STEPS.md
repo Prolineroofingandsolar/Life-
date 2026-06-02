@@ -55,13 +55,46 @@ Actually, for Capacitor 6+ just adding the file is enough — it auto-registers 
 3. Open `ios-widget/LifeTasksWidget.swift` from this project
 4. Copy ALL of it and paste into Xcode
 
-## Step 7 — Build and run
+## Step 7 — Adopt UIScene lifecycle (silences "UIScene lifecycle will soon be required")
+
+Capacitor 8 generates the correct `AppDelegate.swift` automatically. If you see the warning, your iOS project was scaffolded with an older template. Fix it by re-running:
+
+```
+npx cap sync ios
+```
+
+If you prefer to patch manually, add these two methods to `AppDelegate.swift` (inside the `AppDelegate` class):
+
+```swift
+func application(_ application: UIApplication,
+                 configurationForConnecting connectingSceneSession: UISceneSession,
+                 options: UIScene.ConnectionOptions) -> UISceneConfiguration {
+    return UISceneConfiguration(name: "Default Configuration", sessionRole: connectingSceneSession.role)
+}
+
+func application(_ application: UIApplication,
+                 didDiscardSceneSessions sceneSessions: Set<UISceneSession>) {}
+```
+
+Then add to `Info.plist` (inside the top-level `<dict>`):
+
+```xml
+<key>UIApplicationSceneManifest</key>
+<dict>
+    <key>UIApplicationSupportsMultipleScenes</key>
+    <false/>
+    <key>UISceneConfigurations</key>
+    <dict/>
+</dict>
+```
+
+## Step 8 — Build and run
 
 1. Select your **iPhone** (or simulator) at the top
 2. Make sure the scheme next to it says **App** (not LifeTasksWidget)
 3. Press **▶ Play**
 
-## Step 8 — Add the widget to your home screen
+## Step 9 — Add the widget to your home screen
 
 1. On your iPhone, long-press the home screen
 2. Tap the **+** in the top corner
@@ -70,5 +103,6 @@ Actually, for Capacitor 6+ just adding the file is enough — it auto-registers 
 5. Tap **Add Widget**
 
 ## Done!
+
 The widget reads tasks automatically. It refreshes every 15 minutes,
 and instantly when you add/complete a task in the app.
