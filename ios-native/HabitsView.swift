@@ -167,6 +167,7 @@ private struct HabitRow: View {
                                     RoundedRectangle(cornerRadius: 3)
                                         .fill(isComplete ? Color(hex: "#30d158") : .orange)
                                         .frame(width: geo.size.width * progress, height: 6)
+                                        .animation(.spring(response: 0.4, dampingFraction: 0.7), value: progress)
                                 }
                             }
                             .frame(height: 6)
@@ -220,6 +221,7 @@ private struct HabitRow: View {
         .swipeActions(edge: .leading) {
             if habit.kind == .build {
                 Button {
+                    HapticManager.impact(.medium)
                     appState.incHabitToday(id: habit.id)
                 } label: {
                     Label("Log", systemImage: "plus")
@@ -227,6 +229,7 @@ private struct HabitRow: View {
                 .tint(Color(hex: "#30d158"))
             } else {
                 Button {
+                    HapticManager.impact(.medium)
                     appState.slipHabitToday(id: habit.id)
                 } label: {
                     Label("Slip", systemImage: "xmark")

@@ -202,15 +202,21 @@ private struct CareRow: View {
 
             Spacer()
 
-            Button(action: action) {
+            Button {
+                HapticManager.impact(done ? .light : .medium)
+                action()
+            } label: {
                 Image(systemName: done ? "checkmark" : "plus")
                     .font(.system(size: 16, weight: .bold))
                     .foregroundColor(.white)
                     .frame(width: 44, height: 44)
-                    .background(color)
+                    .background(done ? color : color.opacity(0.85))
                     .clipShape(Circle())
                     .shadow(color: color.opacity(done ? 0.5 : 0.3), radius: done ? 6 : 4, x: 0, y: 2)
+                    .scaleEffect(done ? 1.05 : 1.0)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.5), value: done)
             }
+            .buttonStyle(PressableButtonStyle())
         }
     }
 }
@@ -276,6 +282,7 @@ private struct TodayTaskRow: View {
 
     var body: some View {
         Button {
+            HapticManager.impact(.light)
             appState.toggleTask(id: task.id)
         } label: {
             HStack(spacing: 12) {
@@ -354,6 +361,7 @@ private struct TodayHabitRow: View {
 
     var body: some View {
         Button {
+            HapticManager.impact(.medium)
             if habit.kind == .build {
                 appState.incHabitToday(id: habit.id)
             } else {

@@ -148,11 +148,14 @@ private struct TaskRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Button {
+                HapticManager.impact(.light)
                 appState.toggleTask(id: task.id)
             } label: {
                 Image(systemName: task.done ? "checkmark.circle.fill" : "circle")
                     .foregroundColor(task.done ? .green : task.category.color)
                     .font(.title3)
+                    .scaleEffect(task.done ? 1.1 : 1.0)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.5), value: task.done)
             }
             .buttonStyle(.plain)
 
@@ -199,7 +202,10 @@ private struct FilterChip: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        Button {
+            HapticManager.selection()
+            action()
+        } label: {
             Text(label)
                 .font(.subheadline.weight(isSelected ? .semibold : .regular))
                 .padding(.horizontal, 14)
@@ -207,8 +213,9 @@ private struct FilterChip: View {
                 .background(isSelected ? Color(hex: "#30d158") : Color(.secondarySystemGroupedBackground))
                 .foregroundColor(isSelected ? .white : .primary)
                 .cornerRadius(20)
+                .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isSelected)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableButtonStyle(scale: 0.95))
     }
 }
 

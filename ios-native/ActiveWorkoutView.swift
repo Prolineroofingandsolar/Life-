@@ -12,6 +12,7 @@ struct ActiveWorkoutView: View {
     @State private var elapsedSeconds: Int = 0
     @State private var timer: Timer? = nil
     @State private var restSecondsRemaining: Int = 0
+    @State private var restTotalSeconds: Int = 0
     @State private var restTimer: Timer? = nil
     @State private var showRestBanner = false
     @State private var showDiscardAlert = false
@@ -52,7 +53,10 @@ struct ActiveWorkoutView: View {
             VStack(spacing: 0) {
                 // Rest timer banner
                 if showRestBanner {
-                    RestTimerBanner(secondsRemaining: restSecondsRemaining) {
+                    RestTimerBanner(
+                        secondsRemaining: restSecondsRemaining,
+                        totalSeconds: restTotalSeconds
+                    ) {
                         stopRestTimer()
                     }
                     .transition(.move(edge: .top).combined(with: .opacity))
@@ -94,12 +98,13 @@ struct ActiveWorkoutView: View {
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
                 if isEditingName {
-                    TextField("Session name", text: $sessionName, onCommit: {
-                        appState.renameSession(sessionId: sessionId, name: sessionName)
-                        isEditingName = false
-                    })
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 180)
+                    TextField("Session name", text: $sessionName)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 180)
+                        .onSubmit {
+                            appState.renameSession(sessionId: sessionId, name: sessionName)
+                            isEditingName = false
+                        }
                 } else {
                     Button {
                         isEditingName = true
@@ -172,6 +177,7 @@ struct ActiveWorkoutView: View {
     private func startRestTimer(seconds: Int) {
         stopRestTimer()
         restSecondsRemaining = seconds
+        restTotalSeconds = seconds
         showRestBanner = true
         restTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
             if restSecondsRemaining > 0 {
@@ -200,22 +206,54 @@ struct ActiveWorkoutView: View {
 
 private struct RestTimerBanner: View {
     let secondsRemaining: Int
+    let totalSeconds: Int
     let onSkip: () -> Void
 
+    private var progress: Double {
+        guard totalSeconds > 0 else { return 1 }
+        return Double(secondsRemaining) / Double(totalSeconds)
+    }
+
     var body: some View {
-        HStack {
-            Image(systemName: "timer")
-                .foregroundColor(.orange)
-            Text("Rest: \(secondsRemaining.formattedDuration)")
-                .font(.headline.monospacedDigit())
+        HStack(spacing: 14) {
+            ZStack {
+                Circle()
+                    .stroke(Color.orange.opacity(0.2), lineWidth: 3.5)
+                    .frame(width: 42, height: 42)
+                Circle()
+                    .trim(from: 0, to: progress)
+                    .stroke(Color.orange, style: StrokeStyle(lineWidth: 3.5, lineCap: .round))
+                    .frame(width: 42, height: 42)
+                    .rotationEffect(.degrees(-90))
+                    .animation(.linear(duration: 1), value: progress)
+                Text("\(secondsRemaining)")
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .foregroundColor(.orange)
+            }
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Rest")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(.secondary)
+                Text(secondsRemaining.formattedDuration)
+                    .font(.headline.monospacedDigit())
+                    .foregroundColor(.primary)
+            }
+
             Spacer()
+
             Button("Skip", action: onSkip)
-                .font(.subheadline)
-                .foregroundColor(.secondary)
+                .font(.subheadline.weight(.semibold))
+                .foregroundColor(.orange)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+                .background(Color.orange.opacity(0.12))
+                .cornerRadius(8)
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(Color.orange.opacity(0.15))
+        .padding(.vertical, 12)
+        .background(Color(.secondarySystemGroupedBackground))
+        .overlay(Rectangle().frame(height: 1).foregroundColor(Color.orange.opacity(0.25)), alignment: .bottom)
     }
 }
 
@@ -385,10 +423,15 @@ private struct SetRow: View {
             }
 
             // Done toggle
-            Button(action: onDone) {
+            Button {
+                HapticManager.impact(set.done ? .light : .medium)
+                onDone()
+            } label: {
                 Image(systemName: set.done ? "checkmark.circle.fill" : "circle")
                     .foregroundColor(set.done ? Color(hex: "#30d158") : .secondary)
                     .font(.title3)
+                    .scaleEffect(set.done ? 1.1 : 1.0)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.5), value: set.done)
             }
             .buttonStyle(.plain)
             .frame(width: 44)
@@ -396,6 +439,7 @@ private struct SetRow: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
         .background(set.done ? Color(hex: "#30d158").opacity(0.08) : Color.clear)
+        .animation(.easeInOut(duration: 0.2), value: set.done)
         .onAppear {
             weightText = set.weight == 0 ? "" : set.weight.formatted1
             repsText = set.reps == 0 ? "" : "\(set.reps)"

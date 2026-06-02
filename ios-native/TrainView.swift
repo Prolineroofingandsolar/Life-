@@ -8,6 +8,7 @@ struct TrainView: View {
     @State private var showActiveWorkout = false
     @State private var showExerciseLibrary = false
     @State private var showAddRoutine = false
+    @State private var pulseResume = false
 
     private var finishedSessions: [WorkoutSession] {
         appState.sessions
@@ -22,9 +23,15 @@ struct TrainView: View {
                 if let active = appState.activeSession {
                     Section {
                         Button {
+                            HapticManager.impact(.medium)
                             showActiveWorkout = true
                         } label: {
-                            HStack {
+                            HStack(spacing: 12) {
+                                Circle()
+                                    .fill(Color(hex: "#30d158"))
+                                    .frame(width: 9, height: 9)
+                                    .scaleEffect(pulseResume ? 1.4 : 0.8)
+                                    .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: pulseResume)
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text("Resume Workout")
                                         .font(.headline)
@@ -38,13 +45,16 @@ struct TrainView: View {
                                     .foregroundColor(Color(hex: "#30d158"))
                             }
                         }
-                        .listRowBackground(Color(hex: "#30d158").opacity(0.12))
+                        .listRowBackground(Color(hex: "#30d158").opacity(pulseResume ? 0.16 : 0.08))
+                        .animation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true), value: pulseResume)
+                        .onAppear { pulseResume = true }
                     }
                 }
 
                 // Routines
                 Section {
                     Button {
+                        HapticManager.impact(.medium)
                         appState.startSession(name: "Quick Workout")
                         showActiveWorkout = true
                     } label: {
@@ -52,6 +62,7 @@ struct TrainView: View {
                             .font(.headline)
                             .foregroundColor(Color(hex: "#30d158"))
                     }
+                    .buttonStyle(PressableButtonStyle())
 
                     ForEach(appState.routines) { routine in
                         RoutineRow(routine: routine) {
@@ -145,7 +156,7 @@ private struct RoutineRow: View {
                 }
                 Text("\(routine.exercises.count) exercise\(routine.exercises.count == 1 ? "" : "s")")
                     .font(.caption2)
-                    .foregroundColor(.tertiary)
+                    .foregroundColor(Color(UIColor.tertiaryLabel))
             }
             Spacer()
             Button {
@@ -157,12 +168,17 @@ private struct RoutineRow: View {
             }
             .buttonStyle(.plain)
 
-            Button(action: onStart) {
+            Button {
+                HapticManager.impact(.medium)
+                onStart()
+            } label: {
                 Image(systemName: "play.fill")
-                    .foregroundColor(Color(hex: "#30d158"))
-                    .frame(width: 32, height: 32)
+                    .foregroundColor(.white)
+                    .frame(width: 36, height: 36)
+                    .background(Color(hex: "#30d158"))
+                    .clipShape(Circle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PressableButtonStyle())
         }
         .padding(.vertical, 4)
         .sheet(isPresented: $showEdit) {
