@@ -163,6 +163,192 @@ enum WorkoutSeed {
         ),
     ]
 
+    // MARK: Program Templates
+
+    struct WorkoutProgram: Identifiable {
+        let id: String
+        let name: String
+        let icon: String
+        let description: String
+        let difficulty: String
+        let daysPerWeek: Int
+        let routines: [Routine]
+    }
+
+    static let programTemplates: [WorkoutProgram] = [
+        // PPL
+        WorkoutProgram(
+            id: "prog_ppl",
+            name: "Push / Pull / Legs",
+            icon: "figure.strengthtraining.traditional",
+            description: "Classic 3-day split targeting push muscles, pull muscles, and legs separately.",
+            difficulty: "Intermediate",
+            daysPerWeek: 3,
+            routines: [
+                Routine(id: "tmpl_ppl_push", name: "PPL — Push", exercises: [
+                    RoutineExercise(exerciseId: "ex_bench_press",     defaultSets: 4, defaultReps: 8,  defaultWeight: 60, repRangeMin: 6,  repRangeMax: 10, restSeconds: 120),
+                    RoutineExercise(exerciseId: "ex_incline_bench",   defaultSets: 3, defaultReps: 10, defaultWeight: 50, repRangeMin: 8,  repRangeMax: 12, restSeconds: 90),
+                    RoutineExercise(exerciseId: "ex_ohp",             defaultSets: 3, defaultReps: 10, defaultWeight: 40, repRangeMin: 8,  repRangeMax: 12, restSeconds: 90),
+                    RoutineExercise(exerciseId: "ex_lateral_raise",   defaultSets: 3, defaultReps: 15, defaultWeight: 10, repRangeMin: 12, repRangeMax: 20, restSeconds: 60),
+                    RoutineExercise(exerciseId: "ex_cable_fly",       defaultSets: 3, defaultReps: 12, defaultWeight: 15, repRangeMin: 10, repRangeMax: 15, restSeconds: 60),
+                    RoutineExercise(exerciseId: "ex_tricep_pushdown", defaultSets: 3, defaultReps: 12, defaultWeight: 30, repRangeMin: 10, repRangeMax: 15, restSeconds: 60),
+                    RoutineExercise(exerciseId: "ex_skullcrusher",    defaultSets: 3, defaultReps: 12, defaultWeight: 20, repRangeMin: 10, repRangeMax: 15, restSeconds: 60),
+                ]),
+                Routine(id: "tmpl_ppl_pull", name: "PPL — Pull", exercises: [
+                    RoutineExercise(exerciseId: "ex_deadlift",         defaultSets: 3, defaultReps: 5,  defaultWeight: 100, repRangeMin: 3, repRangeMax: 5,  restSeconds: 180),
+                    RoutineExercise(exerciseId: "ex_pullup",           defaultSets: 3, defaultReps: 8,  defaultWeight: 0,   repRangeMin: 6, repRangeMax: 10, restSeconds: 120),
+                    RoutineExercise(exerciseId: "ex_lat_pulldown",     defaultSets: 3, defaultReps: 10, defaultWeight: 50,  repRangeMin: 8, repRangeMax: 12, restSeconds: 90),
+                    RoutineExercise(exerciseId: "ex_seated_cable_row", defaultSets: 3, defaultReps: 12, defaultWeight: 40,  repRangeMin: 10,repRangeMax: 15, restSeconds: 75),
+                    RoutineExercise(exerciseId: "ex_face_pull",        defaultSets: 3, defaultReps: 15, defaultWeight: 15,  repRangeMin: 12,repRangeMax: 20, restSeconds: 60),
+                    RoutineExercise(exerciseId: "ex_barbell_curl",     defaultSets: 3, defaultReps: 12, defaultWeight: 20,  repRangeMin: 10,repRangeMax: 15, restSeconds: 60),
+                    RoutineExercise(exerciseId: "ex_hammer_curl",      defaultSets: 3, defaultReps: 12, defaultWeight: 12,  repRangeMin: 10,repRangeMax: 15, restSeconds: 60),
+                ]),
+                Routine(id: "tmpl_ppl_legs", name: "PPL — Legs", exercises: [
+                    RoutineExercise(exerciseId: "ex_squat",           defaultSets: 4, defaultReps: 8,  defaultWeight: 80,  repRangeMin: 5,  repRangeMax: 8,  restSeconds: 180),
+                    RoutineExercise(exerciseId: "ex_leg_press",       defaultSets: 3, defaultReps: 12, defaultWeight: 120, repRangeMin: 10, repRangeMax: 15, restSeconds: 90),
+                    RoutineExercise(exerciseId: "ex_rdl",             defaultSets: 3, defaultReps: 10, defaultWeight: 60,  repRangeMin: 8,  repRangeMax: 12, restSeconds: 90),
+                    RoutineExercise(exerciseId: "ex_leg_curl",        defaultSets: 3, defaultReps: 12, defaultWeight: 30,  repRangeMin: 10, repRangeMax: 15, restSeconds: 75),
+                    RoutineExercise(exerciseId: "ex_leg_extension",   defaultSets: 3, defaultReps: 15, defaultWeight: 40,  repRangeMin: 12, repRangeMax: 20, restSeconds: 60),
+                    RoutineExercise(exerciseId: "ex_calf_raise",      defaultSets: 4, defaultReps: 15, defaultWeight: 40,  repRangeMin: 12, repRangeMax: 20, restSeconds: 60),
+                ]),
+            ]
+        ),
+        // Upper / Lower
+        WorkoutProgram(
+            id: "prog_upperlower",
+            name: "Upper / Lower Split",
+            icon: "arrow.up.and.down.circle.fill",
+            description: "4-day split alternating upper and lower body sessions for optimal frequency.",
+            difficulty: "Intermediate",
+            daysPerWeek: 4,
+            routines: [
+                Routine(id: "tmpl_ul_upper_a", name: "Upper A — Strength", exercises: [
+                    RoutineExercise(exerciseId: "ex_bench_press",   defaultSets: 4, defaultReps: 5,  defaultWeight: 70, repRangeMin: 4, repRangeMax: 6,  restSeconds: 150),
+                    RoutineExercise(exerciseId: "ex_barbell_row",   defaultSets: 4, defaultReps: 5,  defaultWeight: 60, repRangeMin: 4, repRangeMax: 6,  restSeconds: 150),
+                    RoutineExercise(exerciseId: "ex_ohp",           defaultSets: 3, defaultReps: 8,  defaultWeight: 40, repRangeMin: 6, repRangeMax: 8,  restSeconds: 120),
+                    RoutineExercise(exerciseId: "ex_pullup",        defaultSets: 3, defaultReps: 8,  defaultWeight: 0,  repRangeMin: 6, repRangeMax: 10, restSeconds: 120),
+                    RoutineExercise(exerciseId: "ex_barbell_curl",  defaultSets: 3, defaultReps: 10, defaultWeight: 20, repRangeMin: 8, repRangeMax: 12, restSeconds: 60),
+                    RoutineExercise(exerciseId: "ex_skullcrusher",  defaultSets: 3, defaultReps: 10, defaultWeight: 20, repRangeMin: 8, repRangeMax: 12, restSeconds: 60),
+                ]),
+                Routine(id: "tmpl_ul_lower_a", name: "Lower A — Strength", exercises: [
+                    RoutineExercise(exerciseId: "ex_squat",         defaultSets: 4, defaultReps: 5,  defaultWeight: 80,  repRangeMin: 4,  repRangeMax: 6,  restSeconds: 180),
+                    RoutineExercise(exerciseId: "ex_rdl",           defaultSets: 3, defaultReps: 8,  defaultWeight: 60,  repRangeMin: 6,  repRangeMax: 8,  restSeconds: 150),
+                    RoutineExercise(exerciseId: "ex_leg_press",     defaultSets: 3, defaultReps: 10, defaultWeight: 120, repRangeMin: 8,  repRangeMax: 12, restSeconds: 90),
+                    RoutineExercise(exerciseId: "ex_leg_curl",      defaultSets: 3, defaultReps: 12, defaultWeight: 30,  repRangeMin: 10, repRangeMax: 15, restSeconds: 75),
+                    RoutineExercise(exerciseId: "ex_calf_raise",    defaultSets: 4, defaultReps: 15, defaultWeight: 40,  repRangeMin: 12, repRangeMax: 20, restSeconds: 60),
+                ]),
+                Routine(id: "tmpl_ul_upper_b", name: "Upper B — Volume", exercises: [
+                    RoutineExercise(exerciseId: "ex_incline_bench",   defaultSets: 4, defaultReps: 10, defaultWeight: 50, repRangeMin: 8,  repRangeMax: 12, restSeconds: 90),
+                    RoutineExercise(exerciseId: "ex_lat_pulldown",    defaultSets: 4, defaultReps: 10, defaultWeight: 50, repRangeMin: 8,  repRangeMax: 12, restSeconds: 90),
+                    RoutineExercise(exerciseId: "ex_db_ohp",          defaultSets: 3, defaultReps: 12, defaultWeight: 20, repRangeMin: 10, repRangeMax: 15, restSeconds: 75),
+                    RoutineExercise(exerciseId: "ex_seated_cable_row",defaultSets: 3, defaultReps: 12, defaultWeight: 40, repRangeMin: 10, repRangeMax: 15, restSeconds: 75),
+                    RoutineExercise(exerciseId: "ex_dumbbell_curl",   defaultSets: 3, defaultReps: 12, defaultWeight: 12, repRangeMin: 10, repRangeMax: 15, restSeconds: 60),
+                    RoutineExercise(exerciseId: "ex_tricep_pushdown", defaultSets: 3, defaultReps: 12, defaultWeight: 25, repRangeMin: 10, repRangeMax: 15, restSeconds: 60),
+                    RoutineExercise(exerciseId: "ex_lateral_raise",   defaultSets: 3, defaultReps: 15, defaultWeight: 8,  repRangeMin: 12, repRangeMax: 20, restSeconds: 60),
+                ]),
+                Routine(id: "tmpl_ul_lower_b", name: "Lower B — Volume", exercises: [
+                    RoutineExercise(exerciseId: "ex_hack_squat",      defaultSets: 4, defaultReps: 10, defaultWeight: 80,  repRangeMin: 8,  repRangeMax: 12, restSeconds: 90),
+                    RoutineExercise(exerciseId: "ex_db_rdl",          defaultSets: 3, defaultReps: 12, defaultWeight: 30,  repRangeMin: 10, repRangeMax: 15, restSeconds: 90),
+                    RoutineExercise(exerciseId: "ex_bulgarian_squat", defaultSets: 3, defaultReps: 10, defaultWeight: 20,  repRangeMin: 8,  repRangeMax: 12, restSeconds: 90),
+                    RoutineExercise(exerciseId: "ex_leg_extension",   defaultSets: 3, defaultReps: 15, defaultWeight: 40,  repRangeMin: 12, repRangeMax: 20, restSeconds: 60),
+                    RoutineExercise(exerciseId: "ex_calf_raise",      defaultSets: 4, defaultReps: 20, defaultWeight: 40,  repRangeMin: 15, repRangeMax: 25, restSeconds: 60),
+                    RoutineExercise(exerciseId: "ex_hip_thrust",      defaultSets: 3, defaultReps: 12, defaultWeight: 60,  repRangeMin: 10, repRangeMax: 15, restSeconds: 75),
+                ]),
+            ]
+        ),
+        // Beginner Full Body
+        WorkoutProgram(
+            id: "prog_beginner",
+            name: "Beginner Full Body",
+            icon: "star.fill",
+            description: "3-day full-body programme for beginners. Builds strength on the big lifts.",
+            difficulty: "Beginner",
+            daysPerWeek: 3,
+            routines: [
+                Routine(id: "tmpl_beg_a", name: "Beginner A", exercises: [
+                    RoutineExercise(exerciseId: "ex_squat",         defaultSets: 3, defaultReps: 5,  defaultWeight: 40, repRangeMin: 4, repRangeMax: 6,  restSeconds: 150),
+                    RoutineExercise(exerciseId: "ex_bench_press",   defaultSets: 3, defaultReps: 5,  defaultWeight: 40, repRangeMin: 4, repRangeMax: 6,  restSeconds: 150),
+                    RoutineExercise(exerciseId: "ex_barbell_row",   defaultSets: 3, defaultReps: 5,  defaultWeight: 40, repRangeMin: 4, repRangeMax: 6,  restSeconds: 150),
+                    RoutineExercise(exerciseId: "ex_plank",         defaultSets: 3, defaultReps: 1,  defaultWeight: 0,  repRangeMin: 1, repRangeMax: 1,  restSeconds: 60),
+                ]),
+                Routine(id: "tmpl_beg_b", name: "Beginner B", exercises: [
+                    RoutineExercise(exerciseId: "ex_squat",         defaultSets: 3, defaultReps: 5,  defaultWeight: 40, repRangeMin: 4, repRangeMax: 6,  restSeconds: 150),
+                    RoutineExercise(exerciseId: "ex_ohp",           defaultSets: 3, defaultReps: 5,  defaultWeight: 25, repRangeMin: 4, repRangeMax: 6,  restSeconds: 150),
+                    RoutineExercise(exerciseId: "ex_deadlift",      defaultSets: 1, defaultReps: 5,  defaultWeight: 60, repRangeMin: 4, repRangeMax: 6,  restSeconds: 180),
+                    RoutineExercise(exerciseId: "ex_plank",         defaultSets: 3, defaultReps: 1,  defaultWeight: 0,  repRangeMin: 1, repRangeMax: 1,  restSeconds: 60),
+                ]),
+            ]
+        ),
+        // Women's Glute Focus
+        WorkoutProgram(
+            id: "prog_glute",
+            name: "Women's Glute Focus",
+            icon: "figure.walk",
+            description: "Targets glutes, hamstrings and legs with progressive overload for shape and strength.",
+            difficulty: "Beginner–Intermediate",
+            daysPerWeek: 3,
+            routines: [
+                Routine(id: "tmpl_glute_a", name: "Glute Day A", exercises: [
+                    RoutineExercise(exerciseId: "ex_hip_thrust",      defaultSets: 4, defaultReps: 10, defaultWeight: 40,  repRangeMin: 8,  repRangeMax: 12, restSeconds: 90),
+                    RoutineExercise(exerciseId: "ex_squat",           defaultSets: 3, defaultReps: 10, defaultWeight: 40,  repRangeMin: 8,  repRangeMax: 12, restSeconds: 90),
+                    RoutineExercise(exerciseId: "ex_rdl",             defaultSets: 3, defaultReps: 12, defaultWeight: 30,  repRangeMin: 10, repRangeMax: 15, restSeconds: 75),
+                    RoutineExercise(exerciseId: "ex_cable_kickback",  defaultSets: 3, defaultReps: 15, defaultWeight: 10,  repRangeMin: 12, repRangeMax: 20, restSeconds: 60),
+                    RoutineExercise(exerciseId: "ex_leg_curl",        defaultSets: 3, defaultReps: 12, defaultWeight: 20,  repRangeMin: 10, repRangeMax: 15, restSeconds: 60),
+                ]),
+                Routine(id: "tmpl_glute_b", name: "Glute Day B", exercises: [
+                    RoutineExercise(exerciseId: "ex_bulgarian_squat", defaultSets: 3, defaultReps: 10, defaultWeight: 10,  repRangeMin: 8,  repRangeMax: 12, restSeconds: 90),
+                    RoutineExercise(exerciseId: "ex_glute_bridge",    defaultSets: 4, defaultReps: 15, defaultWeight: 0,   repRangeMin: 12, repRangeMax: 20, restSeconds: 60),
+                    RoutineExercise(exerciseId: "ex_db_rdl",          defaultSets: 3, defaultReps: 12, defaultWeight: 15,  repRangeMin: 10, repRangeMax: 15, restSeconds: 75),
+                    RoutineExercise(exerciseId: "ex_step_up",         defaultSets: 3, defaultReps: 12, defaultWeight: 10,  repRangeMin: 10, repRangeMax: 15, restSeconds: 60),
+                    RoutineExercise(exerciseId: "ex_cable_kickback",  defaultSets: 3, defaultReps: 15, defaultWeight: 8,   repRangeMin: 12, repRangeMax: 20, restSeconds: 60),
+                ]),
+                Routine(id: "tmpl_glute_c", name: "Lower Body Sculpt", exercises: [
+                    RoutineExercise(exerciseId: "ex_leg_press",       defaultSets: 4, defaultReps: 12, defaultWeight: 80,  repRangeMin: 10, repRangeMax: 15, restSeconds: 90),
+                    RoutineExercise(exerciseId: "ex_hip_thrust",      defaultSets: 3, defaultReps: 12, defaultWeight: 50,  repRangeMin: 10, repRangeMax: 15, restSeconds: 90),
+                    RoutineExercise(exerciseId: "ex_lunge",           defaultSets: 3, defaultReps: 10, defaultWeight: 0,   repRangeMin: 8,  repRangeMax: 12, restSeconds: 75),
+                    RoutineExercise(exerciseId: "ex_leg_curl",        defaultSets: 3, defaultReps: 12, defaultWeight: 20,  repRangeMin: 10, repRangeMax: 15, restSeconds: 60),
+                    RoutineExercise(exerciseId: "ex_calf_raise",      defaultSets: 3, defaultReps: 20, defaultWeight: 0,   repRangeMin: 15, repRangeMax: 25, restSeconds: 45),
+                ]),
+            ]
+        ),
+        // Arnold Split
+        WorkoutProgram(
+            id: "prog_arnold",
+            name: "Arnold Split",
+            icon: "bolt.fill",
+            description: "Arnold Schwarzenegger's 6-day split training each muscle group twice per week.",
+            difficulty: "Advanced",
+            daysPerWeek: 6,
+            routines: [
+                Routine(id: "tmpl_arn_chest_back", name: "Arnold — Chest & Back", exercises: [
+                    RoutineExercise(exerciseId: "ex_bench_press",       defaultSets: 4, defaultReps: 8,  defaultWeight: 70, repRangeMin: 6,  repRangeMax: 10, restSeconds: 120),
+                    RoutineExercise(exerciseId: "ex_incline_bench",     defaultSets: 3, defaultReps: 10, defaultWeight: 55, repRangeMin: 8,  repRangeMax: 12, restSeconds: 90),
+                    RoutineExercise(exerciseId: "ex_dumbbell_fly",      defaultSets: 3, defaultReps: 12, defaultWeight: 15, repRangeMin: 10, repRangeMax: 15, restSeconds: 75),
+                    RoutineExercise(exerciseId: "ex_pullup",            defaultSets: 4, defaultReps: 8,  defaultWeight: 0,  repRangeMin: 6,  repRangeMax: 10, restSeconds: 120),
+                    RoutineExercise(exerciseId: "ex_barbell_row",       defaultSets: 4, defaultReps: 8,  defaultWeight: 60, repRangeMin: 6,  repRangeMax: 10, restSeconds: 120),
+                    RoutineExercise(exerciseId: "ex_seated_cable_row",  defaultSets: 3, defaultReps: 12, defaultWeight: 45, repRangeMin: 10, repRangeMax: 15, restSeconds: 75),
+                ]),
+                Routine(id: "tmpl_arn_shoulders_arms", name: "Arnold — Shoulders & Arms", exercises: [
+                    RoutineExercise(exerciseId: "ex_arnold_press",      defaultSets: 4, defaultReps: 10, defaultWeight: 20, repRangeMin: 8,  repRangeMax: 12, restSeconds: 90),
+                    RoutineExercise(exerciseId: "ex_lateral_raise",     defaultSets: 3, defaultReps: 15, defaultWeight: 10, repRangeMin: 12, repRangeMax: 20, restSeconds: 60),
+                    RoutineExercise(exerciseId: "ex_rear_delt_fly",     defaultSets: 3, defaultReps: 15, defaultWeight: 10, repRangeMin: 12, repRangeMax: 20, restSeconds: 60),
+                    RoutineExercise(exerciseId: "ex_barbell_curl",      defaultSets: 3, defaultReps: 10, defaultWeight: 25, repRangeMin: 8,  repRangeMax: 12, restSeconds: 75),
+                    RoutineExercise(exerciseId: "ex_hammer_curl",       defaultSets: 3, defaultReps: 10, defaultWeight: 15, repRangeMin: 8,  repRangeMax: 12, restSeconds: 60),
+                    RoutineExercise(exerciseId: "ex_skullcrusher",      defaultSets: 3, defaultReps: 10, defaultWeight: 20, repRangeMin: 8,  repRangeMax: 12, restSeconds: 75),
+                    RoutineExercise(exerciseId: "ex_tricep_pushdown",   defaultSets: 3, defaultReps: 12, defaultWeight: 25, repRangeMin: 10, repRangeMax: 15, restSeconds: 60),
+                ]),
+                Routine(id: "tmpl_arn_legs", name: "Arnold — Legs", exercises: [
+                    RoutineExercise(exerciseId: "ex_squat",             defaultSets: 5, defaultReps: 8,  defaultWeight: 80, repRangeMin: 6,  repRangeMax: 10, restSeconds: 150),
+                    RoutineExercise(exerciseId: "ex_leg_press",         defaultSets: 3, defaultReps: 12, defaultWeight: 130,repRangeMin: 10, repRangeMax: 15, restSeconds: 90),
+                    RoutineExercise(exerciseId: "ex_rdl",               defaultSets: 3, defaultReps: 10, defaultWeight: 60, repRangeMin: 8,  repRangeMax: 12, restSeconds: 90),
+                    RoutineExercise(exerciseId: "ex_leg_curl",          defaultSets: 3, defaultReps: 12, defaultWeight: 30, repRangeMin: 10, repRangeMax: 15, restSeconds: 75),
+                    RoutineExercise(exerciseId: "ex_leg_extension",     defaultSets: 3, defaultReps: 15, defaultWeight: 40, repRangeMin: 12, repRangeMax: 20, restSeconds: 60),
+                    RoutineExercise(exerciseId: "ex_calf_raise",        defaultSets: 5, defaultReps: 15, defaultWeight: 50, repRangeMin: 12, repRangeMax: 20, restSeconds: 60),
+                ]),
+            ]
+        ),
+    ]
+
     // MARK: Merge helpers
 
     /// Merges new seed exercises into the existing list (add missing, update equipment/instructions on existing).

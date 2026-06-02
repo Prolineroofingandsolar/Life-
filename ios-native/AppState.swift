@@ -20,6 +20,7 @@ struct StateSnapshot: Codable {
     var bodyCompEntries: [BodyCompEntry] = []
     var bodyMeasurements: [BodyMeasurement] = []
     var achievements: [Achievement] = []
+    var programs: [WorkoutProgram] = []
     var careDays: [String: CareDay] = [:]
     var careSettings: CareSettings = CareSettings()
     var workoutSettings: WorkoutSettings = WorkoutSettings()
@@ -33,6 +34,7 @@ final class AppState {
 
     // MARK: Stored Properties
 
+    var latestPR: (exerciseName: String, value: String)? = nil
     var tasks: [AppTask] = []
     var bills: [Bill] = []
     var habits: [Habit] = []
@@ -43,6 +45,7 @@ final class AppState {
     var bodyCompEntries: [BodyCompEntry] = []
     var bodyMeasurements: [BodyMeasurement] = []
     var achievements: [Achievement] = []
+    var programs: [WorkoutProgram] = []
     var careDays: [String: CareDay] = [:]
     var careSettings: CareSettings = CareSettings()
     var workoutSettings: WorkoutSettings = WorkoutSettings()
@@ -92,6 +95,7 @@ final class AppState {
             bodyCompEntries: bodyCompEntries,
             bodyMeasurements: bodyMeasurements,
             achievements: achievements,
+            programs: programs,
             careDays: careDays,
             careSettings: careSettings,
             workoutSettings: workoutSettings,
@@ -110,6 +114,7 @@ final class AppState {
         bodyCompEntries = snapshot.bodyCompEntries
         bodyMeasurements = snapshot.bodyMeasurements
         achievements = snapshot.achievements
+        programs = snapshot.programs
         careDays = snapshot.careDays
         careSettings = snapshot.careSettings
         workoutSettings = snapshot.workoutSettings
@@ -171,8 +176,10 @@ final class AppState {
 
     // MARK: - Task Mutations
 
-    func addTask(title: String, category: TaskCategory, dueDate: DueDate) {
-        let task = AppTask(title: title, category: category, dueDate: dueDate)
+    func addTask(title: String, category: TaskCategory, dueDate: DueDate, priority: TaskPriority = .none, notes: String = "") {
+        var task = AppTask(title: title, category: category, dueDate: dueDate)
+        task.priority = priority
+        task.notes = notes
         tasks.append(task)
         save()
     }
@@ -189,11 +196,34 @@ final class AppState {
         save()
     }
 
-    func updateTask(id: String, title: String? = nil, category: TaskCategory? = nil, dueDate: DueDate? = nil) {
+    func updateTask(id: String, title: String? = nil, category: TaskCategory? = nil, dueDate: DueDate? = nil, priority: TaskPriority? = nil, notes: String? = nil) {
         guard let idx = tasks.firstIndex(where: { $0.id == id }) else { return }
         if let title = title { tasks[idx].title = title }
         if let category = category { tasks[idx].category = category }
         if let dueDate = dueDate { tasks[idx].dueDate = dueDate }
+        if let priority = priority { tasks[idx].priority = priority }
+        if let notes = notes { tasks[idx].notes = notes }
+        save()
+    }
+
+    // MARK: - Subtask Mutations
+
+    func addSubtask(taskId: String, title: String) {
+        guard let idx = tasks.firstIndex(where: { $0.id == taskId }) else { return }
+        tasks[idx].subtasks.append(Subtask(title: title))
+        save()
+    }
+
+    func toggleSubtask(taskId: String, subtaskId: String) {
+        guard let tIdx = tasks.firstIndex(where: { $0.id == taskId }),
+              let sIdx = tasks[tIdx].subtasks.firstIndex(where: { $0.id == subtaskId }) else { return }
+        tasks[tIdx].subtasks[sIdx].done.toggle()
+        save()
+    }
+
+    func deleteSubtask(taskId: String, subtaskId: String) {
+        guard let idx = tasks.firstIndex(where: { $0.id == taskId }) else { return }
+        tasks[idx].subtasks.removeAll { $0.id == subtaskId }
         save()
     }
 
@@ -361,6 +391,24 @@ final class AppState {
         let isDone = !sessions[sIdx].exercises[eIdx].sets[setIdx].done
         sessions[sIdx].exercises[eIdx].sets[setIdx].done = isDone
         sessions[sIdx].exercises[eIdx].sets[setIdx].completedAt = isDone ? Date() : nil
+        if isDone {
+            let set = sessions[sIdx].exercises[eIdx].sets[setIdx]
+            let exId = sessions[sIdx].exercises[eIdx].exerciseId
+            let prevPR = computePRs(for: exId)
+            let new1RM = set.weight * (1 + Double(set.reps) / 30.0)
+            if set.weight > prevPR.bestWeight || new1RM > prevPR.best1RM {
+                let name = exercises.first(where: { $0.id == exId })?.name ?? "Exercise"
+                latestPR = (exerciseName: name, value: "\(set.weight.formatted1)kg × \(set.reps)")
+            }
+        }
+        save()
+    }
+
+    func toggleSetFailure(sessionId: String, exerciseId: String, setId: String) {
+        guard let sIdx = sessions.firstIndex(where: { $0.id == sessionId }),
+              let eIdx = sessions[sIdx].exercises.firstIndex(where: { $0.id == exerciseId }),
+              let setIdx = sessions[sIdx].exercises[eIdx].sets.firstIndex(where: { $0.id == setId }) else { return }
+        sessions[sIdx].exercises[eIdx].sets[setIdx].isFailure.toggle()
         save()
     }
 
@@ -586,6 +634,151 @@ final class AppState {
             .sorted { $0.volumeKg > $1.volumeKg }
     }
 
+    // MARK: - Progressive Overload
+
+    enum OverloadSuggestion: Equatable {
+        case addWeight(by: Double)
+        case addReps
+        case addSet
+        case deload
+        case maintain
+
+        var label: String {
+            switch self {
+            case .addWeight(let by): return "+\(by.formatted1)kg"
+            case .addReps:           return "+1 rep"
+            case .addSet:            return "+1 set"
+            case .deload:            return "Deload"
+            case .maintain:          return "Maintain"
+            }
+        }
+        var icon: String {
+            switch self {
+            case .addWeight: return "arrow.up.circle.fill"
+            case .addReps:   return "plus.circle.fill"
+            case .addSet:    return "square.stack.fill"
+            case .deload:    return "arrow.down.circle.fill"
+            case .maintain:  return "equal.circle.fill"
+            }
+        }
+        var color: Color {
+            switch self {
+            case .addWeight: return Color(hex: "#30d158")
+            case .addReps:   return .blue
+            case .addSet:    return .orange
+            case .deload:    return .red
+            case .maintain:  return .secondary
+            }
+        }
+    }
+
+    func progressiveOverloadSuggestion(for exerciseId: String, targetRepMax: Int) -> OverloadSuggestion {
+        let pastSets: [[LoggedSet]] = sessions
+            .filter { $0.finishedAt != nil }
+            .sorted { ($0.finishedAt ?? .distantPast) > ($1.finishedAt ?? .distantPast) }
+            .compactMap { session in
+                guard let ex = session.exercises.first(where: { $0.exerciseId == exerciseId }) else { return nil }
+                let working = ex.sets.filter { $0.done && !$0.isWarmup }
+                return working.isEmpty ? nil : working
+            }
+
+        guard let recent = pastSets.first, !recent.isEmpty else { return .addWeight(by: 2.5) }
+
+        let avgReps = Double(recent.map(\.reps).reduce(0, +)) / Double(recent.count)
+        let maxWeight = recent.map(\.weight).max() ?? 0
+
+        if pastSets.count >= 3 {
+            let weights = pastSets.prefix(3).map { $0.map(\.weight).max() ?? 0 }
+            let reps    = pastSets.prefix(3).map { $0.map(\.reps).reduce(0, +) }
+            if weights[0] == weights[1] && weights[1] == weights[2] &&
+               reps[0] <= reps[1] && reps[1] <= reps[2] {
+                return .deload
+            }
+        }
+
+        if avgReps >= Double(targetRepMax) {
+            return .addWeight(by: maxWeight >= 100 ? 5.0 : 2.5)
+        }
+        if avgReps >= Double(targetRepMax) - 1.5 {
+            return .addReps
+        }
+        if pastSets.count >= 2 {
+            let prevAvg = Double(pastSets[1].map(\.reps).reduce(0, +)) / Double(pastSets[1].count)
+            if abs(avgReps - prevAvg) < 1 { return .addSet }
+        }
+        return .maintain
+    }
+
+    // MARK: - Muscle Recovery
+
+    enum RecoveryStatus {
+        case fresh, recovered, recovering, fatigued
+        var label: String {
+            switch self {
+            case .fresh:      return "Fresh"
+            case .recovered:  return "Ready"
+            case .recovering: return "Recovering"
+            case .fatigued:   return "Fatigued"
+            }
+        }
+        var color: Color {
+            switch self {
+            case .fresh:      return Color(.tertiaryLabel)
+            case .recovered:  return Color(hex: "#30d158")
+            case .recovering: return .orange
+            case .fatigued:   return .red
+            }
+        }
+    }
+
+    func daysSinceLastTrained(muscle: String) -> Int? {
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        for session in sessions.filter({ $0.finishedAt != nil })
+            .sorted(by: { ($0.finishedAt ?? .distantPast) > ($1.finishedAt ?? .distantPast) }) {
+            let hit = session.exercises.contains { ex in
+                exercises.first(where: { $0.id == ex.exerciseId })?.muscle == muscle
+            }
+            if hit, let fin = session.finishedAt {
+                return cal.dateComponents([.day], from: cal.startOfDay(for: fin), to: today).day ?? 0
+            }
+        }
+        return nil
+    }
+
+    func recoveryStatus(muscle: String) -> RecoveryStatus {
+        guard let days = daysSinceLastTrained(muscle: muscle) else { return .fresh }
+        switch days {
+        case 0:  return .fatigued
+        case 1:  return .recovering
+        default: return .recovered
+        }
+    }
+
+    // MARK: - Weekly Sessions Calendar
+
+    func sessionsThisWeek() -> [Date: [WorkoutSession]] {
+        let cal = Calendar.current
+        let weekStart = cal.date(from: cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date())) ?? Date()
+        let weekEnd   = cal.date(byAdding: .day, value: 7, to: weekStart) ?? Date()
+        var map: [Date: [WorkoutSession]] = [:]
+        for session in sessions where session.finishedAt != nil {
+            guard let fin = session.finishedAt, fin >= weekStart, fin < weekEnd else { continue }
+            let day = cal.startOfDay(for: fin)
+            map[day, default: []].append(session)
+        }
+        return map
+    }
+
+    // MARK: - XP / Level
+
+    var xpPoints: Int {
+        let finished = sessions.filter { $0.finishedAt != nil }
+        return finished.count * 100 + workoutStreak * 10 + achievements.count * 50
+    }
+    var xpLevel: Int  { max(1, xpPoints / 500) }
+    var xpProgress: Double { Double(xpPoints % 500) / 500.0 }
+
     // MARK: - Body Measurements
 
     func addBodyMeasurement(_ measurement: BodyMeasurement) {
@@ -652,6 +845,66 @@ final class AppState {
         return PRResult(bestWeight: bestWeight, bestReps: bestReps, best1RM: best1RM)
     }
 
+    // MARK: - Workout Programs
+
+    func addProgram(name: String, days: [ProgramDay] = []) {
+        let prog = WorkoutProgram(name: name, days: days)
+        programs.append(prog)
+        save()
+    }
+
+    func updateProgram(id: String, name: String, days: [ProgramDay]) {
+        guard let idx = programs.firstIndex(where: { $0.id == id }) else { return }
+        programs[idx].name = name
+        programs[idx].days = days
+        save()
+    }
+
+    func deleteProgram(id: String) {
+        programs.removeAll { $0.id == id }
+        save()
+    }
+
+    func setActiveProgram(id: String?) {
+        for idx in programs.indices {
+            programs[idx].isActive = programs[idx].id == id
+        }
+        save()
+    }
+
+    var activeProgram: WorkoutProgram? {
+        programs.first { $0.isActive }
+    }
+
+    func todaysSuggestedRoutine() -> Routine? {
+        guard let prog = activeProgram else { return nil }
+        let weekday = Calendar.current.component(.weekday, from: Date())
+        // Calendar weekday: 1=Sunday, convert to 1=Monday
+        let mondayBased = weekday == 1 ? 7 : weekday - 1
+        guard let day = prog.days.first(where: { $0.weekday == mondayBased }),
+              let routineId = day.routineId else { return nil }
+        return routines.first { $0.id == routineId }
+    }
+
+    // MARK: - Weekly Workout Counts (P3.3)
+
+    func weeklyWorkoutCounts(weeks: Int) -> [(weekLabel: String, count: Int)] {
+        let cal = Calendar.current
+        let now = Date()
+        return (0..<weeks).reversed().map { offset in
+            let weekAgo = cal.date(byAdding: .weekOfYear, value: -offset, to: now) ?? now
+            let weekStart = cal.date(from: cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: weekAgo)) ?? weekAgo
+            let weekEnd   = cal.date(byAdding: .day, value: 7, to: weekStart) ?? weekStart
+            let count = sessions.filter {
+                guard let fin = $0.finishedAt else { return false }
+                return fin >= weekStart && fin < weekEnd
+            }.count
+            let formatter = DateFormatter()
+            formatter.dateFormat = "MMM d"
+            return (weekLabel: formatter.string(from: weekStart), count: count)
+        }
+    }
+
     // MARK: - Reset
 
     func resetAllData() {
@@ -665,6 +918,7 @@ final class AppState {
         bodyCompEntries = []
         bodyMeasurements = []
         achievements = []
+        programs = []
         careDays = [:]
         careSettings = CareSettings()
         workoutSettings = WorkoutSettings()

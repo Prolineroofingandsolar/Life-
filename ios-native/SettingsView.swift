@@ -12,6 +12,7 @@ struct SettingsView: View {
     @State private var careSettings: CareSettings = CareSettings()
     @State private var workoutSettings: WorkoutSettings = WorkoutSettings()
     @State private var showResetConfirm = false
+    @State private var showCalculators = false
     @State private var showShareSheet = false
     @State private var exportURL: URL? = nil
     @State private var showImportPicker = false
@@ -89,6 +90,15 @@ struct SettingsView: View {
                             in: 15...240,
                             step: 15
                         )
+                    }
+                }
+
+                // Tools
+                Section("Tools") {
+                    Button {
+                        showCalculators = true
+                    } label: {
+                        Label("Calculators", systemImage: "function")
                     }
                 }
 
@@ -199,6 +209,9 @@ struct SettingsView: View {
                 if let url = exportURL {
                     ShareSheet(activityItems: [url])
                 }
+            }
+            .sheet(isPresented: $showCalculators) {
+                CalculatorsView()
             }
             .fileImporter(
                 isPresented: $showImportPicker,

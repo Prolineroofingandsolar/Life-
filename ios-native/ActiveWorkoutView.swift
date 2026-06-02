@@ -16,9 +16,10 @@ struct ActiveWorkoutView: View {
     @State private var restTimer: Timer? = nil
     @State private var showRestBanner = false
     @State private var showDiscardAlert = false
-    @State private var showFinishConfirm = false
     @State private var showExercisePicker = false
     @State private var showSummary = false
+    @State private var showPRBanner = false
+    @State private var prBannerText = ""
     @State private var isEditingName = false
     @State private var sessionName: String = ""
     @State private var notesText: String = ""
@@ -65,6 +66,12 @@ struct ActiveWorkoutView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
                 }
 
+                if showPRBanner {
+                    PRBanner(text: prBannerText)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .padding(.horizontal, 16)
+                }
+
                 LazyVStack(spacing: 16) {
                     ForEach(session.exercises) { exercise in
                         ExerciseCard(
@@ -74,6 +81,14 @@ struct ActiveWorkoutView: View {
                                 appState.toggleSetDone(sessionId: sessionId, exerciseId: exercise.id, setId: setId)
                                 if appState.workoutSettings.restTimerEnabled {
                                     startRestTimer(seconds: appState.workoutSettings.defaultRestSeconds)
+                                }
+                                if let pr = appState.latestPR {
+                                    prBannerText = "🏆 New PR — \(pr.exerciseName) \(pr.value)"
+                                    appState.latestPR = nil
+                                    withAnimation { showPRBanner = true }
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                                        withAnimation { showPRBanner = false }
+                                    }
                                 }
                             }
                         )
@@ -152,7 +167,9 @@ struct ActiveWorkoutView: View {
                 }
 
                 Button {
-                    showFinishConfirm = true
+                    stopTimers()
+                    appState.finishSession(sessionId: sessionId)
+                    showSummary = true
                 } label: {
                     Text("Finish")
                         .bold()
@@ -168,16 +185,6 @@ struct ActiveWorkoutView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This workout will be permanently deleted.")
-        }
-        .alert("Finish Workout?", isPresented: $showFinishConfirm) {
-            Button("Finish") {
-                stopTimers()
-                appState.finishSession(sessionId: sessionId)
-                showSummary = true
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Mark this session as complete?")
         }
         .sheet(isPresented: $showExercisePicker) {
             ExercisePickerSheet(sessionId: sessionId)
@@ -285,6 +292,31 @@ private struct RestTimerBanner: View {
     }
 }
 
+// MARK: - PR Banner
+
+private struct PRBanner: View {
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "trophy.fill")
+                .foregroundColor(.yellow)
+                .font(.title3)
+            Text(text)
+                .font(.subheadline.bold())
+                .foregroundColor(.primary)
+            Spacer()
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color(hex: "#30d158").opacity(0.15))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(hex: "#30d158").opacity(0.4), lineWidth: 1))
+        )
+    }
+}
+
 // MARK: - Exercise Card
 
 private struct ExerciseCard: View {
@@ -293,12 +325,21 @@ private struct ExerciseCard: View {
     let sessionExercise: SessionExercise
     let onSetDone: (String) -> Void
 
+    @State private var showExerciseDetail = false
+
     private var exercise: Exercise? {
         appState.exercises.first { $0.id == sessionExercise.exerciseId }
     }
 
     private var previousSets: [LoggedSet] {
         appState.previousSets(for: sessionExercise.exerciseId)
+    }
+
+    private var overload: AppState.OverloadSuggestion {
+        appState.progressiveOverloadSuggestion(
+            for: sessionExercise.exerciseId,
+            targetRepMax: sessionExercise.targetRepMax
+        )
     }
 
     var body: some View {
@@ -309,17 +350,34 @@ private struct ExerciseCard: View {
                     Circle()
                         .fill(exercise.muscle.muscleColor)
                         .frame(width: 10, height: 10)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(exercise.name)
-                            .font(.headline)
-                        Text("Target: \(sessionExercise.targetRepMin)–\(sessionExercise.targetRepMax) reps")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                    Button {
+                        showExerciseDetail = true
+                    } label: {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(exercise.name)
+                                .font(.headline)
+                                .foregroundColor(.primary)
+                            Text("Target: \(sessionExercise.targetRepMin)–\(sessionExercise.targetRepMax) reps")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
                     }
+                    .buttonStyle(.plain)
                     Spacer()
-                    Text(exercise.muscle)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    // Overload suggestion badge
+                    if overload != .maintain {
+                        HStack(spacing: 3) {
+                            Image(systemName: overload.icon)
+                                .font(.caption2)
+                            Text(overload.label)
+                                .font(.caption2.bold())
+                        }
+                        .foregroundColor(overload.color)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 4)
+                        .background(overload.color.opacity(0.12))
+                        .cornerRadius(8)
+                    }
                 }
                 Button {
                     appState.removeExerciseFromSession(sessionId: sessionId, exerciseId: sessionExercise.id)
@@ -330,6 +388,11 @@ private struct ExerciseCard: View {
                 .buttonStyle(.plain)
             }
             .padding()
+            .sheet(isPresented: $showExerciseDetail) {
+                if let exercise = exercise {
+                    ExerciseDetailSheet(exerciseId: exercise.id)
+                }
+            }
 
             Divider()
 
@@ -337,8 +400,8 @@ private struct ExerciseCard: View {
             if let ex = exercise, ex.kind != .cardio {
                 HStack {
                     Text("Set").frame(width: 30, alignment: .leading)
-                    Text("Prev").frame(width: 80, alignment: .center)
-                    Text("Weight").frame(width: 80, alignment: .center)
+                    Text("Prev").frame(width: 70, alignment: .center)
+                    Text("Weight").frame(width: 104, alignment: .center)
                     Text("Reps").frame(width: 50, alignment: .center)
                     Text("✓").frame(width: 44, alignment: .center)
                 }
@@ -401,6 +464,13 @@ private struct SetRow: View {
     @FocusState private var weightFocused: Bool
     @FocusState private var repsFocused: Bool
 
+    private func adjustWeight(_ delta: Double) {
+        let current = Double(weightText.replacingOccurrences(of: ",", with: ".")) ?? set.weight
+        let newWeight = max(0, current + delta)
+        weightText = newWeight.formatted1
+        appState.updateSet(sessionId: sessionId, exerciseId: exerciseId, setId: set.id, weight: newWeight)
+    }
+
     private var prevLabel: String {
         guard let prev = prevSet, prev.weight > 0 || prev.reps > 0 else { return "—" }
         if prev.weight > 0 && prev.reps > 0 {
@@ -424,6 +494,10 @@ private struct SetRow: View {
                         Text("D")
                             .font(.caption.bold())
                             .foregroundColor(.purple)
+                    } else if set.isFailure {
+                        Text("F")
+                            .font(.caption.bold())
+                            .foregroundColor(.red)
                     } else {
                         Text("\(setNumber)")
                             .font(.caption)
@@ -436,13 +510,13 @@ private struct SetRow: View {
                 Text(prevLabel)
                     .font(.caption.monospacedDigit())
                     .foregroundColor(.secondary)
-                    .frame(width: 80, alignment: .center)
+                    .frame(width: 70, alignment: .center)
 
                 if exerciseKind == .cardio {
                     TextField("min", text: $weightText)
                         .keyboardType(.numberPad)
                         .multilineTextAlignment(.center)
-                        .frame(width: 80)
+                        .frame(width: 104)
                         .focused($weightFocused)
                         .onChange(of: weightText) { _, new in
                             if let val = Int(new) {
@@ -450,16 +524,35 @@ private struct SetRow: View {
                             }
                         }
                 } else {
-                    TextField("kg", text: $weightText)
-                        .keyboardType(.decimalPad)
-                        .multilineTextAlignment(.center)
-                        .frame(width: 80)
-                        .focused($weightFocused)
-                        .onChange(of: weightText) { _, new in
-                            if let val = Double(new) {
-                                appState.updateSet(sessionId: sessionId, exerciseId: exerciseId, setId: set.id, weight: val)
-                            }
+                    HStack(spacing: 2) {
+                        Button { adjustWeight(-2.5) } label: {
+                            Text("−")
+                                .font(.body.bold())
+                                .frame(width: 26, height: 30)
+                                .background(Color(.tertiarySystemFill))
+                                .cornerRadius(6)
                         }
+                        .buttonStyle(.plain)
+                        TextField("kg", text: $weightText)
+                            .keyboardType(.decimalPad)
+                            .multilineTextAlignment(.center)
+                            .frame(width: 48)
+                            .focused($weightFocused)
+                            .onChange(of: weightText) { _, new in
+                                if let val = Double(new.replacingOccurrences(of: ",", with: ".")) {
+                                    appState.updateSet(sessionId: sessionId, exerciseId: exerciseId, setId: set.id, weight: val)
+                                }
+                            }
+                        Button { adjustWeight(2.5) } label: {
+                            Text("+")
+                                .font(.body.bold())
+                                .frame(width: 26, height: 30)
+                                .background(Color(.tertiarySystemFill))
+                                .cornerRadius(6)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .frame(width: 104)
 
                     TextField("reps", text: $repsText)
                         .keyboardType(.numberPad)
@@ -517,6 +610,12 @@ private struct SetRow: View {
                 Label(set.isWarmup ? "Working" : "Warmup", systemImage: "flame")
             }
             .tint(.orange)
+            Button {
+                appState.toggleSetFailure(sessionId: sessionId, exerciseId: exerciseId, setId: set.id)
+            } label: {
+                Label(set.isFailure ? "Clear" : "Failure", systemImage: "xmark.circle")
+            }
+            .tint(.red)
         }
     }
 }
@@ -567,16 +666,19 @@ struct ExercisePickerSheet: View {
     @Environment(\.dismiss) private var dismiss
     let sessionId: String
     @State private var searchText = ""
+    @State private var equipmentFilter: ExerciseEquipment? = nil
 
     private var muscles: [String] {
         Array(Set(appState.exercises.map(\.muscle))).sorted()
     }
 
     private var filtered: [Exercise] {
-        if searchText.isEmpty { return appState.exercises }
-        return appState.exercises.filter {
-            $0.name.localizedCaseInsensitiveContains(searchText) ||
-            $0.muscle.localizedCaseInsensitiveContains(searchText)
+        appState.exercises.filter { ex in
+            let matchesSearch = searchText.isEmpty ||
+                ex.name.localizedCaseInsensitiveContains(searchText) ||
+                ex.muscle.localizedCaseInsensitiveContains(searchText)
+            let matchesEquipment = equipmentFilter == nil || ex.equipment == equipmentFilter
+            return matchesSearch && matchesEquipment
         }
     }
 
@@ -589,28 +691,31 @@ struct ExercisePickerSheet: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                ForEach(grouped, id: \.0) { muscle, exs in
-                    Section(muscle) {
-                        ForEach(exs) { ex in
-                            Button {
-                                appState.addExerciseToSession(sessionId: sessionId, exerciseId: ex.id)
-                                dismiss()
-                            } label: {
-                                HStack {
-                                    Text(ex.name)
-                                        .foregroundColor(.primary)
-                                    Spacer()
-                                    Text(ex.kind.label)
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
+            VStack(spacing: 0) {
+                EquipmentFilterChips(selected: $equipmentFilter)
+                List {
+                    ForEach(grouped, id: \.0) { muscle, exs in
+                        Section(muscle) {
+                            ForEach(exs) { ex in
+                                Button {
+                                    appState.addExerciseToSession(sessionId: sessionId, exerciseId: ex.id)
+                                    dismiss()
+                                } label: {
+                                    HStack {
+                                        Text(ex.name)
+                                            .foregroundColor(.primary)
+                                        Spacer()
+                                        Text(ex.equipment.label)
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
                                 }
                             }
                         }
                     }
                 }
+                .listStyle(.insetGrouped)
             }
-            .listStyle(.insetGrouped)
             .searchable(text: $searchText)
             .navigationTitle("Add Exercise")
             .navigationBarTitleDisplayMode(.inline)
@@ -620,5 +725,41 @@ struct ExercisePickerSheet: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Equipment Filter Chips (shared)
+
+struct EquipmentFilterChips: View {
+    @Binding var selected: ExerciseEquipment?
+
+    private let options: [ExerciseEquipment?] = [nil] + ExerciseEquipment.allCases.map { Optional($0) }
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(options.indices, id: \.self) { idx in
+                    let option = options[idx]
+                    let label = option?.label ?? "All"
+                    let isSelected = selected == option
+                    Button {
+                        selected = option
+                        HapticManager.selection()
+                    } label: {
+                        Text(label)
+                            .font(.subheadline)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 7)
+                            .background(isSelected ? Color(hex: "#30d158") : Color(.secondarySystemGroupedBackground))
+                            .foregroundColor(isSelected ? .white : .primary)
+                            .cornerRadius(20)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+        }
+        .background(Color(.systemGroupedBackground))
     }
 }
