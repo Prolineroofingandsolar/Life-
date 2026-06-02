@@ -33,11 +33,12 @@ function NumCell({
 }) {
   return (
     <input
-      inputMode="decimal"
+      inputMode="numeric"
+      type="text"
       value={value ?? ''}
       placeholder={placeholder}
       onChange={(e) => {
-        const v = e.target.value.trim()
+        const v = e.target.value.trim().replace(',', '.')
         if (v === '') { onChange(undefined); return }
         const n = parseFloat(v)
         if (!isNaN(n) && n >= 0) onChange(n)
