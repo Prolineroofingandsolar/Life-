@@ -303,23 +303,7 @@ function ExGroupItem({
               : isDrop ? 'text-accent' : 'text-label2'
 
             return (
-              <div key={setIdx} className="relative overflow-hidden rounded-[10px]">
-                {canDelete && (
-                  <div className="absolute inset-y-0 right-0 flex items-center bg-danger pl-4 pr-3 text-white">
-                    <Trash2 size={14} />
-                  </div>
-                )}
-                <motion.div
-                  drag={canDelete ? 'x' : false}
-                  dragConstraints={{ left: -72, right: 0 }}
-                  dragElastic={{ left: 0.5, right: 0 }}
-                  dragMomentum={false}
-                  dragSnapToOrigin
-                  onDragEnd={(_, info) => {
-                    if (canDelete && info.offset.x < -52) onRemoveSet(exIdx, setIdx)
-                  }}
-                  className="relative rounded-[10px] bg-surface"
-                >
+              <div key={setIdx} className="relative rounded-[10px] bg-surface">
                   <div
                     className={`grid items-center gap-2 rounded-[10px] px-1 py-1 ${rowBg}`}
                     style={{ gridTemplateColumns: gridCols(kind) }}
@@ -355,24 +339,37 @@ function ExGroupItem({
                       <NumCell value={set.durationSec} placeholder="0" onChange={(v) => onUpdateSet(exIdx, setIdx, { durationSec: v })} />
                     )}
 
-                    {/* Done checkbox */}
+                    {/* Done checkbox + delete */}
                     <div className="relative flex items-center justify-center">
-                      <motion.button
-                        whileTap={{ scale: 0.85 }}
-                        transition={spring}
-                        onPointerDown={(e) => e.stopPropagation()}
-                        onClick={() => onToggle(exIdx, setIdx, ex.exerciseId, set)}
-                        aria-label="Complete set"
-                        className={`grid h-8 w-8 place-items-center rounded-[8px] border-2 ${
-                          set.done
-                            ? isWarmup ? 'border-amber-500 bg-amber-500 text-white'
-                            : isDrop   ? 'border-accent bg-accent text-white'
-                                       : 'border-move bg-move text-white'
-                            : 'border-label3 text-transparent'
-                        }`}
-                      >
-                        <Check size={16} strokeWidth={3} />
-                      </motion.button>
+                      {canDelete ? (
+                        <motion.button
+                          whileTap={{ scale: 0.85 }}
+                          transition={spring}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          onClick={() => onRemoveSet(exIdx, setIdx)}
+                          aria-label="Remove set"
+                          className="grid h-8 w-8 place-items-center rounded-[8px] text-danger"
+                        >
+                          <Trash2 size={15} />
+                        </motion.button>
+                      ) : (
+                        <motion.button
+                          whileTap={{ scale: 0.85 }}
+                          transition={spring}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          onClick={() => onToggle(exIdx, setIdx, ex.exerciseId, set)}
+                          aria-label="Complete set"
+                          className={`grid h-8 w-8 place-items-center rounded-[8px] border-2 ${
+                            set.done
+                              ? isWarmup ? 'border-amber-500 bg-amber-500 text-white'
+                              : isDrop   ? 'border-accent bg-accent text-white'
+                                         : 'border-move bg-move text-white'
+                              : 'border-label3 text-transparent'
+                          }`}
+                        >
+                          <Check size={16} strokeWidth={3} />
+                        </motion.button>
+                      )}
                       {prFlags[exIdx]?.[setIdx] && (
                         <span className="pointer-events-none absolute -right-1.5 -top-1.5">
                           <Trophy size={12} className="text-nourish" fill="currentColor" />
@@ -380,7 +377,6 @@ function ExGroupItem({
                       )}
                     </div>
                   </div>
-                </motion.div>
               </div>
             )
           })}
