@@ -503,66 +503,82 @@ struct SessionDetailView: View {
 
     var body: some View {
         List {
-            Section {
-                Group {
-                    if let finished = session.finishedAt {
-                        LabeledContent("Date", value: finished.formatted(date: .long, time: .shortened))
-                    }
-                }
-                LabeledContent("Duration", value: session.durationSeconds.formattedDurationShort)
-                LabeledContent("Sets completed", value: "\(session.totalSets)")
-                LabeledContent("Volume", value: session.totalVolumeKg > 0 ? "\(Int(session.totalVolumeKg)) kg" : "—")
-            } header: {
-                Text("Summary")
-            }
-
+            SessionSummarySection(session: session)
             ForEach(session.exercises) { ex in
-                if let exercise = appState.exercises.first(where: { $0.id == ex.exerciseId }) {
-                    Section {
-                        ForEach(Array(ex.sets.enumerated()), id: \.element.id) { idx, set in
-                            HStack {
-                                Group {
-                                    if set.isWarmup {
-                                        Text("W").font(.caption.bold()).foregroundColor(.orange)
-                                    } else {
-                                        Text("\(idx + 1)").font(.caption).foregroundColor(.secondary)
-                                    }
-                                }
-                                .frame(width: 20)
-
-                                if exercise.kind == .cardio {
-                                    Text(set.durationSec > 0 ? "\(set.durationSec / 60):\(String(format: "%02d", set.durationSec % 60))" : "—")
-                                    if set.distanceKm > 0 {
-                                        Text("· \(set.distanceKm.formatted1) km").foregroundColor(.secondary)
-                                    }
-                                } else {
-                                    Text(set.weight > 0 ? "\(set.weight.formatted1) kg" : "BW")
-                                    Text("×")
-                                    Text(set.reps > 0 ? "\(set.reps)" : "—")
-                                }
-
-                                Spacer()
-
-                                if set.done {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .foregroundColor(.green)
-                                        .font(.caption)
-                                }
-                            }
-                            .font(.subheadline)
-                        }
-                    } header: {
-                        HStack {
-                            Circle().fill(exercise.muscle.muscleColor).frame(width: 8, height: 8)
-                            Text(exercise.name)
-                        }
-                    }
-                }
+                SessionExerciseSection(ex: ex)
             }
         }
         .listStyle(.insetGrouped)
         .navigationTitle(session.name)
         .navigationBarTitleDisplayMode(.large)
+    }
+}
+
+private struct SessionSummarySection: View {
+    let session: WorkoutSession
+    var body: some View {
+        Section {
+            if let finished = session.finishedAt {
+                LabeledContent("Date", value: finished.formatted(date: .long, time: .shortened))
+            }
+            LabeledContent("Duration", value: session.durationSeconds.formattedDurationShort)
+            LabeledContent("Sets completed", value: "\(session.totalSets)")
+            LabeledContent("Volume", value: session.totalVolumeKg > 0 ? "\(Int(session.totalVolumeKg)) kg" : "—")
+        } header: {
+            Text("Summary")
+        }
+    }
+}
+
+private struct SessionExerciseSection: View {
+    @Environment(AppState.self) private var appState
+    let ex: SessionExercise
+    var body: some View {
+        if let exercise = appState.exercises.first(where: { $0.id == ex.exerciseId }) {
+            Section {
+                ForEach(Array(ex.sets.enumerated()), id: \.element.id) { idx, set in
+                    SessionSetRow(set: set, index: idx, kind: exercise.kind)
+                }
+            } header: {
+                HStack {
+                    Circle().fill(exercise.muscle.muscleColor).frame(width: 8, height: 8)
+                    Text(exercise.name)
+                }
+            }
+        }
+    }
+}
+
+private struct SessionSetRow: View {
+    let set: LoggedSet
+    let index: Int
+    let kind: ExerciseKind
+    var body: some View {
+        HStack {
+            Group {
+                if set.isWarmup {
+                    Text("W").font(.caption.bold()).foregroundColor(.orange)
+                } else {
+                    Text("\(index + 1)").font(.caption).foregroundColor(.secondary)
+                }
+            }
+            .frame(width: 20)
+            if kind == .cardio {
+                Text(set.durationSec > 0 ? "\(set.durationSec / 60):\(String(format: "%02d", set.durationSec % 60))" : "—")
+                if set.distanceKm > 0 {
+                    Text("· \(set.distanceKm.formatted1) km").foregroundColor(.secondary)
+                }
+            } else {
+                Text(set.weight > 0 ? "\(set.weight.formatted1) kg" : "BW")
+                Text("×")
+                Text(set.reps > 0 ? "\(set.reps)" : "—")
+            }
+            Spacer()
+            if set.done {
+                Image(systemName: "checkmark.circle.fill").foregroundColor(.green).font(.caption)
+            }
+        }
+        .font(.subheadline)
     }
 }
 
