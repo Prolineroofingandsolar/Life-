@@ -518,9 +518,7 @@ private struct SessionSummarySection: View {
     let session: WorkoutSession
     var body: some View {
         Section {
-            if let finished = session.finishedAt {
-                LabeledContent("Date", value: finished.formatted(date: .long, time: .shortened))
-            }
+            LabeledContent("Date", value: session.finishedAt.map { $0.formatted(date: .long, time: .shortened) } ?? "In progress")
             LabeledContent("Duration", value: session.durationSeconds.formattedDurationShort)
             LabeledContent("Sets completed", value: "\(session.totalSets)")
             LabeledContent("Volume", value: session.totalVolumeKg > 0 ? "\(Int(session.totalVolumeKg)) kg" : "—")
