@@ -534,15 +534,17 @@ private struct SessionExerciseSection: View {
     @Environment(AppState.self) private var appState
     let ex: SessionExercise
     var body: some View {
-        if let exercise = appState.exercises.first(where: { $0.id == ex.exerciseId }) {
-            Section {
-                ForEach(Array(ex.sets.enumerated()), id: \.element.id) { idx, set in
-                    SessionSetRow(set: set, index: idx, kind: exercise.kind)
-                }
-            } header: {
-                HStack {
-                    Circle().fill(exercise.muscle.muscleColor).frame(width: 8, height: 8)
-                    Text(exercise.name)
+        Group {
+            if let exercise = appState.exercises.first(where: { $0.id == ex.exerciseId }) {
+                Section {
+                    ForEach(Array(ex.sets.enumerated()), id: \.element.id) { idx, set in
+                        SessionSetRow(set: set, index: idx, kind: exercise.kind)
+                    }
+                } header: {
+                    HStack {
+                        Circle().fill(exercise.muscle.muscleColor).frame(width: 8, height: 8)
+                        Text(exercise.name)
+                    }
                 }
             }
         }
