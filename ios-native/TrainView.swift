@@ -503,13 +503,15 @@ struct SessionDetailView: View {
 
     var body: some View {
         List {
-            Section(header: Text("Summary")) {
+            Section {
                 if let finished = session.finishedAt {
                     LabeledContent("Date", value: finished.formatted(date: .long, time: .shortened))
                 }
                 LabeledContent("Duration", value: session.durationSeconds.formattedDurationShort)
                 LabeledContent("Sets completed", value: "\(session.totalSets)")
                 LabeledContent("Volume", value: session.totalVolumeKg > 0 ? "\(Int(session.totalVolumeKg)) kg" : "—")
+            } header: {
+                Text("Summary")
             }
 
             ForEach(session.exercises) { ex in
