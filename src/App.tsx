@@ -48,7 +48,7 @@ function Shell() {
   const overlayOpen = settings || (inWorkout && !!activeSession) || !!editSession
 
   return (
-    <div className="mx-auto flex max-w-app flex-col" style={{ height: '100dvh', maxHeight: '-webkit-fill-available' }}>
+    <div className="mx-auto flex max-w-app flex-col" style={{ height: '100%' }}>
       {/* Frosted-glass status-bar spacer — lives outside the scroll container so
           safe-area padding never fights a fixed height, and sticky headers below
           don't need their own safe-top at all. */}

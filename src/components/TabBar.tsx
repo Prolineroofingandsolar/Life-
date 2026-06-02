@@ -21,9 +21,10 @@ export default function TabBar<T extends string>({
       className="shrink-0 border-t border-separator/40"
       style={{
         background: 'rgb(var(--bg))',
-        paddingBottom: 'max(env(safe-area-inset-bottom), 8px)',
+        paddingBottom: 'env(safe-area-inset-bottom)',
         position: 'relative',
         zIndex: 10,
+        flexShrink: 0,
       }}
     >
       <div className="flex">
