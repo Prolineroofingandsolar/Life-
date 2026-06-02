@@ -38,10 +38,10 @@ final class HealthKitManager {
     // MARK: - Import
 
     struct BodyDataResult {
-        var weight: [(date: Date, kg: Double)] = []
-        var bodyFat: [(date: Date, pct: Double)] = []
-        var leanMass: [(date: Date, kg: Double)] = []
-        var bmi: [(date: Date, val: Double)] = []
+        var weight: [(date: Date, value: Double)] = []
+        var bodyFat: [(date: Date, value: Double)] = []
+        var leanMass: [(date: Date, value: Double)] = []
+        var bmi: [(date: Date, value: Double)] = []
     }
 
     func importBodyData(daysBack: Int = 365) async -> BodyDataResult {
