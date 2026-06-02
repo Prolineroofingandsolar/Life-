@@ -31,17 +31,27 @@ function NumCell({
   onChange: (v: number | undefined) => void
   placeholder: string
 }) {
+  const [local, setLocal] = useState(value != null ? String(value) : '')
+
   return (
     <input
-      inputMode="numeric"
-      type="text"
-      value={value ?? ''}
+      type="number"
+      inputMode="decimal"
+      value={local}
       placeholder={placeholder}
       onChange={(e) => {
-        const v = e.target.value.trim().replace(',', '.')
+        const raw = e.target.value
+        setLocal(raw)
+        const v = raw.trim().replace(',', '.')
         if (v === '') { onChange(undefined); return }
         const n = parseFloat(v)
         if (!isNaN(n) && n >= 0) onChange(n)
+      }}
+      onBlur={(e) => {
+        const v = e.target.value.trim().replace(',', '.')
+        const n = parseFloat(v)
+        if (isNaN(n) || n < 0) { setLocal(''); onChange(undefined) }
+        else { setLocal(String(n)); onChange(n) }
       }}
       style={{ touchAction: 'manipulation', WebkitUserSelect: 'text', userSelect: 'text' }}
       className="w-full rounded-[8px] bg-fill py-2 text-center text-body text-label placeholder:text-label3 focus:outline-none focus:ring-2 focus:ring-accent/60"
