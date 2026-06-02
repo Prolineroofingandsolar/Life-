@@ -160,7 +160,7 @@ private struct ProgramRow: View {
                     Spacer()
                     Image(systemName: "chevron.right")
                         .font(.caption)
-                        .foregroundColor(.tertiary)
+                        .foregroundColor(Color(.tertiaryLabel))
                 }
 
                 HStack(spacing: 4) {
