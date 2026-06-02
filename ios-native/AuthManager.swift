@@ -4,10 +4,10 @@ import SwiftUI
 
 // MARK: - Auth Manager
 
-@Observable
-final class AuthManager {
-    var user: FirebaseAuth.User? = nil
-    var isLoading = false
+@MainActor
+final class AuthManager: ObservableObject {
+    @Published var user: FirebaseAuth.User? = nil
+    @Published var isLoading = false
     private var handle: AuthStateDidChangeListenerHandle?
 
     static var isFirebaseReady: Bool {
@@ -18,7 +18,7 @@ final class AuthManager {
         guard Self.isFirebaseReady else { return }
         isLoading = true
         handle = Auth.auth().addStateDidChangeListener { [weak self] _, user in
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 self?.user = user
                 self?.isLoading = false
             }
@@ -34,18 +34,19 @@ final class AuthManager {
     func signIn(email: String, password: String) async throws {
         guard Self.isFirebaseReady else { return }
         let result = try await Auth.auth().signIn(withEmail: email, password: password)
-        await MainActor.run { self.user = result.user }
+        self.user = result.user
     }
 
     func signUp(email: String, password: String) async throws {
         guard Self.isFirebaseReady else { return }
         let result = try await Auth.auth().createUser(withEmail: email, password: password)
-        await MainActor.run { self.user = result.user }
+        self.user = result.user
     }
 
     func signOut() throws {
         guard Self.isFirebaseReady else { return }
         try Auth.auth().signOut()
+        self.user = nil
     }
 
     func resetPassword(email: String) async throws {

@@ -4,7 +4,7 @@ import SwiftUI
 
 struct RootView: View {
     @Environment(AppState.self) private var appState
-    @Environment(AuthManager.self) private var authManager
+    @EnvironmentObject private var authManager: AuthManager
 
     var body: some View {
         Group {

@@ -5,7 +5,7 @@ import SwiftUI
 struct SettingsView: View {
 
     @Environment(AppState.self) private var appState
-    @Environment(AuthManager.self) private var authManager
+    @EnvironmentObject private var authManager: AuthManager
     @Environment(\.dismiss) private var dismiss
 
     @State private var nameInput: String = ""

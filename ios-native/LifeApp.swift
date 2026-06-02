@@ -5,7 +5,7 @@ import FirebaseCore
 struct LifeApp: App {
 
     @State private var appState = AppState()
-    @State private var authManager = AuthManager()
+    @StateObject private var authManager = AuthManager()
 
     init() {
         if Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist") != nil {
@@ -17,7 +17,7 @@ struct LifeApp: App {
         WindowGroup {
             RootView()
                 .environment(appState)
-                .environment(authManager)
+                .environmentObject(authManager)
                 .tint(Color(hex: "#30d158"))
         }
     }

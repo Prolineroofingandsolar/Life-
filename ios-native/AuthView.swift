@@ -4,7 +4,7 @@ import SwiftUI
 
 struct AuthView: View {
 
-    @Environment(AuthManager.self) private var authManager
+    @EnvironmentObject private var authManager: AuthManager
 
     @State private var isSignUp = false
     @State private var email = ""
