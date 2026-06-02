@@ -77,7 +77,7 @@ final class AppState {
         if let data = try? JSONEncoder().encode(snapshot) {
             UserDefaults.standard.set(data, forKey: PersistenceKey.appState)
         }
-        WidgetSync.sync(tasks: tasks)
+        WidgetSync.sync(tasks: tasks, habits: habits)
         if let uid = cloudUserId {
             FirestoreSync.shared.scheduleUpload(snapshot, userId: uid)
         }

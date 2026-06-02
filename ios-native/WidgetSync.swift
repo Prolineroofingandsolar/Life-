@@ -3,16 +3,17 @@ import WidgetKit
 
 // MARK: - Widget Sync
 
-/// Syncs today's undone tasks to the shared App Group so the widget can read them.
-/// Uses the same JSON format as LifeTasksWidget expects: [{id, title, category, done, dueDate, priority}]
+/// Syncs today's tasks and habits to the shared App Group so widgets can read them.
 
 enum WidgetSync {
 
     private static let appGroup = "group.uk.co.prolineroofingandsolar.life"
-    private static let defaultsKey = "life_widget_tasks"
-    private static let fileName = "life_tasks.json"
+    private static let tasksKey = "life_widget_tasks"
+    private static let habitsKey = "life_widget_habits"
+    private static let tasksFile = "life_tasks.json"
+    private static let habitsFile = "life_habits.json"
 
-    // MARK: - Widget Task Shape
+    // MARK: - Widget Shapes
 
     private struct WidgetTask: Codable {
         let id: String
@@ -23,9 +24,25 @@ enum WidgetSync {
         let priority: String
     }
 
+    private struct WidgetHabit: Codable {
+        let id: String
+        let name: String
+        let emoji: String
+        let done: Bool
+        let count: Int
+        let targetCount: Int
+        let kind: String
+    }
+
     // MARK: - Sync
 
-    static func sync(tasks: [AppTask]) {
+    static func sync(tasks: [AppTask], habits: [Habit]) {
+        syncTasks(tasks)
+        syncHabits(habits)
+        WidgetCenter.shared.reloadAllTimelines()
+    }
+
+    private static func syncTasks(_ tasks: [AppTask]) {
         let widgetTasks = tasks.map { task in
             WidgetTask(
                 id: task.id,
@@ -36,25 +53,41 @@ enum WidgetSync {
                 priority: task.priority.rawValue
             )
         }
+        write(widgetTasks, defaultsKey: tasksKey, fileName: tasksFile)
+    }
 
-        guard let data = try? JSONEncoder().encode(widgetTasks) else { return }
+    private static func syncHabits(_ habits: [Habit]) {
+        let today = Date().dayKey
+        let widgetHabits = habits
+            .filter { !$0.isArchived && $0.cadence == .daily }
+            .map { habit in
+                let count = habit.logs.first { $0.dayKey == today }?.count ?? 0
+                return WidgetHabit(
+                    id: habit.id,
+                    name: habit.name,
+                    emoji: habit.emoji,
+                    done: count >= habit.targetCount,
+                    count: count,
+                    targetCount: habit.targetCount,
+                    kind: habit.kind.rawValue
+                )
+            }
+        write(widgetHabits, defaultsKey: habitsKey, fileName: habitsFile)
+    }
+
+    private static func write<T: Encodable>(_ value: T, defaultsKey: String, fileName: String) {
+        guard let data = try? JSONEncoder().encode(value) else { return }
         let jsonString = String(data: data, encoding: .utf8)
 
-        // Write to App Group UserDefaults
         if let defaults = UserDefaults(suiteName: appGroup) {
             defaults.set(jsonString, forKey: defaultsKey)
             defaults.synchronize()
         }
 
-        // Write to shared file
         if let containerURL = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: appGroup
         ) {
-            let fileURL = containerURL.appendingPathComponent(fileName)
-            try? data.write(to: fileURL, options: .atomic)
+            try? data.write(to: containerURL.appendingPathComponent(fileName), options: .atomic)
         }
-
-        // Tell WidgetKit to refresh immediately
-        WidgetCenter.shared.reloadAllTimelines()
     }
 }
