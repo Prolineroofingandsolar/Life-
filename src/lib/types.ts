@@ -24,6 +24,7 @@ export interface CareDay {
   water: number
   meals: number
   lastBreakAt: number | null
+  steps: number
 }
 
 export interface CareSettings {
@@ -32,6 +33,7 @@ export interface CareSettings {
   waterIntervalMin: number
   mealsGoal: number
   breakIntervalMin: number
+  stepGoal: number
 }
 
 /* ------------------------------ Workout ------------------------------ */

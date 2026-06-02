@@ -21,7 +21,7 @@ export async function requestHealthKitPermissions(): Promise<boolean> {
     const { CapacitorHealthkit } = await import('@perfood/capacitor-healthkit')
     await CapacitorHealthkit.requestAuthorization({
       all: [],
-      read: ['bodyMass', 'bodyFatPercentage', 'leanBodyMass', 'bodyMassIndex'],
+      read: ['bodyMass', 'bodyFatPercentage', 'leanBodyMass', 'bodyMassIndex', 'stepCount'],
       write: [],
     })
     return true
@@ -29,6 +29,20 @@ export async function requestHealthKitPermissions(): Promise<boolean> {
     console.error('HealthKit permission error:', e)
     return false
   }
+}
+
+export async function getStepsForToday(): Promise<number> {
+  const { CapacitorHealthkit } = await import('@perfood/capacitor-healthkit')
+  const now = new Date()
+  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const result = await CapacitorHealthkit.queryHKitSampleType({
+    sampleName: 'stepCount',
+    startDate: startOfDay.toISOString(),
+    endDate: now.toISOString(),
+    limit: 0,
+  })
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return Math.round((result.resultData ?? []).reduce((sum: number, s: any) => sum + (s.value ?? 0), 0))
 }
 
 export async function importFromHealthKit(daysBack = 365): Promise<HealthImportResult> {

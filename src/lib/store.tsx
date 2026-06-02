@@ -43,6 +43,7 @@ const DEFAULT_STATE: LifeState = {
     waterIntervalMin: 60,
     mealsGoal: 3,
     breakIntervalMin: 50,
+    stepGoal: 10000,
   },
   name: '',
   exercises: SEED_EXERCISES,
@@ -96,7 +97,7 @@ function load(): LifeState {
   }
 }
 
-const EMPTY_DAY: CareDay = { water: 0, meals: 0, lastBreakAt: null }
+const EMPTY_DAY: CareDay = { water: 0, meals: 0, lastBreakAt: null, steps: 0 }
 
 interface LifeContextValue {
   state: LifeState
@@ -121,6 +122,7 @@ interface LifeContextValue {
   addWater: (n?: number) => void
   addMeal: () => void
   markBreak: () => void
+  syncSteps: (steps: number) => void
   setName: (name: string) => void
   setCareSettings: (patch: Partial<LifeState['careSettings']>) => void
   // workout — routines & library
@@ -278,6 +280,7 @@ export function LifeProvider({ children }: { children: ReactNode }) {
       addWater: (n = 1) => mutateToday((d) => ({ ...d, water: Math.max(0, d.water + n) })),
       addMeal: () => mutateToday((d) => ({ ...d, meals: d.meals + 1 })),
       markBreak: () => mutateToday((d) => ({ ...d, lastBreakAt: Date.now() })),
+      syncSteps: (steps) => mutateToday((d) => ({ ...d, steps: Math.max(0, steps) })),
       setName: (name) => setState((s) => ({ ...s, name })),
       setCareSettings: (patch) => setState((s) => ({ ...s, careSettings: { ...s.careSettings, ...patch } })),
 

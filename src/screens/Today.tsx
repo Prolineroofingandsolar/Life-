@@ -1,9 +1,10 @@
 import { useEffect, useRef } from 'react'
 import { motion } from 'framer-motion'
-import { Droplets, UtensilsCrossed, Wind, Plus, Settings, ChevronRight, Check } from 'lucide-react'
+import { Droplets, UtensilsCrossed, Footprints, Plus, Settings, ChevronRight, Check } from 'lucide-react'
 import { useLife } from '../lib/store'
 import { greeting, longDate } from '../lib/date'
 import { notify, notificationPermission } from '../lib/notifications'
+import { isHealthKitAvailable, requestHealthKitPermissions, getStepsForToday } from '../lib/healthkit'
 import FocusTimer from '../components/FocusTimer'
 import ActivityRings from '../components/ActivityRings'
 import { Card, PressableCard, SectionLabel, IconButton } from '../components/ui'
@@ -15,11 +16,11 @@ import { CATEGORY_LABEL } from '../lib/types'
 const RING_META = [
   { key: 'hydrate', label: 'Hydrate', color: '#32ade6', icon: Droplets },
   { key: 'nourish', label: 'Nourish', color: '#ff9f0a', icon: UtensilsCrossed },
-  { key: 'move',    label: 'Move',    color: '#30d158', icon: Wind },
+  { key: 'move',    label: 'Move',    color: '#30d158', icon: Footprints },
 ] as const
 
 export default function Today({ onOpenSettings, onOpenTasks }: { onOpenSettings: () => void; onOpenTasks?: () => void }) {
-  const { state, today, addWater, addMeal, markBreak } = useLife()
+  const { state, today, addWater, addMeal, markBreak, syncSteps } = useLife()
   const cs = state.careSettings
 
   const openTasks   = state.tasks.filter((t) => !t.done)
@@ -28,25 +29,42 @@ export default function Today({ onOpenSettings, onOpenTasks }: { onOpenSettings:
 
   const todayHabits = state.habits.filter((h) => !h.archived && isScheduledOn(h, new Date()))
 
-  const sinceBreakMin = today.lastBreakAt ? (Date.now() - today.lastBreakAt) / 60_000 : Infinity
-  const moveValue     = sinceBreakMin <= cs.breakIntervalMin ? 1 : 0
+  const steps    = today.steps ?? 0
+  const stepGoal = cs.stepGoal ?? 10000
 
   const rings = [
     { value: today.water, goal: cs.waterGoal, color: '#32ade6' },
     { value: today.meals, goal: cs.mealsGoal, color: '#ff9f0a' },
-    { value: moveValue,   goal: 1,            color: '#30d158' },
+    { value: steps,       goal: stepGoal,     color: '#30d158' },
   ]
 
   const counts: Record<string, string> = {
     hydrate: `${today.water}/${cs.waterGoal}`,
     nourish: `${today.meals}/${cs.mealsGoal}`,
-    move:     moveValue ? 'Done' : 'Due',
+    move:    `${steps.toLocaleString()}/${stepGoal.toLocaleString()}`,
   }
   const onAdd: Record<string, () => void> = {
     hydrate: () => addWater(1),
     nourish: addMeal,
-    move:    markBreak,
+    move:    () => syncSteps(steps + 1000),
   }
+
+  // Sync step count from HealthKit on mount and every 5 minutes.
+  useEffect(() => {
+    if (!isHealthKitAvailable()) return
+    let cancelled = false
+    async function fetchSteps() {
+      try {
+        await requestHealthKitPermissions()
+        const n = await getStepsForToday()
+        if (!cancelled) syncSteps(n)
+      } catch { /* silent — steps stay at last known value */ }
+    }
+    fetchSteps()
+    const id = window.setInterval(fetchSteps, 5 * 60_000)
+    return () => { cancelled = true; window.clearInterval(id) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const lastWaterNudge = useRef<number>(Date.now())
   useEffect(() => {
@@ -97,30 +115,34 @@ export default function Today({ onOpenSettings, onOpenTasks }: { onOpenSettings:
         />
         <div className="relative flex items-center gap-4 p-4">
           <ActivityRings rings={rings} size={130} />
-          <div className="flex-1 space-y-2.5">
+          <div className="flex-1 space-y-3">
             {RING_META.map((m) => {
-              const done = m.key === 'move' ? moveValue === 1 : false
+              const done = m.key === 'move'
+                ? steps >= stepGoal
+                : m.key === 'hydrate'
+                  ? today.water >= cs.waterGoal
+                  : today.meals >= cs.mealsGoal
               return (
                 <motion.button
                   key={m.key}
-                  whileTap={{ scale: 0.97 }}
+                  whileTap={{ scale: 0.96 }}
                   transition={spring}
                   onClick={onAdd[m.key]}
-                  className="flex w-full items-center gap-2.5"
+                  className="flex w-full items-center gap-3"
                 >
-                  <m.icon size={18} strokeWidth={2.4} style={{ color: m.color }} />
+                  <m.icon size={22} strokeWidth={2.2} style={{ color: m.color }} />
                   <div className="flex-1 text-left">
-                    <div className="text-subhead font-medium text-label">{m.label}</div>
+                    <div className="text-body font-semibold text-label">{m.label}</div>
                     <div className="tabular text-footnote text-label2">{counts[m.key]}</div>
                   </div>
                   <span
-                    className="grid h-7 w-7 place-items-center rounded-full text-white"
+                    className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-white"
                     style={{
                       background: m.color,
-                      boxShadow: done ? `0 0 12px ${m.color}88` : undefined,
+                      boxShadow: done ? `0 0 14px ${m.color}99` : `0 2px 8px ${m.color}55`,
                     }}
                   >
-                    {done ? <Check size={15} strokeWidth={3} /> : <Plus size={15} strokeWidth={3} />}
+                    {done ? <Check size={19} strokeWidth={3} /> : <Plus size={19} strokeWidth={2.5} />}
                   </span>
                 </motion.button>
               )
