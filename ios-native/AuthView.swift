@@ -69,7 +69,7 @@ struct AuthView: View {
                     if let error = errorMessage {
                         Text(error)
                             .font(.caption)
-                            .foregroundColor(.red)
+                            .foregroundColor(error.hasPrefix("✓") ? Color(hex: "#30d158") : .red)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.horizontal, 4)
                     }
@@ -180,10 +180,19 @@ struct AuthView: View {
         do {
             if isSignUp {
                 try await authManager.signUp(email: trimmedEmail, password: password)
+                HapticManager.success()
+                // Show success then switch to sign in
+                errorMessage = nil
+                withAnimation(.spring(response: 0.35)) {
+                    isSignUp = false
+                    password = ""
+                    confirmPassword = ""
+                }
+                errorMessage = "✓ Account created! Please sign in."
             } else {
                 try await authManager.signIn(email: trimmedEmail, password: password)
+                HapticManager.success()
             }
-            HapticManager.success()
         } catch {
             errorMessage = friendlyError(error)
             HapticManager.impact(.light)
