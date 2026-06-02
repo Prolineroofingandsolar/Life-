@@ -33,12 +33,14 @@ final class AuthManager {
 
     func signIn(email: String, password: String) async throws {
         guard Self.isFirebaseReady else { return }
-        try await Auth.auth().signIn(withEmail: email, password: password)
+        let result = try await Auth.auth().signIn(withEmail: email, password: password)
+        await MainActor.run { self.user = result.user }
     }
 
     func signUp(email: String, password: String) async throws {
         guard Self.isFirebaseReady else { return }
-        try await Auth.auth().createUser(withEmail: email, password: password)
+        let result = try await Auth.auth().createUser(withEmail: email, password: password)
+        await MainActor.run { self.user = result.user }
     }
 
     func signOut() throws {
