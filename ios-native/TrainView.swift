@@ -145,7 +145,7 @@ private struct RoutineRow: View {
                 }
                 Text("\(routine.exercises.count) exercise\(routine.exercises.count == 1 ? "" : "s")")
                     .font(.caption2)
-                    .foregroundColor(.tertiary)
+                    .foregroundColor(Color(UIColor.tertiaryLabel))
             }
             Spacer()
             Button {
@@ -503,7 +503,7 @@ struct SessionDetailView: View {
 
     var body: some View {
         List {
-            Section("Summary") {
+            Section(header: Text("Summary")) {
                 if let finished = session.finishedAt {
                     LabeledContent("Date", value: finished.formatted(date: .long, time: .shortened))
                 }
