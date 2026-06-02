@@ -1,9 +1,10 @@
 import Foundation
+import WidgetKit
 
 // MARK: - Widget Sync
 
 /// Syncs today's undone tasks to the shared App Group so the widget can read them.
-/// Uses the same JSON format as LifeTasksWidget expects: [{id, title, category, done, dueDate}]
+/// Uses the same JSON format as LifeTasksWidget expects: [{id, title, category, done, dueDate, priority}]
 
 enum WidgetSync {
 
@@ -19,6 +20,7 @@ enum WidgetSync {
         let category: String
         let done: Bool
         let dueDate: String?
+        let priority: String
     }
 
     // MARK: - Sync
@@ -30,7 +32,8 @@ enum WidgetSync {
                 title: task.title,
                 category: task.category.rawValue,
                 done: task.done,
-                dueDate: task.dueDate.rawValue
+                dueDate: task.dueDate.rawValue,
+                priority: task.priority.rawValue
             )
         }
 
@@ -50,5 +53,8 @@ enum WidgetSync {
             let fileURL = containerURL.appendingPathComponent(fileName)
             try? data.write(to: fileURL, options: .atomic)
         }
+
+        // Tell WidgetKit to refresh immediately
+        WidgetCenter.shared.reloadAllTimelines()
     }
 }
