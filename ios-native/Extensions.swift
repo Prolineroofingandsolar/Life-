@@ -135,3 +135,19 @@ extension Int {
         return "\(minutes)m"
     }
 }
+
+// MARK: - InfoRow (iOS 15 compatible LabeledContent replacement)
+
+import SwiftUI
+
+struct InfoRow: View {
+    let label: String
+    let value: String
+    var body: some View {
+        HStack {
+            Text(label)
+            Spacer()
+            Text(value).foregroundColor(.secondary)
+        }
+    }
+}

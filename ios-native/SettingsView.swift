@@ -128,8 +128,8 @@ struct SettingsView: View {
 
                 // App info
                 Section {
-                    LabeledContent("Version", value: appVersion)
-                    LabeledContent("App Group", value: "group.uk.co.prolineroofingandsolar.life")
+                    InfoRow(label: "Version", value: appVersion)
+                    InfoRow(label: "App Group", value: "group.uk.co.prolineroofingandsolar.life")
                 } header: {
                     Text("About")
                 }

@@ -94,12 +94,13 @@ struct ActiveWorkoutView: View {
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
                 if isEditingName {
-                    TextField("Session name", text: $sessionName, onCommit: {
-                        appState.renameSession(sessionId: sessionId, name: sessionName)
-                        isEditingName = false
-                    })
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 180)
+                    TextField("Session name", text: $sessionName)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 180)
+                        .onSubmit {
+                            appState.renameSession(sessionId: sessionId, name: sessionName)
+                            isEditingName = false
+                        }
                 } else {
                     Button {
                         isEditingName = true

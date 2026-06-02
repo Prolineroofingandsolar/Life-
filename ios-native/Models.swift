@@ -160,6 +160,12 @@ struct WorkoutSession: Codable, Identifiable {
     var totalSets: Int {
         exercises.reduce(0) { $0 + $1.sets.filter(\.done).count }
     }
+
+    var totalVolumeKg: Double {
+        exercises.reduce(0.0) { total, ex in
+            total + ex.sets.filter(\.done).reduce(0.0) { $0 + $1.weight * Double($1.reps) }
+        }
+    }
 }
 
 // MARK: - Body Models

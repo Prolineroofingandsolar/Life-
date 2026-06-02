@@ -203,16 +203,18 @@ private struct CompositionTab: View {
         List {
             // Latest values
             if let latest = latestEntry {
-                Section("Latest") {
+                Section {
                     if let bf = latest.bodyFatPct {
-                        LabeledContent("Body Fat", value: String(format: "%.1f%%", bf * 100))
+                        InfoRow(label: "Body Fat", value: String(format: "%.1f%%", bf * 100))
                     }
                     if let lm = latest.leanMassKg {
-                        LabeledContent("Lean Mass", value: "\(lm.formatted1) kg")
+                        InfoRow(label: "Lean Mass", value: "\(lm.formatted1) kg")
                     }
                     if let bmi = latest.bmi {
-                        LabeledContent("BMI", value: bmi.formatted1)
+                        InfoRow(label: "BMI", value: bmi.formatted1)
                     }
+                } header: {
+                    Text("Latest")
                 }
             }
 
