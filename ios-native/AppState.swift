@@ -20,6 +20,7 @@ struct StateSnapshot: Codable {
     var bodyCompEntries: [BodyCompEntry] = []
     var bodyMeasurements: [BodyMeasurement] = []
     var achievements: [Achievement] = []
+    var programs: [WorkoutProgram] = []
     var careDays: [String: CareDay] = [:]
     var careSettings: CareSettings = CareSettings()
     var workoutSettings: WorkoutSettings = WorkoutSettings()
@@ -44,6 +45,7 @@ final class AppState {
     var bodyCompEntries: [BodyCompEntry] = []
     var bodyMeasurements: [BodyMeasurement] = []
     var achievements: [Achievement] = []
+    var programs: [WorkoutProgram] = []
     var careDays: [String: CareDay] = [:]
     var careSettings: CareSettings = CareSettings()
     var workoutSettings: WorkoutSettings = WorkoutSettings()
@@ -93,6 +95,7 @@ final class AppState {
             bodyCompEntries: bodyCompEntries,
             bodyMeasurements: bodyMeasurements,
             achievements: achievements,
+            programs: programs,
             careDays: careDays,
             careSettings: careSettings,
             workoutSettings: workoutSettings,
@@ -111,6 +114,7 @@ final class AppState {
         bodyCompEntries = snapshot.bodyCompEntries
         bodyMeasurements = snapshot.bodyMeasurements
         achievements = snapshot.achievements
+        programs = snapshot.programs
         careDays = snapshot.careDays
         careSettings = snapshot.careSettings
         workoutSettings = snapshot.workoutSettings
@@ -841,6 +845,66 @@ final class AppState {
         return PRResult(bestWeight: bestWeight, bestReps: bestReps, best1RM: best1RM)
     }
 
+    // MARK: - Workout Programs
+
+    func addProgram(name: String, days: [ProgramDay] = []) {
+        let prog = WorkoutProgram(name: name, days: days)
+        programs.append(prog)
+        save()
+    }
+
+    func updateProgram(id: String, name: String, days: [ProgramDay]) {
+        guard let idx = programs.firstIndex(where: { $0.id == id }) else { return }
+        programs[idx].name = name
+        programs[idx].days = days
+        save()
+    }
+
+    func deleteProgram(id: String) {
+        programs.removeAll { $0.id == id }
+        save()
+    }
+
+    func setActiveProgram(id: String?) {
+        for idx in programs.indices {
+            programs[idx].isActive = programs[idx].id == id
+        }
+        save()
+    }
+
+    var activeProgram: WorkoutProgram? {
+        programs.first { $0.isActive }
+    }
+
+    func todaysSuggestedRoutine() -> Routine? {
+        guard let prog = activeProgram else { return nil }
+        let weekday = Calendar.current.component(.weekday, from: Date())
+        // Calendar weekday: 1=Sunday, convert to 1=Monday
+        let mondayBased = weekday == 1 ? 7 : weekday - 1
+        guard let day = prog.days.first(where: { $0.weekday == mondayBased }),
+              let routineId = day.routineId else { return nil }
+        return routines.first { $0.id == routineId }
+    }
+
+    // MARK: - Weekly Workout Counts (P3.3)
+
+    func weeklyWorkoutCounts(weeks: Int) -> [(weekLabel: String, count: Int)] {
+        let cal = Calendar.current
+        let now = Date()
+        return (0..<weeks).reversed().map { offset in
+            let weekAgo = cal.date(byAdding: .weekOfYear, value: -offset, to: now) ?? now
+            let weekStart = cal.date(from: cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: weekAgo)) ?? weekAgo
+            let weekEnd   = cal.date(byAdding: .day, value: 7, to: weekStart) ?? weekStart
+            let count = sessions.filter {
+                guard let fin = $0.finishedAt else { return false }
+                return fin >= weekStart && fin < weekEnd
+            }.count
+            let formatter = DateFormatter()
+            formatter.dateFormat = "MMM d"
+            return (weekLabel: formatter.string(from: weekStart), count: count)
+        }
+    }
+
     // MARK: - Reset
 
     func resetAllData() {
@@ -854,6 +918,7 @@ final class AppState {
         bodyCompEntries = []
         bodyMeasurements = []
         achievements = []
+        programs = []
         careDays = [:]
         careSettings = CareSettings()
         workoutSettings = WorkoutSettings()

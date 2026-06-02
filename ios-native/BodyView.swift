@@ -11,6 +11,7 @@ struct BodyView: View {
     enum BodyTab: String, CaseIterable, Identifiable {
         case weight = "Weight"
         case composition = "Composition"
+        case measurements = "Measures"
         case lifts = "Lifts"
         var id: String { rawValue }
     }
@@ -29,9 +30,10 @@ struct BodyView: View {
 
                 // Content
                 switch selectedTab {
-                case .weight:      WeightTab()
-                case .composition: CompositionTab()
-                case .lifts:       LiftsTab()
+                case .weight:       WeightTab()
+                case .composition:  CompositionTab()
+                case .measurements: MeasurementsTab()
+                case .lifts:        LiftsTab()
                 }
             }
             .background(Color(.systemGroupedBackground))
@@ -203,16 +205,18 @@ private struct CompositionTab: View {
         List {
             // Latest values
             if let latest = latestEntry {
-                Section("Latest") {
+                Section {
                     if let bf = latest.bodyFatPct {
-                        LabeledContent("Body Fat", value: String(format: "%.1f%%", bf * 100))
+                        InfoRow(label: "Body Fat", value: String(format: "%.1f%%", bf * 100))
                     }
                     if let lm = latest.leanMassKg {
-                        LabeledContent("Lean Mass", value: "\(lm.formatted1) kg")
+                        InfoRow(label: "Lean Mass", value: "\(lm.formatted1) kg")
                     }
                     if let bmi = latest.bmi {
-                        LabeledContent("BMI", value: bmi.formatted1)
+                        InfoRow(label: "BMI", value: bmi.formatted1)
                     }
+                } header: {
+                    Text("Latest")
                 }
             }
 
@@ -439,5 +443,164 @@ private struct PRRow: View {
             }
         }
         .padding(.vertical, 2)
+    }
+}
+
+// MARK: - Measurements Tab (P3.2)
+
+private struct MeasurementsTab: View {
+    @Environment(AppState.self) private var appState
+    @State private var showAddMeasurement = false
+
+    private var measurements: [BodyMeasurement] {
+        appState.bodyMeasurements.sorted { $0.date > $1.date }
+    }
+
+    var body: some View {
+        List {
+            if let latest = measurements.first {
+                Section("Latest Measurements") {
+                    MeasurementRow(label: "Chest",        value: latest.chestCm,      unit: "cm")
+                    MeasurementRow(label: "Waist",        value: latest.waistCm,      unit: "cm")
+                    MeasurementRow(label: "Hips",         value: latest.hipsCm,       unit: "cm")
+                    MeasurementRow(label: "Left Arm",     value: latest.leftArmCm,    unit: "cm")
+                    MeasurementRow(label: "Right Arm",    value: latest.rightArmCm,   unit: "cm")
+                    MeasurementRow(label: "Left Thigh",   value: latest.leftThighCm,  unit: "cm")
+                    MeasurementRow(label: "Right Thigh",  value: latest.rightThighCm, unit: "cm")
+                    MeasurementRow(label: "Neck",         value: latest.neckCm,       unit: "cm")
+                    MeasurementRow(label: "Shoulders",    value: latest.shouldersCm,  unit: "cm")
+                }
+            }
+
+            Section {
+                Button {
+                    showAddMeasurement = true
+                } label: {
+                    Label("Log Measurements", systemImage: "ruler")
+                        .foregroundColor(Color(hex: "#30d158"))
+                }
+            }
+
+            if measurements.count > 1 {
+                Section("History") {
+                    ForEach(measurements) { m in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(m.date.formatted(date: .abbreviated, time: .omitted))
+                                .font(.subheadline.bold())
+                            HStack(spacing: 12) {
+                                if let v = m.waistCm   { Text("Waist \(v.formatted1)").font(.caption).foregroundColor(.secondary) }
+                                if let v = m.chestCm   { Text("Chest \(v.formatted1)").font(.caption).foregroundColor(.secondary) }
+                                if let v = m.hipsCm    { Text("Hips \(v.formatted1)").font(.caption).foregroundColor(.secondary) }
+                            }
+                        }
+                        .padding(.vertical, 2)
+                        .swipeActions(edge: .trailing) {
+                            Button(role: .destructive) {
+                                appState.deleteBodyMeasurement(id: m.id)
+                            } label: { Label("Delete", systemImage: "trash") }
+                        }
+                    }
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+        .sheet(isPresented: $showAddMeasurement) {
+            AddMeasurementSheet()
+        }
+    }
+}
+
+private struct MeasurementRow: View {
+    let label: String
+    let value: Double?
+    let unit: String
+    var body: some View {
+        if let v = value {
+            HStack {
+                Text(label).foregroundColor(.secondary)
+                Spacer()
+                Text("\(v.formatted1) \(unit)").font(.subheadline)
+            }
+        }
+    }
+}
+
+// MARK: - Add Measurement Sheet
+
+private struct AddMeasurementSheet: View {
+    @Environment(AppState.self) private var appState
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var chest = ""
+    @State private var waist = ""
+    @State private var hips = ""
+    @State private var leftArm = ""
+    @State private var rightArm = ""
+    @State private var leftThigh = ""
+    @State private var rightThigh = ""
+    @State private var neck = ""
+    @State private var shoulders = ""
+    @State private var notes = ""
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Circumference (cm)") {
+                    MeasInput(label: "Chest",       text: $chest)
+                    MeasInput(label: "Waist",       text: $waist)
+                    MeasInput(label: "Hips",        text: $hips)
+                    MeasInput(label: "Left Arm",    text: $leftArm)
+                    MeasInput(label: "Right Arm",   text: $rightArm)
+                    MeasInput(label: "Left Thigh",  text: $leftThigh)
+                    MeasInput(label: "Right Thigh", text: $rightThigh)
+                    MeasInput(label: "Neck",        text: $neck)
+                    MeasInput(label: "Shoulders",   text: $shoulders)
+                }
+                Section("Notes") {
+                    TextField("Optional notes", text: $notes, axis: .vertical)
+                        .lineLimit(2...4)
+                }
+            }
+            .navigationTitle("Log Measurements")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        let m = BodyMeasurement(
+                            chestCm:       Double(chest),
+                            waistCm:       Double(waist),
+                            hipsCm:        Double(hips),
+                            leftArmCm:     Double(leftArm),
+                            rightArmCm:    Double(rightArm),
+                            leftThighCm:   Double(leftThigh),
+                            rightThighCm:  Double(rightThigh),
+                            neckCm:        Double(neck),
+                            shouldersCm:   Double(shoulders),
+                            notes: notes
+                        )
+                        appState.addBodyMeasurement(m)
+                        HapticManager.success()
+                        dismiss()
+                    }
+                    .disabled([chest, waist, hips, leftArm, rightArm, leftThigh, rightThigh, neck, shoulders].allSatisfy { $0.isEmpty })
+                }
+            }
+        }
+    }
+}
+
+private struct MeasInput: View {
+    let label: String
+    @Binding var text: String
+    var body: some View {
+        HStack {
+            Text(label)
+            Spacer()
+            TextField("cm", text: $text)
+                .keyboardType(.decimalPad)
+                .multilineTextAlignment(.trailing)
+                .frame(width: 80)
+        }
     }
 }

@@ -360,6 +360,23 @@ struct WorkoutSettings: Codable {
     var weightUnit: WeightUnit = .kg
 }
 
+// MARK: - Workout Programs / Splits
+
+struct ProgramDay: Codable, Identifiable {
+    var id: String = UUID().uuidString
+    var weekday: Int    // 1 = Monday … 7 = Sunday
+    var routineId: String? = nil
+    var label: String = ""
+}
+
+struct WorkoutProgram: Codable, Identifiable {
+    var id: String = UUID().uuidString
+    var name: String
+    var days: [ProgramDay] = []
+    var isActive: Bool = false
+    var createdAt: Date = Date()
+}
+
 // MARK: - Weight Unit
 
 enum WeightUnit: String, Codable, CaseIterable, Identifiable {

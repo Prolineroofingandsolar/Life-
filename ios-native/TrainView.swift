@@ -1,4 +1,5 @@
 import SwiftUI
+import Charts
 
 // MARK: - TrainView
 
@@ -10,6 +11,7 @@ struct TrainView: View {
     @State private var showAddRoutine = false
     @State private var showBrowsePrograms = false
     @State private var showAchievements = false
+    @State private var showPrograms = false
     @State private var pulseResume = false
 
     private var finishedSessions: [WorkoutSession] {
@@ -30,6 +32,34 @@ struct TrainView: View {
 
                 // Muscle recovery
                 MuscleRecoverySection()
+
+                // Today's suggested workout from active program
+                if let suggested = appState.todaysSuggestedRoutine() {
+                    Section {
+                        Button {
+                            HapticManager.impact(.medium)
+                            appState.startSession(name: suggested.name, routineId: suggested.id)
+                            showActiveWorkout = true
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "calendar.badge.checkmark")
+                                    .font(.title3)
+                                    .foregroundColor(Color(hex: "#30d158"))
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("Today's Workout")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                    Text(suggested.name)
+                                        .font(.headline)
+                                        .foregroundColor(.primary)
+                                }
+                                Spacer()
+                                Image(systemName: "play.fill")
+                                    .foregroundColor(Color(hex: "#30d158"))
+                            }
+                        }
+                    }
+                }
 
                 // Active session banner
                 if let active = appState.activeSession {
@@ -103,8 +133,22 @@ struct TrainView: View {
                         Label("Browse Programs", systemImage: "square.grid.2x2")
                             .foregroundColor(Color(hex: "#30d158"))
                     }
+
+                    Button {
+                        showPrograms = true
+                    } label: {
+                        Label("My Programs", systemImage: "calendar")
+                            .foregroundColor(Color(hex: "#30d158"))
+                    }
                 } header: {
                     Text("Routines")
+                }
+
+                // Weekly consistency chart
+                if !appState.sessions.filter({ $0.finishedAt != nil }).isEmpty {
+                    Section("Last 8 Weeks") {
+                        WeeklyConsistencyChart()
+                    }
                 }
 
                 // History
@@ -156,6 +200,9 @@ struct TrainView: View {
             }
             .sheet(isPresented: $showAchievements) {
                 AchievementsView()
+            }
+            .sheet(isPresented: $showPrograms) {
+                ProgramsView()
             }
         }
     }
@@ -732,6 +779,50 @@ private struct MuscleRecoverySection: View {
                     HStack(spacing: 4) {
                         Circle().fill(status.color).frame(width: 8, height: 8)
                         Text(status.label).font(.caption2).foregroundColor(.secondary)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Weekly Consistency Chart (P3.3)
+
+private struct WeeklyConsistencyChart: View {
+    @Environment(AppState.self) private var appState
+
+    private var data: [(weekLabel: String, count: Int)] {
+        appState.weeklyWorkoutCounts(weeks: 8)
+    }
+
+    var body: some View {
+        Chart {
+            ForEach(data.indices, id: \.self) { i in
+                BarMark(
+                    x: .value("Week", data[i].weekLabel),
+                    y: .value("Sessions", data[i].count)
+                )
+                .foregroundStyle(Color(hex: "#30d158").gradient)
+                .cornerRadius(4)
+            }
+        }
+        .frame(height: 120)
+        .chartXAxis {
+            AxisMarks { value in
+                AxisValueLabel {
+                    if let s = value.as(String.self) {
+                        Text(s.components(separatedBy: " ").last ?? s)
+                            .font(.caption2)
+                    }
+                }
+            }
+        }
+        .chartYAxis {
+            AxisMarks(values: .stride(by: 1)) { value in
+                AxisGridLine()
+                AxisValueLabel {
+                    if let v = value.as(Int.self) {
+                        Text("\(v)").font(.caption2)
                     }
                 }
             }

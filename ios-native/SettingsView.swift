@@ -5,12 +5,14 @@ import SwiftUI
 struct SettingsView: View {
 
     @Environment(AppState.self) private var appState
+    @EnvironmentObject private var authManager: AuthManager
     @Environment(\.dismiss) private var dismiss
 
     @State private var nameInput: String = ""
     @State private var careSettings: CareSettings = CareSettings()
     @State private var workoutSettings: WorkoutSettings = WorkoutSettings()
     @State private var showResetConfirm = false
+    @State private var showCalculators = false
     @State private var showShareSheet = false
     @State private var exportURL: URL? = nil
     @State private var showImportPicker = false
@@ -91,6 +93,15 @@ struct SettingsView: View {
                     }
                 }
 
+                // Tools
+                Section("Tools") {
+                    Button {
+                        showCalculators = true
+                    } label: {
+                        Label("Calculators", systemImage: "function")
+                    }
+                }
+
                 // Data
                 Section("Data") {
                     Button {
@@ -126,10 +137,26 @@ struct SettingsView: View {
                     Text("This will delete all tasks, habits, workouts, body logs, and bills.")
                 }
 
+                // Account
+                Section {
+                    if let user = authManager.user {
+                        InfoRow(label: "Signed in as", value: user.email ?? "—")
+                        Button(role: .destructive) {
+                            try? authManager.signOut()
+                            dismiss()
+                        } label: {
+                            Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
+                                .foregroundColor(.red)
+                        }
+                    }
+                } header: {
+                    Text("Account")
+                }
+
                 // App info
                 Section {
-                    LabeledContent("Version", value: appVersion)
-                    LabeledContent("App Group", value: "group.uk.co.prolineroofingandsolar.life")
+                    InfoRow(label: "Version", value: appVersion)
+                    InfoRow(label: "App Group", value: "group.uk.co.prolineroofingandsolar.life")
                 } header: {
                     Text("About")
                 }
@@ -182,6 +209,9 @@ struct SettingsView: View {
                 if let url = exportURL {
                     ShareSheet(activityItems: [url])
                 }
+            }
+            .sheet(isPresented: $showCalculators) {
+                CalculatorsView()
             }
             .fileImporter(
                 isPresented: $showImportPicker,
