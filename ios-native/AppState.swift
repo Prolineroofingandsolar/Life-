@@ -18,6 +18,8 @@ struct StateSnapshot: Codable {
     var sessions: [WorkoutSession] = []
     var weightEntries: [WeightEntry] = []
     var bodyCompEntries: [BodyCompEntry] = []
+    var bodyMeasurements: [BodyMeasurement] = []
+    var achievements: [Achievement] = []
     var careDays: [String: CareDay] = [:]
     var careSettings: CareSettings = CareSettings()
     var workoutSettings: WorkoutSettings = WorkoutSettings()
@@ -39,6 +41,8 @@ final class AppState {
     var sessions: [WorkoutSession] = []
     var weightEntries: [WeightEntry] = []
     var bodyCompEntries: [BodyCompEntry] = []
+    var bodyMeasurements: [BodyMeasurement] = []
+    var achievements: [Achievement] = []
     var careDays: [String: CareDay] = [:]
     var careSettings: CareSettings = CareSettings()
     var workoutSettings: WorkoutSettings = WorkoutSettings()
@@ -86,6 +90,8 @@ final class AppState {
             sessions: sessions,
             weightEntries: weightEntries,
             bodyCompEntries: bodyCompEntries,
+            bodyMeasurements: bodyMeasurements,
+            achievements: achievements,
             careDays: careDays,
             careSettings: careSettings,
             workoutSettings: workoutSettings,
@@ -102,6 +108,8 @@ final class AppState {
         sessions = snapshot.sessions
         weightEntries = snapshot.weightEntries
         bodyCompEntries = snapshot.bodyCompEntries
+        bodyMeasurements = snapshot.bodyMeasurements
+        achievements = snapshot.achievements
         careDays = snapshot.careDays
         careSettings = snapshot.careSettings
         workoutSettings = snapshot.workoutSettings
@@ -307,18 +315,22 @@ final class AppState {
     // MARK: - Workout Session Mutations
 
     func startSession(name: String, routineId: String? = nil) {
-        // Discard any existing active session first
         sessions.removeAll { $0.finishedAt == nil }
 
         var session = WorkoutSession(name: name, routineId: routineId)
 
-        // Pre-populate from routine if provided
         if let routineId = routineId,
            let routine = routines.first(where: { $0.id == routineId }) {
             session.exercises = routine.exercises.map { re in
                 var sessionExercise = SessionExercise(exerciseId: re.exerciseId)
+                let suggested = suggestedWeight(for: re.exerciseId)
+                let sugReps = suggestedReps(for: re.exerciseId)
+                let weight = suggested > 0 ? suggested : re.defaultWeight
+                let reps = sugReps > 0 ? sugReps : re.defaultReps
+                sessionExercise.targetRepMin = re.repRangeMin
+                sessionExercise.targetRepMax = re.repRangeMax
                 sessionExercise.sets = (0..<re.defaultSets).map { _ in
-                    LoggedSet(weight: re.defaultWeight, reps: re.defaultReps)
+                    LoggedSet(weight: weight, reps: reps)
                 }
                 return sessionExercise
             }
@@ -328,7 +340,7 @@ final class AppState {
         save()
     }
 
-    func updateSet(sessionId: String, exerciseId: String, setId: String, weight: Double? = nil, reps: Int? = nil, durationSec: Int? = nil, distanceKm: Double? = nil, isWarmup: Bool? = nil, isDropSet: Bool? = nil) {
+    func updateSet(sessionId: String, exerciseId: String, setId: String, weight: Double? = nil, reps: Int? = nil, durationSec: Int? = nil, distanceKm: Double? = nil, isWarmup: Bool? = nil, isDropSet: Bool? = nil, rpe: Int? = nil) {
         guard let sIdx = sessions.firstIndex(where: { $0.id == sessionId }),
               let eIdx = sessions[sIdx].exercises.firstIndex(where: { $0.id == exerciseId }),
               let setIdx = sessions[sIdx].exercises[eIdx].sets.firstIndex(where: { $0.id == setId }) else { return }
@@ -338,6 +350,7 @@ final class AppState {
         if let dist = distanceKm { sessions[sIdx].exercises[eIdx].sets[setIdx].distanceKm = dist }
         if let warmup = isWarmup { sessions[sIdx].exercises[eIdx].sets[setIdx].isWarmup = warmup }
         if let drop = isDropSet { sessions[sIdx].exercises[eIdx].sets[setIdx].isDropSet = drop }
+        if let rpe = rpe { sessions[sIdx].exercises[eIdx].sets[setIdx].rpe = rpe == 0 ? nil : rpe }
         save()
     }
 
@@ -354,13 +367,18 @@ final class AppState {
     func addSet(sessionId: String, exerciseId: String) {
         guard let sIdx = sessions.firstIndex(where: { $0.id == sessionId }),
               let eIdx = sessions[sIdx].exercises.firstIndex(where: { $0.id == exerciseId }) else { return }
-        // Copy the last set's weight/reps as defaults
         let lastSet = sessions[sIdx].exercises[eIdx].sets.last
-        let newSet = LoggedSet(
-            weight: lastSet?.weight ?? 0,
-            reps: lastSet?.reps ?? 0
-        )
-        sessions[sIdx].exercises[eIdx].sets.append(newSet)
+        // Prefer last set in current session; fall back to previous session history
+        let weight: Double
+        let reps: Int
+        if let last = lastSet, last.weight > 0 {
+            weight = last.weight
+            reps = last.reps
+        } else {
+            weight = suggestedWeight(for: exerciseId)
+            reps = suggestedReps(for: exerciseId)
+        }
+        sessions[sIdx].exercises[eIdx].sets.append(LoggedSet(weight: weight, reps: reps))
         save()
     }
 
@@ -388,6 +406,19 @@ final class AppState {
     func finishSession(sessionId: String) {
         guard let idx = sessions.firstIndex(where: { $0.id == sessionId }) else { return }
         sessions[idx].finishedAt = Date()
+        checkAndGrantAchievements()
+        save()
+    }
+
+    func updateSessionNotes(sessionId: String, notes: String) {
+        guard let idx = sessions.firstIndex(where: { $0.id == sessionId }) else { return }
+        sessions[idx].notes = notes
+        save()
+    }
+
+    func rateSession(sessionId: String, rating: Int) {
+        guard let idx = sessions.firstIndex(where: { $0.id == sessionId }) else { return }
+        sessions[idx].rating = rating
         save()
     }
 
@@ -496,6 +527,100 @@ final class AppState {
         save()
     }
 
+    // MARK: - Previous Session Helpers
+
+    func previousSets(for exerciseId: String) -> [LoggedSet] {
+        let finished = sessions
+            .filter { $0.finishedAt != nil }
+            .sorted { ($0.finishedAt ?? .distantPast) > ($1.finishedAt ?? .distantPast) }
+        for session in finished {
+            if let ex = session.exercises.first(where: { $0.exerciseId == exerciseId }) {
+                let done = ex.sets.filter(\.done)
+                if !done.isEmpty { return done }
+            }
+        }
+        return []
+    }
+
+    func suggestedWeight(for exerciseId: String) -> Double {
+        previousSets(for: exerciseId).first?.weight ?? 0
+    }
+
+    func suggestedReps(for exerciseId: String) -> Int {
+        previousSets(for: exerciseId).first?.reps ?? 0
+    }
+
+    // MARK: - Workout Analytics
+
+    var workoutStreak: Int {
+        let finished = sessions.filter { $0.finishedAt != nil }
+        guard !finished.isEmpty else { return 0 }
+        var streak = 0
+        var checkDate = Calendar.current.startOfDay(for: Date())
+        let cal = Calendar.current
+        let dayKeys = Set(finished.compactMap { $0.finishedAt }.map { cal.startOfDay(for: $0) })
+        // Walk backwards day by day
+        while dayKeys.contains(checkDate) {
+            streak += 1
+            checkDate = cal.date(byAdding: .day, value: -1, to: checkDate) ?? checkDate
+        }
+        return streak
+    }
+
+    func volumeThisWeekByMuscle() -> [(muscle: String, volumeKg: Double)] {
+        let cal = Calendar.current
+        let weekStart = cal.date(from: cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date())) ?? Date()
+        let thisWeek = sessions.filter {
+            guard let fin = $0.finishedAt else { return false }
+            return fin >= weekStart
+        }
+        var map: [String: Double] = [:]
+        for session in thisWeek {
+            for ex in session.exercises {
+                guard let exercise = exercises.first(where: { $0.id == ex.exerciseId }) else { continue }
+                let vol = ex.sets.filter(\.done).reduce(0.0) { $0 + $1.weight * Double($1.reps) }
+                map[exercise.muscle, default: 0] += vol
+            }
+        }
+        return map.map { (muscle: $0.key, volumeKg: $0.value) }
+            .sorted { $0.volumeKg > $1.volumeKg }
+    }
+
+    // MARK: - Body Measurements
+
+    func addBodyMeasurement(_ measurement: BodyMeasurement) {
+        bodyMeasurements.append(measurement)
+        bodyMeasurements.sort { $0.date > $1.date }
+        save()
+    }
+
+    func deleteBodyMeasurement(id: String) {
+        bodyMeasurements.removeAll { $0.id == id }
+        save()
+    }
+
+    // MARK: - Achievements
+
+    func checkAndGrantAchievements() {
+        let finishedSessions = sessions.filter { $0.finishedAt != nil }
+        let totalSets = finishedSessions.reduce(0) { $0 + $1.totalSets }
+        let unlocked = Set(achievements.map(\.kind))
+
+        func grant(_ kind: AchievementKind, detail: String = "") {
+            guard !unlocked.contains(kind) else { return }
+            achievements.append(Achievement(kind: kind, title: kind.title, detail: detail))
+        }
+
+        if !finishedSessions.isEmpty { grant(.firstWorkout) }
+        if workoutStreak >= 7 { grant(.streak7) }
+        if workoutStreak >= 30 { grant(.streak30) }
+        if totalSets >= 100 { grant(.totalSets100) }
+        if totalSets >= 1000 { grant(.totalSets1000) }
+        if finishedSessions.count >= 10 { grant(.totalSessions10) }
+        if finishedSessions.count >= 50 { grant(.totalSessions50) }
+        if finishedSessions.count >= 100 { grant(.totalSessions100) }
+    }
+
     // MARK: - PR Computation
 
     struct PRResult {
@@ -538,6 +663,8 @@ final class AppState {
         sessions = []
         weightEntries = []
         bodyCompEntries = []
+        bodyMeasurements = []
+        achievements = []
         careDays = [:]
         careSettings = CareSettings()
         workoutSettings = WorkoutSettings()
@@ -548,24 +675,10 @@ final class AppState {
     // MARK: - Export
 
     var exportData: Data? {
-        let snapshot = StateSnapshot(
-            tasks: tasks,
-            bills: bills,
-            habits: habits,
-            exercises: exercises,
-            routines: routines,
-            sessions: sessions,
-            weightEntries: weightEntries,
-            bodyCompEntries: bodyCompEntries,
-            careDays: careDays,
-            careSettings: careSettings,
-            workoutSettings: workoutSettings,
-            userName: userName
-        )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
-        return try? encoder.encode(snapshot)
+        return try? encoder.encode(makeSnapshot())
     }
 
     func importData(from data: Data) throws {

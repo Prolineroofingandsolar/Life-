@@ -100,12 +100,85 @@ enum ExerciseKind: String, Codable, CaseIterable, Identifiable {
     var label: String { rawValue.capitalized }
 }
 
+enum ExerciseEquipment: String, Codable, CaseIterable, Identifiable {
+    case barbell, dumbbell, cable, machine, bodyweight, kettlebell, band, ezBar, other
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .barbell: return "Barbell"
+        case .dumbbell: return "Dumbbell"
+        case .cable: return "Cable"
+        case .machine: return "Machine"
+        case .bodyweight: return "Bodyweight"
+        case .kettlebell: return "Kettlebell"
+        case .band: return "Band"
+        case .ezBar: return "EZ Bar"
+        case .other: return "Other"
+        }
+    }
+    var icon: String {
+        switch self {
+        case .barbell: return "figure.strengthtraining.traditional"
+        case .dumbbell: return "dumbbell.fill"
+        case .cable: return "cable.connector"
+        case .machine: return "gearshape.fill"
+        case .bodyweight: return "figure.stand"
+        case .kettlebell: return "dumbbell"
+        case .band: return "arrow.left.and.right"
+        case .ezBar: return "wave.3.right"
+        case .other: return "questionmark.circle"
+        }
+    }
+}
+
+enum AchievementKind: String, Codable, CaseIterable {
+    case firstWorkout = "First Workout"
+    case streak7 = "7-Day Streak"
+    case streak30 = "30-Day Streak"
+    case totalSets100 = "100 Sets Logged"
+    case totalSets1000 = "1,000 Sets Logged"
+    case volumePR = "New Volume PR"
+    case weightPR = "New Weight PR"
+    case consistency4Weeks = "4 Weeks Consistent"
+    case totalSessions10 = "10 Workouts"
+    case totalSessions50 = "50 Workouts"
+    case totalSessions100 = "100 Workouts"
+
+    var title: String { rawValue }
+    var icon: String {
+        switch self {
+        case .firstWorkout: return "flame.fill"
+        case .streak7: return "calendar.badge.checkmark"
+        case .streak30: return "star.fill"
+        case .totalSets100, .totalSets1000: return "checkmark.seal.fill"
+        case .volumePR, .weightPR: return "trophy.fill"
+        case .consistency4Weeks: return "chart.bar.fill"
+        case .totalSessions10, .totalSessions50, .totalSessions100: return "dumbbell.fill"
+        }
+    }
+    var color: String { // hex
+        switch self {
+        case .firstWorkout: return "#FF6B35"
+        case .streak7: return "#30d158"
+        case .streak30: return "#FFD700"
+        case .totalSets100, .totalSets1000: return "#5E9BF0"
+        case .volumePR, .weightPR: return "#FF375F"
+        case .consistency4Weeks: return "#30d158"
+        case .totalSessions10, .totalSessions50, .totalSessions100: return "#BF5AF2"
+        }
+    }
+}
+
 struct Exercise: Codable, Identifiable {
     var id: String = UUID().uuidString
     var name: String
     var muscle: String
     var kind: ExerciseKind
     var isCustom: Bool = false
+    var equipment: ExerciseEquipment = .barbell
+    var isFavorite: Bool = false
+    var instructions: String = ""
+    var difficulty: Int = 2  // 1=beginner, 2=intermediate, 3=advanced
 }
 
 struct RoutineExercise: Codable, Identifiable {
@@ -115,6 +188,10 @@ struct RoutineExercise: Codable, Identifiable {
     var defaultReps: Int = 10
     var defaultWeight: Double = 0
     var notes: String = ""
+    var repRangeMin: Int = 8
+    var repRangeMax: Int = 12
+    var restSeconds: Int = 90
+    var supersetGroupId: String? = nil
 }
 
 struct Routine: Codable, Identifiable {
@@ -134,6 +211,8 @@ struct LoggedSet: Codable, Identifiable {
     var isDropSet: Bool = false
     var done: Bool = false
     var completedAt: Date? = nil
+    var rpe: Int? = nil  // Rate of Perceived Exertion 1-10
+    var notes: String = ""
 }
 
 struct SessionExercise: Codable, Identifiable {
@@ -141,6 +220,9 @@ struct SessionExercise: Codable, Identifiable {
     var exerciseId: String
     var sets: [LoggedSet] = []
     var notes: String = ""
+    var supersetGroupId: String? = nil
+    var targetRepMin: Int = 8
+    var targetRepMax: Int = 12
 }
 
 struct WorkoutSession: Codable, Identifiable {
@@ -151,6 +233,8 @@ struct WorkoutSession: Codable, Identifiable {
     var startedAt: Date = Date()
     var finishedAt: Date? = nil
     var notes: String = ""
+    var rating: Int? = nil   // 1-5 stars post-workout
+    var bodyweightKg: Double? = nil
 
     var durationSeconds: Int {
         let end = finishedAt ?? Date()
@@ -184,6 +268,33 @@ struct BodyCompEntry: Codable, Identifiable {
     var leanMassKg: Double? = nil
     var bmi: Double? = nil
     var source: String = "healthkit"
+}
+
+// MARK: - Body Measurements
+
+struct BodyMeasurement: Codable, Identifiable {
+    var id: String = UUID().uuidString
+    var date: Date = Date()
+    var chestCm: Double? = nil
+    var waistCm: Double? = nil
+    var hipsCm: Double? = nil
+    var leftArmCm: Double? = nil
+    var rightArmCm: Double? = nil
+    var leftThighCm: Double? = nil
+    var rightThighCm: Double? = nil
+    var neckCm: Double? = nil
+    var shouldersCm: Double? = nil
+    var notes: String = ""
+}
+
+// MARK: - Achievements
+
+struct Achievement: Codable, Identifiable {
+    var id: String = UUID().uuidString
+    var kind: AchievementKind
+    var unlockedAt: Date = Date()
+    var title: String = ""
+    var detail: String = ""
 }
 
 // MARK: - Care / Daily Models
