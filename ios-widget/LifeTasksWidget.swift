@@ -11,6 +11,7 @@ struct WidgetTask: Codable, Identifiable {
     let category: String
     let done: Bool
     let dueDate: String?
+    let priority: String?
 }
 
 struct AppState: Codable {
@@ -23,7 +24,7 @@ struct Provider: TimelineProvider {
     let appGroup = "group.uk.co.prolineroofingandsolar.life"
 
     func tasks() -> [WidgetTask] {
-        // First try App Group UserDefaults (set by LifePlugin)
+        // First try App Group UserDefaults (set by WidgetSync)
         if let defaults = UserDefaults(suiteName: appGroup),
            let json = defaults.string(forKey: "life_widget_tasks"),
            let data = json.data(using: .utf8),
@@ -47,9 +48,9 @@ struct Provider: TimelineProvider {
 
     func placeholder(in context: Context) -> TaskEntry {
         TaskEntry(date: Date(), tasks: [
-            WidgetTask(id: "1", title: "Reply to the email", category: "work", done: false, dueDate: "today"),
-            WidgetTask(id: "2", title: "Push session — legs", category: "gym", done: false, dueDate: "today"),
-            WidgetTask(id: "3", title: "Refill water bottle", category: "personal", done: false, dueDate: "today"),
+            WidgetTask(id: "1", title: "Reply to the email", category: "work", done: false, dueDate: "today", priority: "high"),
+            WidgetTask(id: "2", title: "Push session — legs", category: "gym", done: false, dueDate: "today", priority: "medium"),
+            WidgetTask(id: "3", title: "Refill water bottle", category: "personal", done: false, dueDate: "today", priority: "none"),
         ])
     }
 
@@ -91,6 +92,15 @@ extension String {
         default:         return "•"
         }
     }
+
+    var priorityColor: Color? {
+        switch self {
+        case "high":   return .red
+        case "medium": return .orange
+        case "low":    return .blue
+        default:       return nil
+        }
+    }
 }
 
 // MARK: - Views
@@ -109,6 +119,12 @@ struct TaskRow: View {
                 .foregroundColor(.primary)
                 .lineLimit(2)
             Spacer()
+            if let p = task.priority, let color = p.priorityColor {
+                Circle()
+                    .fill(color)
+                    .frame(width: 7, height: 7)
+                    .padding(.top, 4)
+            }
         }
     }
 }
