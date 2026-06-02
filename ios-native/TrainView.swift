@@ -9,6 +9,7 @@ struct TrainView: View {
     @State private var showExerciseLibrary = false
     @State private var showAddRoutine = false
     @State private var showBrowsePrograms = false
+    @State private var showAchievements = false
     @State private var pulseResume = false
 
     private var finishedSessions: [WorkoutSession] {
@@ -20,6 +21,16 @@ struct TrainView: View {
     var body: some View {
         NavigationStack {
             List {
+                // Weekly calendar strip
+                Section {
+                    WeeklyCalendarStrip()
+                }
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(Color.clear)
+
+                // Muscle recovery
+                MuscleRecoverySection()
+
                 // Active session banner
                 if let active = appState.activeSession {
                     Section {
@@ -114,10 +125,18 @@ struct TrainView: View {
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        showExerciseLibrary = true
-                    } label: {
-                        Image(systemName: "books.vertical")
+                    HStack(spacing: 4) {
+                        Button {
+                            showAchievements = true
+                        } label: {
+                            Image(systemName: "trophy.fill")
+                                .foregroundColor(.yellow)
+                        }
+                        Button {
+                            showExerciseLibrary = true
+                        } label: {
+                            Image(systemName: "books.vertical")
+                        }
                     }
                 }
             }
@@ -134,6 +153,9 @@ struct TrainView: View {
             }
             .sheet(isPresented: $showBrowsePrograms) {
                 BrowseProgramsSheet()
+            }
+            .sheet(isPresented: $showAchievements) {
+                AchievementsView()
             }
         }
     }
@@ -444,16 +466,19 @@ struct ExerciseSelectSheet: View {
     let onSelect: (String) -> Void
 
     @State private var searchText = ""
+    @State private var equipmentFilter: ExerciseEquipment? = nil
 
     private var muscles: [String] {
         Array(Set(appState.exercises.map(\.muscle))).sorted()
     }
 
     private var filtered: [Exercise] {
-        if searchText.isEmpty { return appState.exercises }
-        return appState.exercises.filter {
-            $0.name.localizedCaseInsensitiveContains(searchText) ||
-            $0.muscle.localizedCaseInsensitiveContains(searchText)
+        appState.exercises.filter { ex in
+            let matchesSearch = searchText.isEmpty ||
+                ex.name.localizedCaseInsensitiveContains(searchText) ||
+                ex.muscle.localizedCaseInsensitiveContains(searchText)
+            let matchesEquipment = equipmentFilter == nil || ex.equipment == equipmentFilter
+            return matchesSearch && matchesEquipment
         }
     }
 
@@ -466,26 +491,29 @@ struct ExerciseSelectSheet: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                ForEach(grouped, id: \.0) { muscle, exs in
-                    Section(muscle) {
-                        ForEach(exs) { ex in
-                            Button {
-                                onSelect(ex.id)
-                                dismiss()
-                            } label: {
-                                HStack {
-                                    Circle().fill(muscle.muscleColor).frame(width: 8, height: 8)
-                                    Text(ex.name).foregroundColor(.primary)
-                                    Spacer()
-                                    Text(ex.kind.label).font(.caption).foregroundColor(.secondary)
+            VStack(spacing: 0) {
+                EquipmentFilterChips(selected: $equipmentFilter)
+                List {
+                    ForEach(grouped, id: \.0) { muscle, exs in
+                        Section(muscle) {
+                            ForEach(exs) { ex in
+                                Button {
+                                    onSelect(ex.id)
+                                    dismiss()
+                                } label: {
+                                    HStack {
+                                        Circle().fill(muscle.muscleColor).frame(width: 8, height: 8)
+                                        Text(ex.name).foregroundColor(.primary)
+                                        Spacer()
+                                        Text(ex.equipment.label).font(.caption).foregroundColor(.secondary)
+                                    }
                                 }
                             }
                         }
                     }
                 }
+                .listStyle(.insetGrouped)
             }
-            .listStyle(.insetGrouped)
             .searchable(text: $searchText, prompt: "Search exercises")
             .navigationTitle("Select Exercise")
             .navigationBarTitleDisplayMode(.inline)
@@ -606,6 +634,108 @@ private struct SessionSetRow: View {
             }
         }
         .font(.subheadline)
+    }
+}
+
+// MARK: - Weekly Calendar Strip
+
+private struct WeeklyCalendarStrip: View {
+    @Environment(AppState.self) private var appState
+
+    private var weekDays: [(date: Date, label: String, dayNum: String)] {
+        let cal = Calendar.current
+        let weekStart = cal.date(from: cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date())) ?? Date()
+        let shortDays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        return (0..<7).map { offset in
+            let date = cal.date(byAdding: .day, value: offset, to: weekStart) ?? weekStart
+            let num = cal.component(.day, from: date)
+            return (date: date, label: shortDays[offset], dayNum: "\(num)")
+        }
+    }
+
+    private var sessionDays: Set<Date> {
+        let cal = Calendar.current
+        return Set(appState.sessionsThisWeek().keys.map { cal.startOfDay(for: $0) })
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(weekDays, id: \.dayNum) { entry in
+                let isToday = Calendar.current.isDateInToday(entry.date)
+                let hasSession = sessionDays.contains(Calendar.current.startOfDay(for: entry.date))
+
+                VStack(spacing: 6) {
+                    Text(entry.label)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    ZStack {
+                        Circle()
+                            .fill(hasSession ? Color(hex: "#30d158") : Color(.systemFill))
+                            .frame(width: 32, height: 32)
+                        if isToday && !hasSession {
+                            Circle()
+                                .stroke(Color(hex: "#30d158"), lineWidth: 2)
+                                .frame(width: 32, height: 32)
+                        }
+                        Text(entry.dayNum)
+                            .font(.caption.bold())
+                            .foregroundColor(hasSession ? .white : (isToday ? Color(hex: "#30d158") : .primary))
+                    }
+                }
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .padding(.vertical, 10)
+        .padding(.horizontal, 16)
+    }
+}
+
+// MARK: - Muscle Recovery Section
+
+private struct MuscleRecoverySection: View {
+    @Environment(AppState.self) private var appState
+
+    private var muscles: [String] {
+        Array(Set(appState.exercises.filter { $0.kind != .cardio }.map(\.muscle))).sorted()
+    }
+
+    var body: some View {
+        Section("Muscle Recovery") {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(muscles, id: \.self) { muscle in
+                        let status = appState.recoveryStatus(muscle: muscle)
+                        VStack(spacing: 4) {
+                            Circle()
+                                .fill(status.color.opacity(0.18))
+                                .frame(width: 44, height: 44)
+                                .overlay {
+                                    Circle().stroke(status.color, lineWidth: 2)
+                                    Text(String(muscle.prefix(2)))
+                                        .font(.caption2.bold())
+                                        .foregroundColor(status.color)
+                                }
+                            Text(muscle)
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                        }
+                        .frame(width: 52)
+                    }
+                }
+                .padding(.vertical, 6)
+            }
+            .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 0))
+
+            HStack(spacing: 16) {
+                ForEach([AppState.RecoveryStatus.fatigued, .recovering, .recovered, .fresh], id: \.label) { status in
+                    HStack(spacing: 4) {
+                        Circle().fill(status.color).frame(width: 8, height: 8)
+                        Text(status.label).font(.caption2).foregroundColor(.secondary)
+                    }
+                }
+            }
+        }
     }
 }
 

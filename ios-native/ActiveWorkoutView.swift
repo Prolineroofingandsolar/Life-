@@ -325,12 +325,21 @@ private struct ExerciseCard: View {
     let sessionExercise: SessionExercise
     let onSetDone: (String) -> Void
 
+    @State private var showExerciseDetail = false
+
     private var exercise: Exercise? {
         appState.exercises.first { $0.id == sessionExercise.exerciseId }
     }
 
     private var previousSets: [LoggedSet] {
         appState.previousSets(for: sessionExercise.exerciseId)
+    }
+
+    private var overload: AppState.OverloadSuggestion {
+        appState.progressiveOverloadSuggestion(
+            for: sessionExercise.exerciseId,
+            targetRepMax: sessionExercise.targetRepMax
+        )
     }
 
     var body: some View {
@@ -341,17 +350,34 @@ private struct ExerciseCard: View {
                     Circle()
                         .fill(exercise.muscle.muscleColor)
                         .frame(width: 10, height: 10)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(exercise.name)
-                            .font(.headline)
-                        Text("Target: \(sessionExercise.targetRepMin)–\(sessionExercise.targetRepMax) reps")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                    Button {
+                        showExerciseDetail = true
+                    } label: {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(exercise.name)
+                                .font(.headline)
+                                .foregroundColor(.primary)
+                            Text("Target: \(sessionExercise.targetRepMin)–\(sessionExercise.targetRepMax) reps")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
                     }
+                    .buttonStyle(.plain)
                     Spacer()
-                    Text(exercise.muscle)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    // Overload suggestion badge
+                    if overload != .maintain {
+                        HStack(spacing: 3) {
+                            Image(systemName: overload.icon)
+                                .font(.caption2)
+                            Text(overload.label)
+                                .font(.caption2.bold())
+                        }
+                        .foregroundColor(overload.color)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 4)
+                        .background(overload.color.opacity(0.12))
+                        .cornerRadius(8)
+                    }
                 }
                 Button {
                     appState.removeExerciseFromSession(sessionId: sessionId, exerciseId: sessionExercise.id)
@@ -362,6 +388,11 @@ private struct ExerciseCard: View {
                 .buttonStyle(.plain)
             }
             .padding()
+            .sheet(isPresented: $showExerciseDetail) {
+                if let exercise = exercise {
+                    ExerciseDetailSheet(exerciseId: exercise.id)
+                }
+            }
 
             Divider()
 
@@ -635,16 +666,19 @@ struct ExercisePickerSheet: View {
     @Environment(\.dismiss) private var dismiss
     let sessionId: String
     @State private var searchText = ""
+    @State private var equipmentFilter: ExerciseEquipment? = nil
 
     private var muscles: [String] {
         Array(Set(appState.exercises.map(\.muscle))).sorted()
     }
 
     private var filtered: [Exercise] {
-        if searchText.isEmpty { return appState.exercises }
-        return appState.exercises.filter {
-            $0.name.localizedCaseInsensitiveContains(searchText) ||
-            $0.muscle.localizedCaseInsensitiveContains(searchText)
+        appState.exercises.filter { ex in
+            let matchesSearch = searchText.isEmpty ||
+                ex.name.localizedCaseInsensitiveContains(searchText) ||
+                ex.muscle.localizedCaseInsensitiveContains(searchText)
+            let matchesEquipment = equipmentFilter == nil || ex.equipment == equipmentFilter
+            return matchesSearch && matchesEquipment
         }
     }
 
@@ -657,28 +691,31 @@ struct ExercisePickerSheet: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                ForEach(grouped, id: \.0) { muscle, exs in
-                    Section(muscle) {
-                        ForEach(exs) { ex in
-                            Button {
-                                appState.addExerciseToSession(sessionId: sessionId, exerciseId: ex.id)
-                                dismiss()
-                            } label: {
-                                HStack {
-                                    Text(ex.name)
-                                        .foregroundColor(.primary)
-                                    Spacer()
-                                    Text(ex.kind.label)
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
+            VStack(spacing: 0) {
+                EquipmentFilterChips(selected: $equipmentFilter)
+                List {
+                    ForEach(grouped, id: \.0) { muscle, exs in
+                        Section(muscle) {
+                            ForEach(exs) { ex in
+                                Button {
+                                    appState.addExerciseToSession(sessionId: sessionId, exerciseId: ex.id)
+                                    dismiss()
+                                } label: {
+                                    HStack {
+                                        Text(ex.name)
+                                            .foregroundColor(.primary)
+                                        Spacer()
+                                        Text(ex.equipment.label)
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
                                 }
                             }
                         }
                     }
                 }
+                .listStyle(.insetGrouped)
             }
-            .listStyle(.insetGrouped)
             .searchable(text: $searchText)
             .navigationTitle("Add Exercise")
             .navigationBarTitleDisplayMode(.inline)
@@ -688,5 +725,41 @@ struct ExercisePickerSheet: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Equipment Filter Chips (shared)
+
+struct EquipmentFilterChips: View {
+    @Binding var selected: ExerciseEquipment?
+
+    private let options: [ExerciseEquipment?] = [nil] + ExerciseEquipment.allCases.map { Optional($0) }
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(options.indices, id: \.self) { idx in
+                    let option = options[idx]
+                    let label = option?.label ?? "All"
+                    let isSelected = selected == option
+                    Button {
+                        selected = option
+                        HapticManager.selection()
+                    } label: {
+                        Text(label)
+                            .font(.subheadline)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 7)
+                            .background(isSelected ? Color(hex: "#30d158") : Color(.secondarySystemGroupedBackground))
+                            .foregroundColor(isSelected ? .white : .primary)
+                            .cornerRadius(20)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+        }
+        .background(Color(.systemGroupedBackground))
     }
 }

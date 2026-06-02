@@ -630,6 +630,151 @@ final class AppState {
             .sorted { $0.volumeKg > $1.volumeKg }
     }
 
+    // MARK: - Progressive Overload
+
+    enum OverloadSuggestion: Equatable {
+        case addWeight(by: Double)
+        case addReps
+        case addSet
+        case deload
+        case maintain
+
+        var label: String {
+            switch self {
+            case .addWeight(let by): return "+\(by.formatted1)kg"
+            case .addReps:           return "+1 rep"
+            case .addSet:            return "+1 set"
+            case .deload:            return "Deload"
+            case .maintain:          return "Maintain"
+            }
+        }
+        var icon: String {
+            switch self {
+            case .addWeight: return "arrow.up.circle.fill"
+            case .addReps:   return "plus.circle.fill"
+            case .addSet:    return "square.stack.fill"
+            case .deload:    return "arrow.down.circle.fill"
+            case .maintain:  return "equal.circle.fill"
+            }
+        }
+        var color: Color {
+            switch self {
+            case .addWeight: return Color(hex: "#30d158")
+            case .addReps:   return .blue
+            case .addSet:    return .orange
+            case .deload:    return .red
+            case .maintain:  return .secondary
+            }
+        }
+    }
+
+    func progressiveOverloadSuggestion(for exerciseId: String, targetRepMax: Int) -> OverloadSuggestion {
+        let pastSets: [[LoggedSet]] = sessions
+            .filter { $0.finishedAt != nil }
+            .sorted { ($0.finishedAt ?? .distantPast) > ($1.finishedAt ?? .distantPast) }
+            .compactMap { session in
+                guard let ex = session.exercises.first(where: { $0.exerciseId == exerciseId }) else { return nil }
+                let working = ex.sets.filter { $0.done && !$0.isWarmup }
+                return working.isEmpty ? nil : working
+            }
+
+        guard let recent = pastSets.first, !recent.isEmpty else { return .addWeight(by: 2.5) }
+
+        let avgReps = Double(recent.map(\.reps).reduce(0, +)) / Double(recent.count)
+        let maxWeight = recent.map(\.weight).max() ?? 0
+
+        if pastSets.count >= 3 {
+            let weights = pastSets.prefix(3).map { $0.map(\.weight).max() ?? 0 }
+            let reps    = pastSets.prefix(3).map { $0.map(\.reps).reduce(0, +) }
+            if weights[0] == weights[1] && weights[1] == weights[2] &&
+               reps[0] <= reps[1] && reps[1] <= reps[2] {
+                return .deload
+            }
+        }
+
+        if avgReps >= Double(targetRepMax) {
+            return .addWeight(by: maxWeight >= 100 ? 5.0 : 2.5)
+        }
+        if avgReps >= Double(targetRepMax) - 1.5 {
+            return .addReps
+        }
+        if pastSets.count >= 2 {
+            let prevAvg = Double(pastSets[1].map(\.reps).reduce(0, +)) / Double(pastSets[1].count)
+            if abs(avgReps - prevAvg) < 1 { return .addSet }
+        }
+        return .maintain
+    }
+
+    // MARK: - Muscle Recovery
+
+    enum RecoveryStatus {
+        case fresh, recovered, recovering, fatigued
+        var label: String {
+            switch self {
+            case .fresh:      return "Fresh"
+            case .recovered:  return "Ready"
+            case .recovering: return "Recovering"
+            case .fatigued:   return "Fatigued"
+            }
+        }
+        var color: Color {
+            switch self {
+            case .fresh:      return Color(.tertiaryLabel)
+            case .recovered:  return Color(hex: "#30d158")
+            case .recovering: return .orange
+            case .fatigued:   return .red
+            }
+        }
+    }
+
+    func daysSinceLastTrained(muscle: String) -> Int? {
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        for session in sessions.filter({ $0.finishedAt != nil })
+            .sorted(by: { ($0.finishedAt ?? .distantPast) > ($1.finishedAt ?? .distantPast) }) {
+            let hit = session.exercises.contains { ex in
+                exercises.first(where: { $0.id == ex.exerciseId })?.muscle == muscle
+            }
+            if hit, let fin = session.finishedAt {
+                return cal.dateComponents([.day], from: cal.startOfDay(for: fin), to: today).day ?? 0
+            }
+        }
+        return nil
+    }
+
+    func recoveryStatus(muscle: String) -> RecoveryStatus {
+        guard let days = daysSinceLastTrained(muscle: muscle) else { return .fresh }
+        switch days {
+        case 0:  return .fatigued
+        case 1:  return .recovering
+        default: return .recovered
+        }
+    }
+
+    // MARK: - Weekly Sessions Calendar
+
+    func sessionsThisWeek() -> [Date: [WorkoutSession]] {
+        let cal = Calendar.current
+        let weekStart = cal.date(from: cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date())) ?? Date()
+        let weekEnd   = cal.date(byAdding: .day, value: 7, to: weekStart) ?? Date()
+        var map: [Date: [WorkoutSession]] = [:]
+        for session in sessions where session.finishedAt != nil {
+            guard let fin = session.finishedAt, fin >= weekStart, fin < weekEnd else { continue }
+            let day = cal.startOfDay(for: fin)
+            map[day, default: []].append(session)
+        }
+        return map
+    }
+
+    // MARK: - XP / Level
+
+    var xpPoints: Int {
+        let finished = sessions.filter { $0.finishedAt != nil }
+        return finished.count * 100 + workoutStreak * 10 + achievements.count * 50
+    }
+    var xpLevel: Int  { max(1, xpPoints / 500) }
+    var xpProgress: Double { Double(xpPoints % 500) / 500.0 }
+
     // MARK: - Body Measurements
 
     func addBodyMeasurement(_ measurement: BodyMeasurement) {
