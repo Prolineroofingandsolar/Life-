@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { AnimatePresence, motion, Reorder, useDragControls } from 'framer-motion'
-import { ChevronDown, Check, Plus, X, Trophy, Link2, Trash2, RefreshCw, GripVertical, AlertTriangle } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
+import { ChevronDown, Check, Plus, X, Trophy, Link2, Trash2, RefreshCw, AlertTriangle } from 'lucide-react'
 import { useLife } from '../lib/store'
 import {
   exerciseById, isSetPR, lastPerformance, newPRsForSession,
@@ -189,19 +189,6 @@ function FinishSummary({
   )
 }
 
-/* ── Drag handle for exercise GROUP level reorder ─────────────────────── */
-
-function DragHandle({ controls }: { controls: ReturnType<typeof useDragControls> }) {
-  return (
-    <button
-      className="flex h-10 w-8 touch-none items-center justify-center text-label3"
-      onPointerDown={(e) => { e.preventDefault(); controls.start(e) }}
-      aria-label="Drag to reorder"
-    >
-      <GripVertical size={18} strokeWidth={1.8} />
-    </button>
-  )
-}
 
 /* ── Set row: plain div, zero drag involvement for iOS input compatibility ── */
 
@@ -318,7 +305,7 @@ function SetRow({
   )
 }
 
-/* ── Single exercise group item (Reorder.Item wrapper at GROUP level) ─── */
+/* ── Single exercise group item ───────────────────────────────────────── */
 
 function ExGroupItem({
   group,
@@ -353,7 +340,6 @@ function ExGroupItem({
   onRemoveSet: (exIdx: number, setIdx: number) => void
   onUpdateSet: (exIdx: number, setIdx: number, patch: Partial<LoggedSet>) => void
 }) {
-  const controls = useDragControls()
   const isSuperset = group.exercises.length > 1
 
   const renderExerciseContent = (ex: SessionExercise, exIdx: number) => {
@@ -368,7 +354,6 @@ function ExGroupItem({
       <div key={exIdx} className={isSuperset ? 'p-4' : ''}>
         {/* Header */}
         <div className="mb-3 flex items-start gap-1">
-          {!isSuperset && <DragHandle controls={controls} />}
           <div className="min-w-0 flex-1">
             <div className="text-headline text-label">{meta?.name ?? 'Exercise'}</div>
             {meta?.muscle && <div className="mt-1"><MuscleTag muscle={meta.muscle} /></div>}
@@ -457,34 +442,27 @@ function ExGroupItem({
 
   if (!isSuperset) {
     return (
-      <Reorder.Item
-        value={group}
-        dragListener={false}
-        dragControls={controls}
+      <div
         className="rounded-card bg-surface shadow-card"
-        style={{ border: '0.5px solid rgb(var(--separator) / 0.5)', listStyle: 'none' }}
+        style={{ border: '0.5px solid rgb(var(--separator) / 0.5)' }}
       >
         <div className="p-4">
           {renderExerciseContent(group.exercises[0], exIndices[0])}
         </div>
-      </Reorder.Item>
+      </div>
     )
   }
 
   return (
-    <Reorder.Item
-      value={group}
-      dragListener={false}
-      dragControls={controls}
+    <div
       className="overflow-hidden rounded-card bg-surface shadow-card"
-      style={{ border: '0.5px solid rgb(var(--separator) / 0.5)', listStyle: 'none' }}
+      style={{ border: '0.5px solid rgb(var(--separator) / 0.5)' }}
     >
       {/* Superset header */}
       <div
         className="flex items-center gap-2 px-4 py-2"
         style={{ background: 'rgb(var(--accent) / 0.08)' }}
       >
-        <DragHandle controls={controls} />
         <Link2 size={13} className="text-accent" strokeWidth={2.2} />
         <span className="text-caption font-semibold uppercase tracking-wider text-accent">Superset</span>
       </div>
@@ -493,7 +471,7 @@ function ExGroupItem({
           {renderExerciseContent(ex, exIndices[i])}
         </div>
       ))}
-    </Reorder.Item>
+    </div>
   )
 }
 
@@ -519,7 +497,6 @@ export default function ActiveWorkout({
     addExerciseToSession,
     removeExerciseFromSession,
     replaceExerciseInSession,
-    reorderExercisesInSession,
     linkAsSuperset,
     unlinkSuperset,
     renameSession,
@@ -541,37 +518,19 @@ export default function ActiveWorkout({
     return () => window.clearInterval(id)
   }, [])
 
-  /* ── Drag-to-reorder state for exercise GROUPS ── */
-  const exerciseStructureKey = useMemo(
-    () => session.exercises.map((e) => `${e.exerciseId}|${e.supersetId ?? ''}`).join(','),
-    [session.exercises],
-  )
-
-  const storeGroups = useMemo(() => buildGroups(session.exercises), [exerciseStructureKey]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const [groups, setGroups] = useState<ExGroup[]>(storeGroups)
-  const isDraggingRef = useRef(false)
-
-  useEffect(() => {
-    if (!isDraggingRef.current) setGroups(storeGroups)
-  }, [storeGroups])
-
-  const handleGroupReorder = (newGroups: ExGroup[]) => {
-    setGroups(newGroups)
-    const newExercises = newGroups.flatMap((g) => g.exercises)
-    reorderExercisesInSession(session.id, newExercises)
-  }
+  /* ── Exercise groups ── */
+  const groups = useMemo(() => buildGroups(session.exercises), [session.exercises])
 
   /* ── Lookup: group → original exercise indices ── */
   const groupToIndices = useMemo(() => {
     const map = new Map<string, number[]>()
     let idx = 0
-    for (const group of storeGroups) {
+    for (const group of groups) {
       map.set(group.id, group.exercises.map((_, i) => idx + i))
       idx += group.exercises.length
     }
     return map
-  }, [storeGroups])
+  }, [groups])
 
   /* ── PR flags ── */
   const prFlags = useMemo(
@@ -669,13 +628,7 @@ export default function ActiveWorkout({
           </div>
         )}
 
-        <Reorder.Group
-          axis="y"
-          values={groups}
-          onReorder={handleGroupReorder}
-          className="space-y-4"
-          style={{ listStyle: 'none', padding: 0, margin: 0 }}
-        >
+        <div className="space-y-4">
           {groups.map((group) => {
             const indices = groupToIndices.get(group.id) ?? group.exercises.map((_, i) => i)
             return (
@@ -707,7 +660,7 @@ export default function ActiveWorkout({
               />
             )
           })}
-        </Reorder.Group>
+        </div>
 
         {/* Bottom actions */}
         <div className="mt-4 flex gap-2">
