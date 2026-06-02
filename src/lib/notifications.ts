@@ -1,9 +1,11 @@
 /**
  * Thin wrapper around the Web Notifications API.
  *
- * Note for the iPhone build: notifications only work once "Life" is added to
- * the Home Screen (installed as a PWA) on iOS 16.4+. In a normal Safari tab
- * iOS will report "denied". On desktop browsers they work in the tab.
+ * In the Capacitor (native iOS) build, Web Notifications work for in-app
+ * nudges because WKWebView supports Notification.requestPermission() and
+ * new Notification() on iOS 16.4+. Notifications delivered while the app is
+ * in the background still require @capacitor/local-notifications — the nudges
+ * in this app are intentionally in-app only (water, meals, breaks).
  */
 
 export function notificationsSupported(): boolean {
@@ -29,6 +31,6 @@ export function notify(title: string, body: string) {
   try {
     new Notification(title, { body, icon: '/icon-192.png', badge: '/icon-192.png' })
   } catch {
-    /* Some browsers require notifications to come from the service worker; ignore. */
+    // Some environments require notifications from a service worker; ignore silently.
   }
 }

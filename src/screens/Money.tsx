@@ -24,6 +24,7 @@ function BillRow({ bill, onDelete, onEdit }: { bill: Bill; onDelete: () => void;
         drag="x"
         dragConstraints={{ left: -96, right: 0 }}
         dragElastic={{ left: 0.5, right: 0 }}
+        dragMomentum={false}
         dragSnapToOrigin
         onDragEnd={(_, info) => { if (info.offset.x < -72) onDelete() }}
         className="relative flex items-center gap-3 bg-surface px-4 py-3"

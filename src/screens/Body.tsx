@@ -538,7 +538,7 @@ export default function Body() {
           />
         </ListGroup>
       )}
-      <p className="ml-4 mt-2 text-footnote text-label2">On iPhone, add Life to your Home Screen first, then enable.</p>
+      <p className="ml-4 mt-2 text-footnote text-label2">Nudges appear while the app is open. Background notifications require iOS permission — tap above to grant it.</p>
 
       <SectionLabel>Daily goals</SectionLabel>
       <ListGroup>

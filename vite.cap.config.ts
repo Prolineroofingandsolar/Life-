@@ -1,26 +1,10 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import { VitePWA } from 'vite-plugin-pwa'
 
-// Capacitor build — no Cloudflare Workers plugin, plain static output to dist/
+// Capacitor build — no Cloudflare Workers plugin, no PWA service worker.
+// Service workers inside Capacitor's WKWebView can intercept Capacitor's own
+// bridge requests and prevent the app from loading on first install. The PWA
+// plugin is used only for the web/Cloudflare build (vite.config.ts).
 export default defineConfig({
-  plugins: [react(), VitePWA({
-    registerType: 'autoUpdate',
-    includeAssets: ['favicon.svg'],
-    manifest: {
-      name: 'Life',
-      short_name: 'Life',
-      description: 'A calm productivity app for ADHD brains — tasks, body care, focus and money in one place.',
-      theme_color: '#1a1b25',
-      background_color: '#1a1b25',
-      display: 'standalone',
-      orientation: 'portrait',
-      start_url: '/',
-      icons: [
-        { src: 'icon-192.png', sizes: '192x192', type: 'image/png' },
-        { src: 'icon-512.png', sizes: '512x512', type: 'image/png' },
-        { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
-      ],
-    },
-  })],
+  plugins: [react()],
 })

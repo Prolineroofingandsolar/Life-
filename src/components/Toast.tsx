@@ -22,7 +22,12 @@ export default function Toast({ message, undoLabel = 'Undo', onUndo, onDismiss }
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 16, scale: 0.97 }}
       transition={spring}
-      className="safe-bottom fixed inset-x-4 bottom-4 z-50 mx-auto max-w-app"
+      // Position above the tab bar. The tab bar is ~52px tall and lives above
+      // env(safe-area-inset-bottom). Adding 60px clears it with a small gap.
+      // This position also looks fine on screens where the tab bar is hidden
+      // (Active Workout, Settings), just a little higher than strictly needed.
+      className="fixed inset-x-4 z-50 mx-auto max-w-app"
+      style={{ bottom: 'calc(3.75rem + env(safe-area-inset-bottom))' }}
     >
       <div
         className="flex items-center gap-3 rounded-xl2 px-4 py-3.5"

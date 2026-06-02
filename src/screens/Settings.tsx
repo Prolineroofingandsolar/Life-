@@ -19,13 +19,29 @@ export default function Settings({ onClose }: { onClose: () => void }) {
     setToast(msg)
   }
 
-  const exportData = () => {
+  const exportData = async () => {
     try {
-      const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' })
+      const json = JSON.stringify(state, null, 2)
+      const filename = `life-backup-${new Date().toISOString().slice(0, 10)}.json`
+
+      // On iOS (Capacitor or home-screen PWA) the <a download> attribute is
+      // ignored by WKWebView. Use the Web Share API instead — it opens the
+      // native share sheet so the user can save to Files, AirDrop, etc.
+      if (typeof navigator.share === 'function') {
+        const file = new File([json], filename, { type: 'application/json' })
+        if (typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: 'Life Backup' })
+          showToast('Backup shared successfully')
+          return
+        }
+      }
+
+      // Desktop / non-iOS fallback: trigger a file download.
+      const blob = new Blob([json], { type: 'application/json' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `life-backup-${new Date().toISOString().slice(0, 10)}.json`
+      a.download = filename
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
