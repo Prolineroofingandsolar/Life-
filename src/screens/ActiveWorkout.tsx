@@ -40,8 +40,11 @@ function NumCell({
         const n = parseFloat(v)
         if (!isNaN(n) && n >= 0) onChange(n)
       }}
-      onPointerDown={(e) => e.stopPropagation()}
+      onPointerDown={(e) => { e.stopPropagation(); e.currentTarget.focus() }}
       onTouchStart={(e) => e.stopPropagation()}
+      onTouchEnd={(e) => e.stopPropagation()}
+      onClick={(e) => { e.stopPropagation(); e.currentTarget.focus() }}
+      style={{ touchAction: 'manipulation', WebkitUserSelect: 'text', userSelect: 'text' }}
       className="w-full rounded-[8px] bg-fill py-2 text-center text-body text-label placeholder:text-label3 focus:outline-none focus:ring-2 focus:ring-accent/60"
     />
   )

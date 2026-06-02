@@ -1,7 +1,4 @@
-import { CapacitorHealthkit } from '@perfood/capacitor-healthkit'
-import type { OtherData, QueryOutput } from '@perfood/capacitor-healthkit'
-
-const READ_PERMISSIONS = ['bodyMass', 'bodyFatPercentage', 'leanBodyMass', 'bodyMassIndex']
+import { Capacitor } from '@capacitor/core'
 
 export interface HealthSample {
   date: string // YYYY-MM-DD
@@ -15,70 +12,51 @@ export interface HealthImportResult {
   bmi: HealthSample[]
 }
 
-function toDateKey(dateString: string): string {
-  return dateString.slice(0, 10)
-}
-
-function extractSamples(output: QueryOutput<OtherData>): HealthSample[] {
-  return (output.resultData ?? []).map((s: OtherData) => ({
-    date: toDateKey(s.startDate),
-    value: Math.round(s.value * 100) / 100,
-  }))
+export function isHealthKitAvailable(): boolean {
+  return Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'ios'
 }
 
 export async function requestHealthKitPermissions(): Promise<boolean> {
   try {
-    await CapacitorHealthkit.requestAuthorization({ all: [], read: READ_PERMISSIONS, write: [] })
+    const { CapacitorHealthkit } = await import('@perfood/capacitor-healthkit')
+    await CapacitorHealthkit.requestAuthorization({
+      all: [],
+      read: ['bodyMass', 'bodyFatPercentage', 'leanBodyMass', 'bodyMassIndex'],
+      write: [],
+    })
     return true
-  } catch {
+  } catch (e) {
+    console.error('HealthKit permission error:', e)
     return false
   }
 }
 
 export async function importFromHealthKit(daysBack = 365): Promise<HealthImportResult> {
+  const { CapacitorHealthkit } = await import('@perfood/capacitor-healthkit')
   const endDate = new Date().toISOString()
   const startDate = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000).toISOString()
 
+  function toDateKey(d: string) { return d.slice(0, 10) }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function extract(output: any): HealthSample[] {
+    return (output.resultData ?? []).map((s: { startDate: string; value: number }) => ({
+      date: toDateKey(s.startDate),
+      value: Math.round(s.value * 100) / 100,
+    }))
+  }
+
   const [weight, bodyFat, leanMass, bmi] = await Promise.all([
-    CapacitorHealthkit.queryHKitSampleType<OtherData>({
-      sampleName: 'bodyMass',
-      startDate,
-      endDate,
-      limit: 0,
-    }),
-    CapacitorHealthkit.queryHKitSampleType<OtherData>({
-      sampleName: 'bodyFatPercentage',
-      startDate,
-      endDate,
-      limit: 0,
-    }),
-    CapacitorHealthkit.queryHKitSampleType<OtherData>({
-      sampleName: 'leanBodyMass',
-      startDate,
-      endDate,
-      limit: 0,
-    }),
-    CapacitorHealthkit.queryHKitSampleType<OtherData>({
-      sampleName: 'bodyMassIndex',
-      startDate,
-      endDate,
-      limit: 0,
-    }),
+    CapacitorHealthkit.queryHKitSampleType({ sampleName: 'bodyMass', startDate, endDate, limit: 0 }),
+    CapacitorHealthkit.queryHKitSampleType({ sampleName: 'bodyFatPercentage', startDate, endDate, limit: 0 }),
+    CapacitorHealthkit.queryHKitSampleType({ sampleName: 'leanBodyMass', startDate, endDate, limit: 0 }),
+    CapacitorHealthkit.queryHKitSampleType({ sampleName: 'bodyMassIndex', startDate, endDate, limit: 0 }),
   ])
 
   return {
-    weight: extractSamples(weight),
-    bodyFat: extractSamples(bodyFat),
-    leanMass: extractSamples(leanMass),
-    bmi: extractSamples(bmi),
-  }
-}
-
-export function isHealthKitAvailable(): boolean {
-  try {
-    // CapacitorHealthkit is only functional on native iOS
-    return (window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor?.isNativePlatform?.() ?? false
-  } catch {
-    return false
+    weight: extract(weight),
+    bodyFat: extract(bodyFat),
+    leanMass: extract(leanMass),
+    bmi: extract(bmi),
   }
 }
