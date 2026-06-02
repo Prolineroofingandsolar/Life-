@@ -3,6 +3,38 @@ import Foundation
 
 // MARK: - Task Models
 
+enum TaskPriority: String, Codable, CaseIterable, Identifiable {
+    case high, medium, low, none
+    var id: String { rawValue }
+    var label: String { rawValue.capitalized }
+    var color: Color {
+        switch self {
+        case .high:   return .red
+        case .medium: return .orange
+        case .low:    return .blue
+        case .none:   return .clear
+        }
+    }
+    var icon: String {
+        switch self {
+        case .high:   return "exclamationmark.2"
+        case .medium: return "exclamationmark"
+        case .low:    return "minus"
+        case .none:   return ""
+        }
+    }
+    var sortOrder: Int {
+        switch self { case .high: return 0; case .medium: return 1; case .low: return 2; case .none: return 3 }
+    }
+}
+
+struct Subtask: Codable, Identifiable {
+    var id: String = UUID().uuidString
+    var title: String
+    var done: Bool = false
+    var createdAt: Date = Date()
+}
+
 enum TaskCategory: String, Codable, CaseIterable, Identifiable {
     case work, gym, personal
     var id: String { rawValue }
@@ -45,6 +77,9 @@ struct AppTask: Codable, Identifiable {
     var category: TaskCategory
     var done: Bool = false
     var dueDate: DueDate
+    var priority: TaskPriority = .none
+    var notes: String = ""
+    var subtasks: [Subtask] = []
     var createdAt: Date = Date()
     var completedAt: Date? = nil
 }
@@ -209,9 +244,11 @@ struct LoggedSet: Codable, Identifiable {
     var distanceKm: Double = 0
     var isWarmup: Bool = false
     var isDropSet: Bool = false
+    var isFailure: Bool = false
+    var tempoString: String = ""
     var done: Bool = false
     var completedAt: Date? = nil
-    var rpe: Int? = nil  // Rate of Perceived Exertion 1-10
+    var rpe: Int? = nil
     var notes: String = ""
 }
 
@@ -321,6 +358,23 @@ struct WorkoutSettings: Codable {
     var restTimerEnabled: Bool = true
     var defaultRestSeconds: Int = 90
     var weightUnit: WeightUnit = .kg
+}
+
+// MARK: - Workout Programs / Splits
+
+struct ProgramDay: Codable, Identifiable {
+    var id: String = UUID().uuidString
+    var weekday: Int    // 1 = Monday … 7 = Sunday
+    var routineId: String? = nil
+    var label: String = ""
+}
+
+struct WorkoutProgram: Codable, Identifiable {
+    var id: String = UUID().uuidString
+    var name: String
+    var days: [ProgramDay] = []
+    var isActive: Bool = false
+    var createdAt: Date = Date()
 }
 
 // MARK: - Weight Unit
