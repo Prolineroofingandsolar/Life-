@@ -29,7 +29,7 @@ export function isHealthKitAvailable(): boolean {
 
 export async function requestHealthKitPermissions(): Promise<HealthKitPermResult> {
   try {
-    const { CapacitorHealthkit } = await import('@capacitor-community/health-kit')
+    const { CapacitorHealthkit } = await import('@perfood/capacitor-healthkit')
     await CapacitorHealthkit.requestAuthorization({
       all: [],
       read: ['bodyMass', 'bodyFatPercentage', 'leanBodyMass', 'bodyMassIndex'],
@@ -55,7 +55,7 @@ export async function requestHealthKitPermissions(): Promise<HealthKitPermResult
 }
 
 export async function importFromHealthKit(daysBack = 365): Promise<HealthImportResult> {
-  const { CapacitorHealthkit } = await import('@capacitor-community/health-kit')
+  const { CapacitorHealthkit } = await import('@perfood/capacitor-healthkit')
   const endDate = new Date().toISOString()
   const startDate = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000).toISOString()
 

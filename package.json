@@ -15,7 +15,7 @@
     "@capacitor/cli": "^8.3.4",
     "@capacitor/core": "^8.3.4",
     "@capacitor/ios": "^8.3.4",
-    "@capacitor-community/health-kit": "^3.0.0",
+    "@perfood/capacitor-healthkit": "2.0.0-alpha.2",
     "framer-motion": "^12.40.0",
     "lucide-react": "^1.17.0",
     "react": "^19.2.6",
