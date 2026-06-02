@@ -20,6 +20,8 @@ function elapsedLabel(ms: number) {
   return `${m}:${String(s % 60).padStart(2, '0')}`
 }
 
+// NumCell: plain input with no drag wrappers. Uses inputMode=decimal for iOS numeric keyboard.
+// Touch events are NOT stopped here — the parent set row has no drag gesture, so there's nothing to fight.
 function NumCell({
   value,
   onChange,
@@ -40,10 +42,6 @@ function NumCell({
         const n = parseFloat(v)
         if (!isNaN(n) && n >= 0) onChange(n)
       }}
-      onPointerDown={(e) => { e.stopPropagation(); e.currentTarget.focus() }}
-      onTouchStart={(e) => e.stopPropagation()}
-      onTouchEnd={(e) => e.stopPropagation()}
-      onClick={(e) => { e.stopPropagation(); e.currentTarget.focus() }}
       style={{ touchAction: 'manipulation', WebkitUserSelect: 'text', userSelect: 'text' }}
       className="w-full rounded-[8px] bg-fill py-2 text-center text-body text-label placeholder:text-label3 focus:outline-none focus:ring-2 focus:ring-accent/60"
     />
@@ -51,10 +49,10 @@ function NumCell({
 }
 
 const COLS: Record<ExerciseKind, string[]> = {
-  weight:     ['Set', 'Prev', 'kg', 'Reps', ''],
-  bodyweight: ['Set', 'Prev', 'Reps', ''],
-  cardio:     ['Set', 'Prev', 'km', 'Min', ''],
-  hold:       ['Set', 'Prev', 'Sec', ''],
+  weight:     ['Set', 'Prev', 'kg', 'Reps', '', ''],
+  bodyweight: ['Set', 'Prev', 'Reps', '', ''],
+  cardio:     ['Set', 'Prev', 'km', 'Min', '', ''],
+  hold:       ['Set', 'Prev', 'Sec', '', ''],
 }
 
 function setLabel(sets: LoggedSet[], idx: number): string {
@@ -66,10 +64,10 @@ function setLabel(sets: LoggedSet[], idx: number): string {
 
 function gridCols(kind: ExerciseKind): string {
   switch (kind) {
-    case 'weight':     return '40px 52px 1fr 1fr 44px'
-    case 'cardio':     return '40px 52px 1fr 1fr 44px'
-    case 'bodyweight': return '40px 64px 1fr 44px'
-    case 'hold':       return '40px 64px 1fr 44px'
+    case 'weight':     return '40px 52px 1fr 1fr 36px 36px'
+    case 'cardio':     return '40px 52px 1fr 1fr 36px 36px'
+    case 'bodyweight': return '40px 64px 1fr 36px 36px'
+    case 'hold':       return '40px 64px 1fr 36px 36px'
   }
 }
 
@@ -180,7 +178,7 @@ function FinishSummary({
   )
 }
 
-/* ── Drag handle ──────────────────────────────────────────────────────── */
+/* ── Drag handle for exercise GROUP level reorder ─────────────────────── */
 
 function DragHandle({ controls }: { controls: ReturnType<typeof useDragControls> }) {
   return (
@@ -194,7 +192,122 @@ function DragHandle({ controls }: { controls: ReturnType<typeof useDragControls>
   )
 }
 
-/* ── Single exercise group item (Reorder.Item wrapper) ─────────────────── */
+/* ── Set row: plain div, zero drag involvement for iOS input compatibility ── */
+
+function SetRow({
+  set,
+  setIdx,
+  sets,
+  kind,
+  prev,
+  prFlag,
+  onToggle,
+  onRemove,
+  onUpdate,
+}: {
+  set: LoggedSet
+  setIdx: number
+  sets: LoggedSet[]
+  kind: ExerciseKind
+  prev: SessionExercise | null | undefined
+  prFlag: boolean
+  onToggle: () => void
+  onRemove: () => void
+  onUpdate: (patch: Partial<LoggedSet>) => void
+}) {
+  const isDrop = !!set.isDropSet
+  const isWarmup = !!set.isWarmup
+  const canDelete = sets.length > 1
+
+  const rowBg = set.done
+    ? isWarmup ? 'bg-amber-500/10' : isDrop ? 'bg-accent/10' : 'bg-move/10'
+    : isWarmup ? 'bg-amber-500/5' : isDrop ? 'bg-accent/5' : ''
+
+  const labelColor = isWarmup
+    ? 'text-amber-500'
+    : isDrop ? 'text-accent' : 'text-label2'
+
+  return (
+    <div className="relative rounded-[10px] bg-surface">
+      <div
+        className={`grid items-center gap-2 rounded-[10px] px-1 py-1 ${rowBg}`}
+        style={{ gridTemplateColumns: gridCols(kind) }}
+      >
+        {/* Set label */}
+        <div className={`text-center text-callout font-semibold ${labelColor}`}>
+          {setLabel(sets, setIdx)}
+        </div>
+
+        {/* Previous hint */}
+        <div className="text-center text-footnote text-label3">
+          {setHint(prev?.sets[setIdx])}
+        </div>
+
+        {/* Input fields — plain inputs with no drag wrapper */}
+        {kind === 'weight' && (
+          <>
+            <NumCell value={set.weight} placeholder="0" onChange={(v) => onUpdate({ weight: v })} />
+            <NumCell value={set.reps}   placeholder="0" onChange={(v) => onUpdate({ reps: v })} />
+          </>
+        )}
+        {kind === 'bodyweight' && (
+          <NumCell value={set.reps} placeholder="0" onChange={(v) => onUpdate({ reps: v })} />
+        )}
+        {kind === 'cardio' && (
+          <>
+            <NumCell value={set.distanceKm} placeholder="0" onChange={(v) => onUpdate({ distanceKm: v })} />
+            <NumCell
+              value={set.durationSec != null ? Math.round(set.durationSec / 60) : undefined}
+              placeholder="0"
+              onChange={(v) => onUpdate({ durationSec: v != null ? v * 60 : undefined })}
+            />
+          </>
+        )}
+        {kind === 'hold' && (
+          <NumCell value={set.durationSec} placeholder="0" onChange={(v) => onUpdate({ durationSec: v })} />
+        )}
+
+        {/* Done checkbox — always visible */}
+        <div className="relative flex items-center justify-center">
+          <button
+            onClick={onToggle}
+            aria-label="Complete set"
+            className={`grid h-8 w-8 place-items-center rounded-[8px] border-2 ${
+              set.done
+                ? isWarmup ? 'border-amber-500 bg-amber-500 text-white'
+                : isDrop   ? 'border-accent bg-accent text-white'
+                           : 'border-move bg-move text-white'
+                : 'border-label3 text-transparent'
+            }`}
+          >
+            <Check size={16} strokeWidth={3} />
+          </button>
+          {prFlag && (
+            <span className="pointer-events-none absolute -right-1.5 -top-1.5">
+              <Trophy size={12} className="text-nourish" fill="currentColor" />
+            </span>
+          )}
+        </div>
+
+        {/* Trash button — always visible, disabled when only 1 set */}
+        <div className="flex items-center justify-center">
+          <button
+            onClick={onRemove}
+            disabled={!canDelete}
+            aria-label="Remove set"
+            className={`grid h-8 w-8 place-items-center rounded-[8px] ${
+              canDelete ? 'text-danger active:scale-90' : 'text-label3 opacity-25'
+            }`}
+          >
+            <Trash2 size={15} />
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ── Single exercise group item (Reorder.Item wrapper at GROUP level) ─── */
 
 function ExGroupItem({
   group,
@@ -287,99 +400,22 @@ function ExGroupItem({
           ))}
         </div>
 
-        {/* Set rows */}
+        {/* Set rows — plain divs, no framer-motion drag on these */}
         <div className="space-y-1.5">
-          {ex.sets.map((set, setIdx) => {
-            const isDrop = !!set.isDropSet
-            const isWarmup = !!set.isWarmup
-            const canDelete = ex.sets.length > 1
-
-            const rowBg = set.done
-              ? isWarmup ? 'bg-amber-500/10' : isDrop ? 'bg-accent/10' : 'bg-move/10'
-              : isWarmup ? 'bg-amber-500/5' : isDrop ? 'bg-accent/5' : ''
-
-            const labelColor = isWarmup
-              ? 'text-amber-500'
-              : isDrop ? 'text-accent' : 'text-label2'
-
-            return (
-              <div key={setIdx} className="relative rounded-[10px] bg-surface">
-                  <div
-                    className={`grid items-center gap-2 rounded-[10px] px-1 py-1 ${rowBg}`}
-                    style={{ gridTemplateColumns: gridCols(kind) }}
-                  >
-                    <div className={`text-center text-callout font-semibold ${labelColor}`}>
-                      {setLabel(ex.sets, setIdx)}
-                    </div>
-
-                    <div className="text-center text-footnote text-label3">
-                      {setHint(prev?.sets[setIdx])}
-                    </div>
-
-                    {kind === 'weight' && (
-                      <>
-                        <NumCell value={set.weight} placeholder="0" onChange={(v) => onUpdateSet(exIdx, setIdx, { weight: v })} />
-                        <NumCell value={set.reps}   placeholder="0" onChange={(v) => onUpdateSet(exIdx, setIdx, { reps: v })} />
-                      </>
-                    )}
-                    {kind === 'bodyweight' && (
-                      <NumCell value={set.reps} placeholder="0" onChange={(v) => onUpdateSet(exIdx, setIdx, { reps: v })} />
-                    )}
-                    {kind === 'cardio' && (
-                      <>
-                        <NumCell value={set.distanceKm} placeholder="0" onChange={(v) => onUpdateSet(exIdx, setIdx, { distanceKm: v })} />
-                        <NumCell
-                          value={set.durationSec != null ? Math.round(set.durationSec / 60) : undefined}
-                          placeholder="0"
-                          onChange={(v) => onUpdateSet(exIdx, setIdx, { durationSec: v != null ? v * 60 : undefined })}
-                        />
-                      </>
-                    )}
-                    {kind === 'hold' && (
-                      <NumCell value={set.durationSec} placeholder="0" onChange={(v) => onUpdateSet(exIdx, setIdx, { durationSec: v })} />
-                    )}
-
-                    {/* Done checkbox + delete */}
-                    <div className="relative flex items-center justify-center">
-                      {canDelete ? (
-                        <motion.button
-                          whileTap={{ scale: 0.85 }}
-                          transition={spring}
-                          onPointerDown={(e) => e.stopPropagation()}
-                          onClick={() => onRemoveSet(exIdx, setIdx)}
-                          aria-label="Remove set"
-                          className="grid h-8 w-8 place-items-center rounded-[8px] text-danger"
-                        >
-                          <Trash2 size={15} />
-                        </motion.button>
-                      ) : (
-                        <motion.button
-                          whileTap={{ scale: 0.85 }}
-                          transition={spring}
-                          onPointerDown={(e) => e.stopPropagation()}
-                          onClick={() => onToggle(exIdx, setIdx, ex.exerciseId, set)}
-                          aria-label="Complete set"
-                          className={`grid h-8 w-8 place-items-center rounded-[8px] border-2 ${
-                            set.done
-                              ? isWarmup ? 'border-amber-500 bg-amber-500 text-white'
-                              : isDrop   ? 'border-accent bg-accent text-white'
-                                         : 'border-move bg-move text-white'
-                              : 'border-label3 text-transparent'
-                          }`}
-                        >
-                          <Check size={16} strokeWidth={3} />
-                        </motion.button>
-                      )}
-                      {prFlags[exIdx]?.[setIdx] && (
-                        <span className="pointer-events-none absolute -right-1.5 -top-1.5">
-                          <Trophy size={12} className="text-nourish" fill="currentColor" />
-                        </span>
-                      )}
-                    </div>
-                  </div>
-              </div>
-            )
-          })}
+          {ex.sets.map((set, setIdx) => (
+            <SetRow
+              key={setIdx}
+              set={set}
+              setIdx={setIdx}
+              sets={ex.sets}
+              kind={kind}
+              prev={prev}
+              prFlag={prFlags[exIdx]?.[setIdx] ?? false}
+              onToggle={() => onToggle(exIdx, setIdx, ex.exerciseId, set)}
+              onRemove={() => onRemoveSet(exIdx, setIdx)}
+              onUpdate={(patch) => onUpdateSet(exIdx, setIdx, patch)}
+            />
+          ))}
         </div>
 
         {/* Set action buttons */}
@@ -494,8 +530,7 @@ export default function ActiveWorkout({
     return () => window.clearInterval(id)
   }, [])
 
-  /* ── Drag-to-reorder state ── */
-  // exerciseStructureKey only changes when exercises are added/removed/replaced
+  /* ── Drag-to-reorder state for exercise GROUPS ── */
   const exerciseStructureKey = useMemo(
     () => session.exercises.map((e) => `${e.exerciseId}|${e.supersetId ?? ''}`).join(','),
     [session.exercises],
@@ -613,7 +648,7 @@ export default function ActiveWorkout({
         </div>
       </div>
 
-      {/* Exercise list with drag reorder */}
+      {/* Exercise list with drag reorder at GROUP level */}
       <div className="pb-40 pt-4">
         {session.exercises.length === 0 && (
           <div className="flex flex-col items-center py-12 text-center">
