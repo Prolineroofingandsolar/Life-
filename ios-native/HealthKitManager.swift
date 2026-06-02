@@ -13,7 +13,8 @@ final class HealthKitManager {
             .bodyMass,
             .bodyFatPercentage,
             .leanBodyMass,
-            .bodyMassIndex
+            .bodyMassIndex,
+            .stepCount
         ]
         for id in identifiers {
             if let type = HKQuantityType.quantityType(forIdentifier: id) {
@@ -76,6 +77,21 @@ final class HealthKitManager {
 
         let (w, bf, lm, b) = await (weight, bodyFat, leanMass, bmi)
         return BodyDataResult(weight: w, bodyFat: bf, leanMass: lm, bmi: b)
+    }
+
+    // MARK: - Steps
+
+    func fetchStepsForToday() async -> Int {
+        guard HKHealthStore.isHealthDataAvailable(),
+              let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount) else { return 0 }
+
+        let startOfDay = Calendar.current.startOfDay(for: Date())
+        let predicate = HKQuery.predicateForSamples(withStart: startOfDay, end: Date(), options: .strictStartDate)
+
+        let samples = await fetchQuantitySamples(identifier: .stepCount, unit: .count(), predicate: predicate)
+        let total = samples.reduce(0.0) { $0 + $1.value }
+        _ = stepType // suppress unused warning
+        return Int(total)
     }
 
     // MARK: - Private

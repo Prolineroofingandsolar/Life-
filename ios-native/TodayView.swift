@@ -1,4 +1,5 @@
 import SwiftUI
+import HealthKit
 
 struct TodayView: View {
 
@@ -55,133 +56,161 @@ struct TodayView: View {
     }
 }
 
+// MARK: - Activity Rings
+
+private struct ActivityRingsView: View {
+    struct Ring {
+        let color: Color
+        let progress: Double  // 0…1
+    }
+    let rings: [Ring]
+    var size: CGFloat = 130
+
+    var body: some View {
+        ZStack {
+            ForEach(rings.indices, id: \.self) { i in
+                let strokeWidth = size * 0.092
+                let gap = strokeWidth * 0.55
+                let radius = (size / 2) - strokeWidth / 2 - CGFloat(i) * (strokeWidth + gap)
+                let pct = max(0, min(1, rings[i].progress))
+
+                Circle()
+                    .stroke(rings[i].color.opacity(0.14), lineWidth: strokeWidth)
+                    .frame(width: radius * 2, height: radius * 2)
+
+                Circle()
+                    .trim(from: 0, to: pct)
+                    .stroke(rings[i].color, style: StrokeStyle(lineWidth: strokeWidth, lineCap: .round))
+                    .frame(width: radius * 2, height: radius * 2)
+                    .rotationEffect(.degrees(-90))
+                    .animation(.easeInOut(duration: 0.9), value: pct)
+            }
+        }
+        .frame(width: size, height: size)
+    }
+}
+
 // MARK: - Care Section
 
 private struct CareSection: View {
 
     @Environment(AppState.self) private var appState
+    @State private var stepSyncTask: Task<Void, Never>? = nil
 
     private var today: CareDay { appState.today }
     private var settings: CareSettings { appState.careSettings }
 
-    private var timeSinceBreak: String? {
-        guard let lastBreak = today.lastBreakAt else { return nil }
-        let minutes = Int(Date().timeIntervalSince(lastBreak) / 60)
-        if minutes < 60 { return "\(minutes)m ago" }
-        return "\(minutes / 60)h \(minutes % 60)m ago"
+    private let hkManager = HealthKitManager()
+
+    private var rings: [ActivityRingsView.Ring] {
+        [
+            .init(color: .blue,   progress: settings.waterGoal > 0 ? Double(today.waterGlasses) / Double(settings.waterGoal) : 0),
+            .init(color: .orange, progress: settings.mealGoal > 0  ? Double(today.meals.count)  / Double(settings.mealGoal)  : 0),
+            .init(color: .green,  progress: settings.stepGoal > 0  ? Double(today.steps)        / Double(settings.stepGoal)  : 0),
+        ]
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Daily Care")
-                .font(.headline)
-                .padding(.horizontal, 20)
+        HStack(spacing: 16) {
+            ActivityRingsView(rings: rings, size: 130)
+                .padding(.leading, 4)
 
-            // Water
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Label("Water", systemImage: "drop.fill")
-                        .foregroundColor(.blue)
-                    Spacer()
-                    Text("\(today.waterGlasses) / \(settings.waterGoal)")
-                        .foregroundColor(.secondary)
-                        .font(.subheadline)
+            VStack(spacing: 16) {
+                CareRow(
+                    systemImage: "drop.fill",
+                    color: .blue,
+                    label: "Hydrate",
+                    count: "\(today.waterGlasses)/\(settings.waterGoal)",
+                    done: today.waterGlasses >= settings.waterGoal
+                ) {
+                    appState.addWater()
                 }
 
-                // Glass bubbles
-                let glasses = settings.waterGoal
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 8), spacing: 8) {
-                    ForEach(0..<glasses, id: \.self) { idx in
-                        Image(systemName: idx < today.waterGlasses ? "drop.fill" : "drop")
-                            .foregroundColor(idx < today.waterGlasses ? .blue : Color(.systemFill))
-                            .font(.title3)
-                            .frame(maxWidth: .infinity)
-                    }
+                CareRow(
+                    systemImage: "fork.knife",
+                    color: .orange,
+                    label: "Nourish",
+                    count: "\(today.meals.count)/\(settings.mealGoal)",
+                    done: today.meals.count >= settings.mealGoal
+                ) {
+                    appState.addMeal()
                 }
 
-                HStack(spacing: 12) {
-                    Button {
-                        appState.addWater()
-                    } label: {
-                        Label("Add Glass", systemImage: "plus")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.blue)
-
-                    if today.waterGlasses > 0 {
-                        Button {
-                            appState.removeWater()
-                        } label: {
-                            Image(systemName: "minus")
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(.secondary)
-                    }
+                CareRow(
+                    systemImage: "figure.walk",
+                    color: .green,
+                    label: "Move",
+                    count: "\(today.steps.formatted())/\(settings.stepGoal.formatted())",
+                    done: today.steps >= settings.stepGoal
+                ) {
+                    appState.syncSteps(today.steps + 1000)
                 }
             }
-            .padding()
-            .background(Color(.secondarySystemGroupedBackground))
-            .cornerRadius(12)
-            .padding(.horizontal, 16)
-
-            // Meals & Break
-            HStack(spacing: 12) {
-                // Meals
-                VStack(alignment: .leading, spacing: 8) {
-                    Label("Meals", systemImage: "fork.knife")
-                        .foregroundColor(.orange)
-                        .font(.subheadline)
-
-                    Text("\(today.meals.count) / \(settings.mealGoal)")
-                        .font(.title2.bold())
-
-                    Button {
-                        appState.addMeal()
-                    } label: {
-                        Label("Log Meal", systemImage: "plus")
-                            .font(.subheadline)
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.orange)
+            .padding(.trailing, 4)
+        }
+        .padding(16)
+        .background(Color(.secondarySystemGroupedBackground))
+        .cornerRadius(16)
+        .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 2)
+        .padding(.horizontal, 16)
+        .task {
+            await syncStepsFromHealth()
+        }
+        .onAppear {
+            stepSyncTask?.cancel()
+            stepSyncTask = Task {
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 5 * 60 * 1_000_000_000)
+                    if !Task.isCancelled { await syncStepsFromHealth() }
                 }
-                .padding()
-                .frame(maxWidth: .infinity)
-                .background(Color(.secondarySystemGroupedBackground))
-                .cornerRadius(12)
-
-                // Break
-                VStack(alignment: .leading, spacing: 8) {
-                    Label("Breaks", systemImage: "cup.and.saucer.fill")
-                        .foregroundColor(.green)
-                        .font(.subheadline)
-
-                    Text("\(today.breaksTaken) taken")
-                        .font(.title2.bold())
-
-                    if let lastBreak = timeSinceBreak {
-                        Text(lastBreak)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-
-                    Button {
-                        appState.markBreak()
-                    } label: {
-                        Label("Take Break", systemImage: "figure.walk")
-                            .font(.subheadline)
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.green)
-                }
-                .padding()
-                .frame(maxWidth: .infinity)
-                .background(Color(.secondarySystemGroupedBackground))
-                .cornerRadius(12)
             }
-            .padding(.horizontal, 16)
+        }
+        .onDisappear { stepSyncTask?.cancel() }
+    }
+
+    private func syncStepsFromHealth() async {
+        guard HKHealthStore.isHealthDataAvailable() else { return }
+        _ = await hkManager.requestPermissions()
+        let steps = await hkManager.fetchStepsForToday()
+        appState.syncSteps(steps)
+    }
+}
+
+private struct CareRow: View {
+    let systemImage: String
+    let color: Color
+    let label: String
+    let count: String
+    let done: Bool
+    let action: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundColor(color)
+                .frame(width: 26)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(.body.weight(.semibold))
+                    .foregroundColor(.primary)
+                Text(count)
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            Button(action: action) {
+                Image(systemName: done ? "checkmark" : "plus")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundColor(.white)
+                    .frame(width: 44, height: 44)
+                    .background(color)
+                    .clipShape(Circle())
+                    .shadow(color: color.opacity(done ? 0.5 : 0.3), radius: done ? 6 : 4, x: 0, y: 2)
+            }
         }
     }
 }

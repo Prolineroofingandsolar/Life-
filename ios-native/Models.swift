@@ -188,6 +188,7 @@ struct CareDay: Codable {
     var meals: [String] = []
     var lastBreakAt: Date? = nil
     var breaksTaken: Int = 0
+    var steps: Int = 0
 }
 
 struct CareSettings: Codable {
@@ -196,6 +197,7 @@ struct CareSettings: Codable {
     var breakIntervalMinutes: Int = 60
     var waterReminderEnabled: Bool = false
     var waterReminderIntervalMinutes: Int = 60
+    var stepGoal: Int = 10000
 }
 
 struct WorkoutSettings: Codable {

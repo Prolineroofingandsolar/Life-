@@ -432,6 +432,13 @@ final class AppState {
         save()
     }
 
+    func syncSteps(_ steps: Int) {
+        var day = careDays[todayKey] ?? CareDay(dayKey: todayKey)
+        day.steps = max(0, steps)
+        careDays[todayKey] = day
+        save()
+    }
+
     // MARK: - Settings Mutations
 
     func setName(_ name: String) {
