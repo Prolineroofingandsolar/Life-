@@ -12,11 +12,22 @@ export interface HealthImportResult {
   bmi: HealthSample[]
 }
 
+/**
+ * Three possible outcomes from requesting HealthKit permission:
+ *  - 'granted'     → user approved, safe to query
+ *  - 'denied'      → user declined in the iOS permission dialog
+ *  - 'unavailable' → the native plugin bridge isn't wired up in Xcode yet
+ *                    (Capacitor returns code: 'UNIMPLEMENTED').
+ *                    Fix: run `npx cap sync ios`, add the HealthKit capability
+ *                    in Xcode, and add NSHealthShareUsageDescription to Info.plist.
+ */
+export type HealthKitPermResult = 'granted' | 'denied' | 'unavailable'
+
 export function isHealthKitAvailable(): boolean {
   return Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'ios'
 }
 
-export async function requestHealthKitPermissions(): Promise<boolean> {
+export async function requestHealthKitPermissions(): Promise<HealthKitPermResult> {
   try {
     const { CapacitorHealthkit } = await import('@perfood/capacitor-healthkit')
     await CapacitorHealthkit.requestAuthorization({
@@ -24,10 +35,22 @@ export async function requestHealthKitPermissions(): Promise<boolean> {
       read: ['bodyMass', 'bodyFatPercentage', 'leanBodyMass', 'bodyMassIndex'],
       write: [],
     })
-    return true
+    return 'granted'
   } catch (e) {
+    // Capacitor throws code:'UNIMPLEMENTED' when the Swift plugin files are
+    // present in node_modules but haven't been synced into the Xcode project,
+    // or when the HealthKit entitlement hasn't been enabled in Xcode.
+    const code = (e as { code?: string })?.code
+    if (code === 'UNIMPLEMENTED') {
+      console.warn(
+        '[HealthKit] Plugin not wired up. Run: npx cap sync ios\n' +
+        'Then in Xcode → your target → Signing & Capabilities → add HealthKit.\n' +
+        'Also add NSHealthShareUsageDescription to Info.plist.',
+      )
+      return 'unavailable'
+    }
     console.error('HealthKit permission error:', e)
-    return false
+    return 'denied'
   }
 }
 

@@ -313,8 +313,17 @@ function BodyComposition() {
     setImporting(true)
     setImportMsg('')
     try {
-      const ok = await requestHealthKitPermissions()
-      if (!ok) { setImportMsg('Permission denied.'); setImporting(false); return }
+      const perm = await requestHealthKitPermissions()
+      if (perm === 'unavailable') {
+        setImportMsg('HealthKit not set up yet — see the setup steps below.')
+        setImporting(false)
+        return
+      }
+      if (perm === 'denied') {
+        setImportMsg('Permission denied. Open Settings → Privacy & Security → Health → Life to grant access.')
+        setImporting(false)
+        return
+      }
       const data = await importFromHealthKit(365)
       const byDate = new Map<string, BodyCompEntry>()
       for (const s of data.bodyFat) {
@@ -336,7 +345,7 @@ function BodyComposition() {
       mergeBodyCompEntries(entries)
       setImportMsg(`Imported ${entries.length} records.`)
     } catch {
-      setImportMsg('Import failed. Make sure HealthKit is enabled.')
+      setImportMsg('Import failed — make sure Health app has your Renpho data.')
     }
     setImporting(false)
   }
@@ -363,7 +372,21 @@ function BodyComposition() {
               {importing ? 'Importing…' : 'Import'}
             </motion.button>
           </div>
-          {importMsg && <p className="mt-2 text-footnote text-label2">{importMsg}</p>}
+          {importMsg && (
+            <p className={`mt-2 text-footnote ${importMsg.startsWith('Imported') ? 'text-move' : 'text-danger'}`}>
+              {importMsg}
+            </p>
+          )}
+          {importMsg.includes('not set up') && (
+            <div className="mt-3 rounded-[10px] bg-fill p-3 text-footnote text-label2 space-y-1">
+              <p className="font-semibold text-label">One-time Xcode setup needed:</p>
+              <p>1. On your Mac, run: <span className="font-mono text-accent">npx cap sync ios</span></p>
+              <p>2. Open the project: <span className="font-mono text-accent">npx cap open ios</span></p>
+              <p>3. In Xcode → your app target → Signing &amp; Capabilities → tap <strong>+</strong> → add <strong>HealthKit</strong></p>
+              <p>4. In Info.plist add key <span className="font-mono text-accent">NSHealthShareUsageDescription</span> with a short description</p>
+              <p>5. Build &amp; run from Xcode again</p>
+            </div>
+          )}
         </Card>
       )}
 
