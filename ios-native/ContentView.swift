@@ -10,7 +10,7 @@ struct RootView: View {
         Group {
             if authManager.isLoading {
                 SplashView()
-            } else if authManager.isSignedIn {
+            } else if !AuthManager.isFirebaseReady || authManager.isSignedIn {
                 ContentView()
             } else {
                 AuthView()
