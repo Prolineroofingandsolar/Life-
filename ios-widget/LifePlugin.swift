@@ -22,7 +22,6 @@ public class LifePlugin: CAPPlugin, CAPBridgedPlugin {
         // Write to App Group UserDefaults
         let defaults = UserDefaults(suiteName: appGroup)
         defaults?.set(tasksJSON, forKey: "life_widget_tasks")
-        defaults?.synchronize()
 
         // Also write to shared file as backup
         if let containerURL = FileManager.default.containerURL(

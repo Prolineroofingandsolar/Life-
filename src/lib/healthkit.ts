@@ -26,7 +26,10 @@ export async function requestHealthKitPermissions(): Promise<boolean> {
     })
     return true
   } catch (e) {
-    console.error('HealthKit permission error:', e)
+    // UNIMPLEMENTED = native plugin not registered in Xcode yet; suppress noisy log
+    if ((e as { code?: string })?.code !== 'UNIMPLEMENTED') {
+      console.error('HealthKit permission error:', e)
+    }
     return false
   }
 }
