@@ -9,7 +9,7 @@ private enum PersistenceKey {
 
 // MARK: - Serializable State Snapshot
 
-private struct StateSnapshot: Codable {
+struct StateSnapshot: Codable {
     var tasks: [AppTask] = []
     var bills: [Bill] = []
     var habits: [Habit] = []
@@ -43,6 +43,7 @@ final class AppState {
     var careSettings: CareSettings = CareSettings()
     var workoutSettings: WorkoutSettings = WorkoutSettings()
     var userName: String = ""
+    var cloudUserId: String? = nil
 
     // MARK: Computed Properties
 
@@ -65,7 +66,18 @@ final class AppState {
     // MARK: Persistence
 
     func save() {
-        let snapshot = StateSnapshot(
+        let snapshot = makeSnapshot()
+        if let data = try? JSONEncoder().encode(snapshot) {
+            UserDefaults.standard.set(data, forKey: PersistenceKey.appState)
+        }
+        WidgetSync.sync(tasks: tasks)
+        if let uid = cloudUserId {
+            FirestoreSync.shared.scheduleUpload(snapshot, userId: uid)
+        }
+    }
+
+    func makeSnapshot() -> StateSnapshot {
+        StateSnapshot(
             tasks: tasks,
             bills: bills,
             habits: habits,
@@ -79,27 +91,47 @@ final class AppState {
             workoutSettings: workoutSettings,
             userName: userName
         )
-        if let data = try? JSONEncoder().encode(snapshot) {
-            UserDefaults.standard.set(data, forKey: PersistenceKey.appState)
+    }
+
+    func apply(snapshot: StateSnapshot) {
+        tasks = snapshot.tasks
+        bills = snapshot.bills
+        habits = snapshot.habits
+        exercises = WorkoutSeed.mergeExercises(into: snapshot.exercises)
+        routines = snapshot.routines.isEmpty ? WorkoutSeed.routines : snapshot.routines
+        sessions = snapshot.sessions
+        weightEntries = snapshot.weightEntries
+        bodyCompEntries = snapshot.bodyCompEntries
+        careDays = snapshot.careDays
+        careSettings = snapshot.careSettings
+        workoutSettings = snapshot.workoutSettings
+        userName = snapshot.userName
+    }
+
+    // MARK: Cloud Sync
+
+    func loadFromCloud(userId: String) async {
+        cloudUserId = userId
+        do {
+            if let snapshot = try await FirestoreSync.shared.download(userId: userId) {
+                await MainActor.run { apply(snapshot: snapshot) }
+            } else {
+                // First sign-in — upload existing local data to the cloud
+                FirestoreSync.shared.scheduleUpload(makeSnapshot(), userId: userId)
+            }
+        } catch {
+            // Network unavailable — carry on with local data
         }
-        WidgetSync.sync(tasks: tasks)
+    }
+
+    func disableCloudSync() {
+        cloudUserId = nil
     }
 
     private func load() {
         if let data = UserDefaults.standard.data(forKey: PersistenceKey.appState),
            let snapshot = try? JSONDecoder().decode(StateSnapshot.self, from: data) {
-            tasks = snapshot.tasks
-            bills = snapshot.bills
-            habits = snapshot.habits
-            exercises = WorkoutSeed.mergeExercises(into: snapshot.exercises)
-            routines = snapshot.routines.isEmpty ? WorkoutSeed.routines : snapshot.routines
-            sessions = snapshot.sessions
-            weightEntries = snapshot.weightEntries
-            bodyCompEntries = snapshot.bodyCompEntries
-            careDays = snapshot.careDays
-            careSettings = snapshot.careSettings
-            workoutSettings = snapshot.workoutSettings
-            userName = snapshot.userName
+            apply(snapshot: snapshot)
         } else {
             // First launch — seed default data
             exercises = WorkoutSeed.exercises
@@ -540,18 +572,7 @@ final class AppState {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         let snapshot = try decoder.decode(StateSnapshot.self, from: data)
-        tasks = snapshot.tasks
-        bills = snapshot.bills
-        habits = snapshot.habits
-        exercises = WorkoutSeed.mergeExercises(into: snapshot.exercises)
-        routines = snapshot.routines.isEmpty ? WorkoutSeed.routines : snapshot.routines
-        sessions = snapshot.sessions
-        weightEntries = snapshot.weightEntries
-        bodyCompEntries = snapshot.bodyCompEntries
-        careDays = snapshot.careDays
-        careSettings = snapshot.careSettings
-        workoutSettings = snapshot.workoutSettings
-        userName = snapshot.userName
+        apply(snapshot: snapshot)
         save()
     }
 }

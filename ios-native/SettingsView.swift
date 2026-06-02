@@ -5,6 +5,7 @@ import SwiftUI
 struct SettingsView: View {
 
     @Environment(AppState.self) private var appState
+    @Environment(AuthManager.self) private var authManager
     @Environment(\.dismiss) private var dismiss
 
     @State private var nameInput: String = ""
@@ -124,6 +125,22 @@ struct SettingsView: View {
                     Text("Danger Zone")
                 } footer: {
                     Text("This will delete all tasks, habits, workouts, body logs, and bills.")
+                }
+
+                // Account
+                Section {
+                    if let user = authManager.user {
+                        InfoRow(label: "Signed in as", value: user.email ?? "—")
+                        Button(role: .destructive) {
+                            try? authManager.signOut()
+                            dismiss()
+                        } label: {
+                            Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
+                                .foregroundColor(.red)
+                        }
+                    }
+                } header: {
+                    Text("Account")
                 }
 
                 // App info

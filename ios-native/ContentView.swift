@@ -1,7 +1,51 @@
 import SwiftUI
 
-struct ContentView: View {
+// MARK: - Root View (auth gate)
 
+struct RootView: View {
+    @Environment(AppState.self) private var appState
+    @Environment(AuthManager.self) private var authManager
+
+    var body: some View {
+        Group {
+            if authManager.isLoading {
+                SplashView()
+            } else if authManager.isSignedIn {
+                ContentView()
+            } else {
+                AuthView()
+            }
+        }
+        .onChange(of: authManager.user) { _, user in
+            if let user = user {
+                Task { await appState.loadFromCloud(userId: user.uid) }
+            } else {
+                appState.disableCloudSync()
+            }
+        }
+    }
+}
+
+// MARK: - Splash Screen
+
+private struct SplashView: View {
+    var body: some View {
+        ZStack {
+            Color(.systemGroupedBackground).ignoresSafeArea()
+            VStack(spacing: 20) {
+                Image(systemName: "circle.hexagongrid.fill")
+                    .font(.system(size: 64))
+                    .foregroundColor(Color(hex: "#30d158"))
+                ProgressView()
+                    .scaleEffect(1.2)
+            }
+        }
+    }
+}
+
+// MARK: - Main Tab View
+
+struct ContentView: View {
     @Environment(AppState.self) private var appState
 
     var body: some View {
