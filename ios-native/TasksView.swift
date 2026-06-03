@@ -20,6 +20,9 @@ struct TasksView: View {
     @State private var showManageLists = false
     @State private var quickTitle = ""
     @State private var collapsedSections: Set<String> = ["done"]
+    @State private var showCalendar = false
+    @State private var showStats = false
+    @State private var isEditMode = false
     @State private var undoTask: AppTask? = nil
     @State private var undoTimer: Timer? = nil
     @State private var showUndo = false
@@ -33,8 +36,24 @@ struct TasksView: View {
                 $0.title.localizedCaseInsensitiveContains(searchText) ||
                 $0.notes.localizedCaseInsensitiveContains(searchText)
             }
-        } else if selectedListId != "all" {
-            base = base.filter { $0.listId == selectedListId }
+        } else {
+            switch selectedListId {
+            case "all":
+                break
+            case "smart_today":
+                let cal = Calendar.current
+                let today = cal.startOfDay(for: Date())
+                base = base.filter { task in
+                    guard !task.done, let d = task.resolvedDate else { return false }
+                    return cal.startOfDay(for: d) <= today
+                }
+            case "smart_priority":
+                base = base.filter { $0.priority == .high || $0.priority == .medium }
+            case "smart_scheduled":
+                base = base.filter { $0.scheduledTime != nil }
+            default:
+                base = base.filter { $0.listId == selectedListId }
+            }
         }
         return base
     }
@@ -68,13 +87,22 @@ struct TasksView: View {
             else                     { laterTasks.append(task) }
         }
 
+        func sortedSection(_ tasks: [AppTask]) -> [AppTask] {
+            tasks.sorted {
+                if let ta = $0.scheduledTime, let tb = $1.scheduledTime { return ta < tb }
+                if $0.scheduledTime != nil { return true }
+                if $1.scheduledTime != nil { return false }
+                if $0.sortOrder != $1.sortOrder { return $0.sortOrder < $1.sortOrder }
+                return $0.priority.sortOrder < $1.priority.sortOrder
+            }
+        }
         var sections: [TaskSection] = []
-        if !overdue.isEmpty     { sections.append(.init(id: "overdue",   title: "Overdue",    color: .red,             tasks: overdue)) }
-        if !todayTasks.isEmpty  { sections.append(.init(id: "today",     title: "Today",      color: AppTheme.primary, tasks: todayTasks)) }
-        if !tomorrowTasks.isEmpty { sections.append(.init(id: "tomorrow", title: "Tomorrow",  color: .orange,          tasks: tomorrowTasks)) }
-        if !thisWeekTasks.isEmpty { sections.append(.init(id: "thisWeek", title: "This Week", color: .blue,            tasks: thisWeekTasks)) }
-        if !laterTasks.isEmpty  { sections.append(.init(id: "later",     title: "Later",      color: .secondary,       tasks: laterTasks)) }
-        if !noDate.isEmpty      { sections.append(.init(id: "noDate",    title: "No Date",    color: .secondary,       tasks: noDate)) }
+        if !overdue.isEmpty     { sections.append(.init(id: "overdue",   title: "Overdue",    color: .red,             tasks: sortedSection(overdue))) }
+        if !todayTasks.isEmpty  { sections.append(.init(id: "today",     title: "Today",      color: AppTheme.primary, tasks: sortedSection(todayTasks))) }
+        if !tomorrowTasks.isEmpty { sections.append(.init(id: "tomorrow", title: "Tomorrow",  color: .orange,          tasks: sortedSection(tomorrowTasks))) }
+        if !thisWeekTasks.isEmpty { sections.append(.init(id: "thisWeek", title: "This Week", color: .blue,            tasks: sortedSection(thisWeekTasks))) }
+        if !laterTasks.isEmpty  { sections.append(.init(id: "later",     title: "Later",      color: .secondary,       tasks: sortedSection(laterTasks))) }
+        if !noDate.isEmpty      { sections.append(.init(id: "noDate",    title: "No Date",    color: .secondary,       tasks: sortedSection(noDate))) }
         if !done.isEmpty        { sections.append(.init(id: "done",      title: "Done",       color: .secondary,       tasks: done)) }
         return sections
     }
@@ -115,6 +143,9 @@ struct TasksView: View {
                                                 }
                                             }
                                         }
+                                        .onMove { from, to in
+                                            appState.reorderTasks(from: from, to: to, sectionTasks: section.tasks)
+                                        }
                                     }
                                 } header: {
                                     TaskSectionHeader(
@@ -137,6 +168,7 @@ struct TasksView: View {
                             }
                         }
                         .listStyle(.insetGrouped)
+                        .environment(\.editMode, .constant(isEditMode ? .active : .inactive))
                     }
                 }
 
@@ -169,16 +201,33 @@ struct TasksView: View {
             }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button { showAddTask = true } label: {
-                        Image(systemName: "plus")
+                    HStack(spacing: 16) {
+                        Button {
+                            withAnimation { isEditMode.toggle() }
+                        } label: {
+                            Image(systemName: isEditMode ? "checkmark" : "arrow.up.arrow.down")
+                                .font(.subheadline)
+                        }
+                        NavigationLink(destination: TaskCalendarView()) {
+                            Image(systemName: "calendar")
+                        }
+                        Button { showStats = true } label: {
+                            Image(systemName: "chart.bar.fill")
+                        }
+                        Button { showAddTask = true } label: {
+                            Image(systemName: "plus")
+                        }
                     }
                 }
             }
             .sheet(isPresented: $showAddTask) {
-                AddTaskSheet(initialListId: selectedListId == "all" ? "personal" : selectedListId)
+                AddTaskSheet(initialListId: ["all","smart_today","smart_priority","smart_scheduled"].contains(selectedListId) ? "personal" : selectedListId)
             }
             .sheet(isPresented: $showManageLists) {
                 ManageListsSheet()
+            }
+            .sheet(isPresented: $showStats) {
+                TaskStatsView()
             }
         }
         .animation(.spring(response: 0.3), value: showUndo)
@@ -189,8 +238,22 @@ struct TasksView: View {
     private func addQuickTask() {
         let t = quickTitle.trimmingCharacters(in: .whitespaces)
         guard !t.isEmpty else { return }
-        let listId = selectedListId == "all" ? "personal" : selectedListId
-        appState.addTask(title: t, listId: listId, dueDate: nil)
+        let listId: String
+        switch selectedListId {
+        case "all", "smart_today", "smart_priority", "smart_scheduled": listId = "personal"
+        default: listId = selectedListId
+        }
+        let parsed = AppState.parseTaskInput(t)
+        appState.addTask(
+            title: parsed.cleanTitle,
+            listId: listId,
+            dueDate: parsed.dueDate,
+            dueDateOverride: parsed.dueDateOverride,
+            scheduledTime: parsed.scheduledTime,
+            isRecurring: parsed.isRecurring,
+            recurrenceType: parsed.recurrenceType,
+            recurrenceInterval: parsed.recurrenceInterval
+        )
         HapticManager.impact(.light)
         quickTitle = ""
     }
@@ -284,17 +347,37 @@ private struct TaskRow: View {
 
             Spacer()
 
-            // Right column: date label + bell
+            // Right column: time/date label + extras
             VStack(alignment: .trailing, spacing: 2) {
-                if task.dueDate != nil || task.dueDateOverride != nil {
+                if let t = task.scheduledTime {
+                    HStack(spacing: 3) {
+                        Image(systemName: "clock")
+                            .font(.caption2)
+                        Text(t.formatted(.dateTime.hour().minute()))
+                            .font(.caption)
+                    }
+                    .foregroundColor(overdue ? .red : .secondary)
+                } else if task.dueDate != nil || task.dueDateOverride != nil {
                     Text(task.dueDateLabel)
                         .font(.caption)
                         .foregroundColor(overdue ? .red : .secondary)
                 }
-                if task.reminderDate != nil {
-                    Image(systemName: "bell.fill")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
+                HStack(spacing: 4) {
+                    if let mins = task.estimatedMinutes {
+                        Text(mins < 60 ? "\(mins)m" : "\(mins/60)h")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                    if task.isRecurring {
+                        Image(systemName: "repeat")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                    if task.reminderDate != nil {
+                        Image(systemName: "bell.fill")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
         }
@@ -351,6 +434,9 @@ private struct ListPickerBar: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 listChip(id: "all", emoji: nil, name: "All", color: AppTheme.primary)
+                smartChip(id: "smart_today",    icon: "sun.max.fill",    name: "Today",     color: .orange)
+                smartChip(id: "smart_priority", icon: "flag.fill",       name: "Priority",  color: .red)
+                smartChip(id: "smart_scheduled",icon: "clock.fill",      name: "Scheduled", color: .purple)
                 ForEach(lists) { list in
                     listChip(id: list.id, emoji: list.emoji, name: list.name, color: list.color)
                 }
@@ -383,6 +469,26 @@ private struct ListPickerBar: View {
                 }
                 Text(name)
                     .font(.subheadline.weight(isSelected ? .semibold : .regular))
+            }
+            .padding(.horizontal, 14).padding(.vertical, 6)
+            .background(isSelected ? color : Color(.secondarySystemGroupedBackground))
+            .foregroundColor(isSelected ? .white : .primary)
+            .cornerRadius(20)
+            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isSelected)
+        }
+        .buttonStyle(PressableButtonStyle(scale: 0.95))
+    }
+
+    @ViewBuilder
+    private func smartChip(id: String, icon: String, name: String, color: Color) -> some View {
+        let isSelected = selectedId == id
+        Button {
+            HapticManager.selection()
+            selectedId = id
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: icon).font(.caption)
+                Text(name).font(.subheadline.weight(isSelected ? .semibold : .regular))
             }
             .padding(.horizontal, 14).padding(.vertical, 6)
             .background(isSelected ? color : Color(.secondarySystemGroupedBackground))
@@ -496,6 +602,11 @@ struct AddTaskSheet: View {
     @State private var priority: TaskPriority = .none
     @State private var notes = ""
     @FocusState private var isTitleFocused: Bool
+    @State private var scheduledTime: Date = Date()
+    @State private var hasScheduledTime = false
+    @State private var estimatedMinutes: Int = 0
+    @State private var isRecurring = false
+    @State private var recurrenceType: RecurrenceType = .daily
 
     var body: some View {
         NavigationStack {
@@ -542,6 +653,28 @@ struct AddTaskSheet: View {
                         }
                     }
                 }
+
+                Section("Time & Repeat") {
+                    Toggle("Specific Time", isOn: $hasScheduledTime)
+                    if hasScheduledTime {
+                        DatePicker("Time", selection: $scheduledTime, displayedComponents: .hourAndMinute)
+                    }
+                    Picker("Duration", selection: $estimatedMinutes) {
+                        Text("None").tag(0)
+                        Text("15 min").tag(15)
+                        Text("30 min").tag(30)
+                        Text("1 hour").tag(60)
+                        Text("2 hours").tag(120)
+                    }
+                    Toggle("Repeat", isOn: $isRecurring)
+                    if isRecurring {
+                        Picker("Frequency", selection: $recurrenceType) {
+                            ForEach(RecurrenceType.allCases) { rt in
+                                Text(rt.label).tag(rt)
+                            }
+                        }
+                    }
+                }
             }
             .navigationTitle("New Task")
             .navigationBarTitleDisplayMode(.inline)
@@ -555,10 +688,14 @@ struct AddTaskSheet: View {
                         appState.addTask(
                             title: title.trimmingCharacters(in: .whitespaces),
                             listId: listId,
-                            dueDate: useCustomDate ? .today : dueDate,
+                            dueDate: useCustomDate ? nil : dueDate,
                             dueDateOverride: useCustomDate ? customDate : nil,
                             priority: priority,
-                            notes: notes
+                            notes: notes,
+                            scheduledTime: hasScheduledTime ? scheduledTime : nil,
+                            estimatedMinutes: estimatedMinutes > 0 ? estimatedMinutes : nil,
+                            isRecurring: isRecurring,
+                            recurrenceType: isRecurring ? recurrenceType : nil
                         )
                         dismiss()
                     }

@@ -18,6 +18,12 @@ struct TaskDetailView: View {
     @State private var reminderDate: Date = Date()
     @State private var newSubtaskText: String = ""
     @State private var showDeleteConfirm: Bool = false
+    @State private var scheduledTime: Date = Date()
+    @State private var hasScheduledTime: Bool = false
+    @State private var estimatedMinutes: Int? = nil
+    @State private var isRecurring: Bool = false
+    @State private var recurrenceType: RecurrenceType = .daily
+    @State private var recurrenceInterval: Int = 1
     @FocusState private var titleFocused: Bool
 
     private var task: AppTask? { appState.tasks.first { $0.id == taskId } }
@@ -199,6 +205,68 @@ struct TaskDetailView: View {
                                 appState.updateTask(id: taskId, reminderDate: .some(v))
                             }
                     }
+
+                    Divider().padding(.leading, 56)
+
+                    // Scheduled Time
+                    detailRow(icon: "clock.fill", iconColor: hasScheduledTime ? .purple : .secondary, label: "Time") {
+                        Toggle("", isOn: $hasScheduledTime)
+                            .onChange(of: hasScheduledTime) { _, v in
+                                appState.updateTask(id: taskId, scheduledTime: .some(v ? scheduledTime : nil))
+                            }
+                    }
+                    if hasScheduledTime {
+                        DatePicker("", selection: $scheduledTime, displayedComponents: .hourAndMinute)
+                            .datePickerStyle(.compact)
+                            .padding(.horizontal, 20)
+                            .padding(.bottom, 8)
+                            .onChange(of: scheduledTime) { _, v in
+                                appState.updateTask(id: taskId, scheduledTime: .some(v))
+                            }
+                    }
+
+                    Divider().padding(.leading, 56)
+
+                    // Duration
+                    detailRow(icon: "timer", iconColor: estimatedMinutes != nil ? .teal : .secondary, label: "Duration") {
+                        Picker("", selection: Binding(
+                            get: { estimatedMinutes ?? 0 },
+                            set: { estimatedMinutes = $0 == 0 ? nil : $0
+                                  appState.updateTask(id: taskId, estimatedMinutes: .some(estimatedMinutes)) }
+                        )) {
+                            Text("None").tag(0)
+                            Text("15m").tag(15)
+                            Text("30m").tag(30)
+                            Text("1h").tag(60)
+                            Text("2h").tag(120)
+                        }
+                        .pickerStyle(.menu)
+                    }
+
+                    Divider().padding(.leading, 56)
+
+                    // Repeat
+                    detailRow(icon: "repeat", iconColor: isRecurring ? AppTheme.primary : .secondary, label: "Repeat") {
+                        Picker("", selection: Binding(
+                            get: { isRecurring ? recurrenceType.rawValue : "never" },
+                            set: { v in
+                                if v == "never" {
+                                    isRecurring = false
+                                    appState.updateTask(id: taskId, isRecurring: false)
+                                } else if let rt = RecurrenceType(rawValue: v) {
+                                    isRecurring = true
+                                    recurrenceType = rt
+                                    appState.updateTask(id: taskId, isRecurring: true, recurrenceType: .some(rt))
+                                }
+                            }
+                        )) {
+                            Text("Never").tag("never")
+                            ForEach(RecurrenceType.allCases) { rt in
+                                Text(rt.label).tag(rt.rawValue)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                    }
                 }
                 .padding(.vertical, 4)
                 .background(AppTheme.cardBg)
@@ -315,5 +383,15 @@ struct TaskDetailView: View {
         } else {
             reminderEnabled = false
         }
+        if let t = task.scheduledTime {
+            hasScheduledTime = true
+            scheduledTime = t
+        } else {
+            hasScheduledTime = false
+        }
+        estimatedMinutes    = task.estimatedMinutes
+        isRecurring         = task.isRecurring
+        recurrenceType      = task.recurrenceType ?? .daily
+        recurrenceInterval  = task.recurrenceInterval
     }
 }

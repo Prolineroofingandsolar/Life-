@@ -63,6 +63,19 @@ enum DueDate: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+enum RecurrenceType: String, Codable, CaseIterable, Identifiable {
+    case daily, weekly, monthly, weekdays
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .daily:    return "Daily"
+        case .weekly:   return "Weekly"
+        case .monthly:  return "Monthly"
+        case .weekdays: return "Weekdays"
+        }
+    }
+}
+
 struct AppTask: Identifiable {
     var id: String = UUID().uuidString
     var title: String
@@ -76,6 +89,13 @@ struct AppTask: Identifiable {
     var createdAt: Date = Date()
     var completedAt: Date? = nil
     var reminderDate: Date? = nil
+    var scheduledTime: Date? = nil
+    var estimatedMinutes: Int? = nil
+    var isRecurring: Bool = false
+    var recurrenceType: RecurrenceType? = nil
+    var recurrenceInterval: Int = 1
+    var recurrenceWeekdays: [Int] = []
+    var sortOrder: Int = 0
 
     var dueDateLabel: String {
         if let override = dueDateOverride {
@@ -87,15 +107,26 @@ struct AppTask: Identifiable {
     }
 
     var resolvedDate: Date? {
-        if let override = dueDateOverride { return override }
-        guard let due = dueDate else { return nil }
-        let cal = Calendar.current
-        let today = cal.startOfDay(for: Date())
-        switch due {
-        case .today:    return today
-        case .tomorrow: return cal.date(byAdding: .day, value: 1, to: today)
-        case .thisWeek: return cal.date(byAdding: .day, value: 6, to: today)
+        var base: Date?
+        if let override = dueDateOverride { base = override }
+        else if let due = dueDate {
+            let cal = Calendar.current
+            let today = cal.startOfDay(for: Date())
+            switch due {
+            case .today:    base = today
+            case .tomorrow: base = cal.date(byAdding: .day, value: 1, to: today)
+            case .thisWeek: base = cal.date(byAdding: .day, value: 6, to: today)
+            }
         }
+        guard let b = base else { return nil }
+        if let t = scheduledTime {
+            let cal = Calendar.current
+            let timeComponents = cal.dateComponents([.hour, .minute], from: t)
+            return cal.date(bySettingHour: timeComponents.hour ?? 0,
+                            minute: timeComponents.minute ?? 0,
+                            second: 0, of: b) ?? b
+        }
+        return b
     }
 }
 
@@ -103,6 +134,8 @@ extension AppTask: Codable {
     private enum CodingKeys: String, CodingKey {
         case id, title, listId, done, dueDate, dueDateOverride, priority, notes
         case subtasks, createdAt, completedAt, reminderDate
+        case scheduledTime, estimatedMinutes, isRecurring, recurrenceType
+        case recurrenceInterval, recurrenceWeekdays, sortOrder
         case category
     }
 
@@ -119,6 +152,13 @@ extension AppTask: Codable {
         createdAt       = try c.decodeIfPresent(Date.self,          forKey: .createdAt)       ?? Date()
         completedAt     = try c.decodeIfPresent(Date.self,          forKey: .completedAt)
         reminderDate    = try c.decodeIfPresent(Date.self,          forKey: .reminderDate)
+        scheduledTime       = try c.decodeIfPresent(Date.self,            forKey: .scheduledTime)
+        estimatedMinutes    = try c.decodeIfPresent(Int.self,             forKey: .estimatedMinutes)
+        isRecurring         = try c.decodeIfPresent(Bool.self,            forKey: .isRecurring)         ?? false
+        recurrenceType      = try c.decodeIfPresent(RecurrenceType.self,  forKey: .recurrenceType)
+        recurrenceInterval  = try c.decodeIfPresent(Int.self,             forKey: .recurrenceInterval)  ?? 1
+        recurrenceWeekdays  = try c.decodeIfPresent([Int].self,           forKey: .recurrenceWeekdays)  ?? []
+        sortOrder           = try c.decodeIfPresent(Int.self,             forKey: .sortOrder)           ?? 0
         if let id = try c.decodeIfPresent(String.self, forKey: .listId) {
             listId = id
         } else if let cat = try c.decodeIfPresent(String.self, forKey: .category) {
@@ -142,6 +182,13 @@ extension AppTask: Codable {
         try c.encode(createdAt,     forKey: .createdAt)
         try c.encodeIfPresent(completedAt,  forKey: .completedAt)
         try c.encodeIfPresent(reminderDate, forKey: .reminderDate)
+        try c.encodeIfPresent(scheduledTime,      forKey: .scheduledTime)
+        try c.encodeIfPresent(estimatedMinutes,   forKey: .estimatedMinutes)
+        try c.encode(isRecurring,                 forKey: .isRecurring)
+        try c.encodeIfPresent(recurrenceType,     forKey: .recurrenceType)
+        try c.encode(recurrenceInterval,          forKey: .recurrenceInterval)
+        try c.encode(recurrenceWeekdays,          forKey: .recurrenceWeekdays)
+        try c.encode(sortOrder,                   forKey: .sortOrder)
     }
 }
 

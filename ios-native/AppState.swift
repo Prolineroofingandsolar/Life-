@@ -205,21 +205,46 @@ final class AppState {
 
     // MARK: - Task Mutations
 
-    func addTask(title: String, listId: String = "personal", dueDate: DueDate? = .today, dueDateOverride: Date? = nil, priority: TaskPriority = .none, notes: String = "", reminderDate: Date? = nil) {
+    func addTask(
+        title: String,
+        listId: String = "personal",
+        dueDate: DueDate? = .today,
+        dueDateOverride: Date? = nil,
+        priority: TaskPriority = .none,
+        notes: String = "",
+        reminderDate: Date? = nil,
+        scheduledTime: Date? = nil,
+        estimatedMinutes: Int? = nil,
+        isRecurring: Bool = false,
+        recurrenceType: RecurrenceType? = nil,
+        recurrenceInterval: Int = 1,
+        recurrenceWeekdays: [Int] = []
+    ) {
         var task = AppTask(title: title, listId: listId, dueDate: dueDate)
         task.dueDateOverride = dueDateOverride
         task.priority = priority
         task.notes = notes
         task.reminderDate = reminderDate
+        task.scheduledTime = scheduledTime
+        task.estimatedMinutes = estimatedMinutes
+        task.isRecurring = isRecurring
+        task.recurrenceType = recurrenceType
+        task.recurrenceInterval = recurrenceInterval
+        task.recurrenceWeekdays = recurrenceWeekdays
+        task.sortOrder = tasks.count
         tasks.append(task)
         save()
     }
 
     func toggleTask(id: String) {
         guard let idx = tasks.firstIndex(where: { $0.id == id }) else { return }
-        tasks[idx].done.toggle()
-        tasks[idx].completedAt = tasks[idx].done ? Date() : nil
-        save()
+        if tasks[idx].isRecurring && !tasks[idx].done {
+            completeRecurringTask(id: id)
+        } else {
+            tasks[idx].done.toggle()
+            tasks[idx].completedAt = tasks[idx].done ? Date() : nil
+            save()
+        }
     }
 
     func deleteTask(id: String) {
@@ -227,7 +252,22 @@ final class AppState {
         save()
     }
 
-    func updateTask(id: String, title: String? = nil, listId: String? = nil, dueDate: DueDate?? = nil, dueDateOverride: Date?? = nil, priority: TaskPriority? = nil, notes: String? = nil, reminderDate: Date?? = nil) {
+    func updateTask(
+        id: String,
+        title: String? = nil,
+        listId: String? = nil,
+        dueDate: DueDate?? = nil,
+        dueDateOverride: Date?? = nil,
+        priority: TaskPriority? = nil,
+        notes: String? = nil,
+        reminderDate: Date?? = nil,
+        scheduledTime: Date?? = nil,
+        estimatedMinutes: Int?? = nil,
+        isRecurring: Bool? = nil,
+        recurrenceType: RecurrenceType?? = nil,
+        recurrenceInterval: Int? = nil,
+        recurrenceWeekdays: [Int]? = nil
+    ) {
         guard let idx = tasks.firstIndex(where: { $0.id == id }) else { return }
         if let title = title { tasks[idx].title = title }
         if let listId = listId { tasks[idx].listId = listId }
@@ -236,7 +276,186 @@ final class AppState {
         if let priority = priority { tasks[idx].priority = priority }
         if let notes = notes { tasks[idx].notes = notes }
         if let reminderDate = reminderDate { tasks[idx].reminderDate = reminderDate }
+        if let scheduledTime = scheduledTime { tasks[idx].scheduledTime = scheduledTime }
+        if let estimatedMinutes = estimatedMinutes { tasks[idx].estimatedMinutes = estimatedMinutes }
+        if let isRecurring = isRecurring { tasks[idx].isRecurring = isRecurring }
+        if let recurrenceType = recurrenceType { tasks[idx].recurrenceType = recurrenceType }
+        if let recurrenceInterval = recurrenceInterval { tasks[idx].recurrenceInterval = recurrenceInterval }
+        if let recurrenceWeekdays = recurrenceWeekdays { tasks[idx].recurrenceWeekdays = recurrenceWeekdays }
         save()
+    }
+
+    func completeRecurringTask(id: String) {
+        guard let idx = tasks.firstIndex(where: { $0.id == id }) else { return }
+        tasks[idx].done = true
+        tasks[idx].completedAt = Date()
+        if let next = nextOccurrence(for: tasks[idx]) {
+            var newTask = tasks[idx]
+            newTask.id = UUID().uuidString
+            newTask.done = false
+            newTask.completedAt = nil
+            newTask.sortOrder = tasks.count
+            if newTask.dueDateOverride != nil {
+                newTask.dueDateOverride = next
+            } else {
+                let cal = Calendar.current
+                let today = cal.startOfDay(for: Date())
+                let nextStart = cal.startOfDay(for: next)
+                if nextStart == today {
+                    newTask.dueDate = .today
+                } else if nextStart == cal.date(byAdding: .day, value: 1, to: today) {
+                    newTask.dueDate = .tomorrow
+                } else {
+                    newTask.dueDateOverride = next
+                    newTask.dueDate = nil
+                }
+            }
+            tasks.append(newTask)
+        }
+        save()
+    }
+
+    private func nextOccurrence(for task: AppTask) -> Date? {
+        guard let recType = task.recurrenceType else { return nil }
+        let base = task.resolvedDate ?? Date()
+        let cal = Calendar.current
+        let interval = max(1, task.recurrenceInterval)
+        switch recType {
+        case .daily:
+            return cal.date(byAdding: .day, value: interval, to: base)
+        case .weekly:
+            return cal.date(byAdding: .weekOfYear, value: interval, to: base)
+        case .monthly:
+            return cal.date(byAdding: .month, value: interval, to: base)
+        case .weekdays:
+            var next = cal.date(byAdding: .day, value: 1, to: base) ?? base
+            for _ in 0..<14 {
+                let weekday = cal.component(.weekday, from: next)
+                let mapped = weekday == 1 ? 7 : weekday - 1
+                if task.recurrenceWeekdays.contains(mapped) { return next }
+                next = cal.date(byAdding: .day, value: 1, to: next) ?? next
+            }
+            return nil
+        }
+    }
+
+    func reorderTasks(from source: IndexSet, to destination: Int, sectionTasks: [AppTask]) {
+        var ids = sectionTasks.map { $0.id }
+        ids.move(fromOffsets: source, toOffset: destination)
+        for (order, id) in ids.enumerated() {
+            if let idx = tasks.firstIndex(where: { $0.id == id }) {
+                tasks[idx].sortOrder = order
+            }
+        }
+        save()
+    }
+
+    struct ParsedTaskInput {
+        var cleanTitle: String
+        var dueDate: DueDate?
+        var dueDateOverride: Date?
+        var scheduledTime: Date?
+        var isRecurring: Bool
+        var recurrenceType: RecurrenceType?
+        var recurrenceInterval: Int
+    }
+
+    static func parseTaskInput(_ raw: String) -> ParsedTaskInput {
+        var text = raw
+        var dueDate: DueDate? = nil
+        var dueDateOverride: Date? = nil
+        var scheduledTime: Date? = nil
+        var isRecurring = false
+        var recurrenceType: RecurrenceType? = nil
+        var recurrenceInterval = 1
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        let lower = text.lowercased()
+
+        // Recurrence
+        if lower.contains("every day") || lower.contains("daily") {
+            isRecurring = true; recurrenceType = .daily
+            text = text.replacingOccurrences(of: "every day", with: "", options: .caseInsensitive)
+            text = text.replacingOccurrences(of: "daily", with: "", options: .caseInsensitive)
+        } else if lower.contains("every week") || lower.contains("weekly") {
+            isRecurring = true; recurrenceType = .weekly
+            text = text.replacingOccurrences(of: "every week", with: "", options: .caseInsensitive)
+            text = text.replacingOccurrences(of: "weekly", with: "", options: .caseInsensitive)
+        } else if lower.contains("every month") || lower.contains("monthly") {
+            isRecurring = true; recurrenceType = .monthly
+            text = text.replacingOccurrences(of: "every month", with: "", options: .caseInsensitive)
+            text = text.replacingOccurrences(of: "monthly", with: "", options: .caseInsensitive)
+        }
+
+        // Time detection: "at 5pm", "at 9am", "at 10:30am"
+        let timePattern = #"at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)"#
+        if let range = text.range(of: timePattern, options: [.regularExpression, .caseInsensitive]) {
+            let match = String(text[range])
+            if let hourRange = match.range(of: #"\d{1,2}"#, options: .regularExpression) {
+                var hour = Int(match[hourRange]) ?? 0
+                var minute = 0
+                if let minRange = match.range(of: #":\d{2}"#, options: .regularExpression) {
+                    minute = Int(String(match[minRange]).dropFirst()) ?? 0
+                }
+                let isPM = match.lowercased().hasSuffix("pm")
+                if isPM && hour < 12 { hour += 12 }
+                if !isPM && hour == 12 { hour = 0 }
+                var comps = cal.dateComponents([.year, .month, .day], from: today)
+                comps.hour = hour; comps.minute = minute
+                scheduledTime = cal.date(from: comps)
+            }
+            text = text.replacingCharacters(in: range, with: "")
+        }
+
+        // Date detection
+        let l = text.lowercased()
+        if l.contains("today") {
+            dueDate = .today
+            text = text.replacingOccurrences(of: "today", with: "", options: .caseInsensitive)
+        } else if l.contains("tomorrow") {
+            dueDate = .tomorrow
+            text = text.replacingOccurrences(of: "tomorrow", with: "", options: .caseInsensitive)
+        } else if l.contains("next week") {
+            dueDateOverride = cal.date(byAdding: .weekOfYear, value: 1, to: today)
+            text = text.replacingOccurrences(of: "next week", with: "", options: .caseInsensitive)
+        } else {
+            let days = ["monday":2,"tuesday":3,"wednesday":4,"thursday":5,"friday":6,"saturday":7,"sunday":1]
+            for (name, weekday) in days {
+                if l.contains(name) {
+                    let todayWeekday = cal.component(.weekday, from: today)
+                    var diff = weekday - todayWeekday
+                    if diff <= 0 { diff += 7 }
+                    dueDateOverride = cal.date(byAdding: .day, value: diff, to: today)
+                    text = text.replacingOccurrences(of: name, with: "", options: .caseInsensitive)
+                    break
+                }
+            }
+        }
+
+        // "in N days"
+        let inDaysPattern = #"in\s+(\d+)\s+days?"#
+        if let r = text.range(of: inDaysPattern, options: [.regularExpression, .caseInsensitive]) {
+            let m = String(text[r])
+            if let numRange = m.range(of: #"\d+"#, options: .regularExpression) {
+                let n = Int(m[numRange]) ?? 1
+                dueDateOverride = cal.date(byAdding: .day, value: n, to: today)
+            }
+            text = text.replacingCharacters(in: r, with: "")
+        }
+
+        let cleanTitle = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: #"\s{2,}"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        return ParsedTaskInput(
+            cleanTitle: cleanTitle.isEmpty ? raw : cleanTitle,
+            dueDate: dueDate,
+            dueDateOverride: dueDateOverride,
+            scheduledTime: scheduledTime,
+            isRecurring: isRecurring,
+            recurrenceType: recurrenceType,
+            recurrenceInterval: recurrenceInterval
+        )
     }
 
     // MARK: - Task List Mutations
