@@ -59,7 +59,6 @@ struct TaskDetailView: View {
             Button("Cancel", role: .cancel) {}
         }
         .onAppear { populateFromTask() }
-        .onChange(of: appState.tasks) { _, _ in populateFromTask() }
     }
 
     private var content: some View {
