@@ -26,6 +26,7 @@ struct StateSnapshot: Codable {
     var careSettings: CareSettings = CareSettings()
     var workoutSettings: WorkoutSettings = WorkoutSettings()
     var userName: String = ""
+    var taskLists: [TaskList]? = nil  // optional for backward compat with existing saves
 }
 
 // MARK: - AppState
@@ -37,6 +38,7 @@ final class AppState {
 
     var latestPR: (exerciseName: String, value: String)? = nil
     var tasks: [AppTask] = []
+    var taskLists: [TaskList] = []
     var bills: [Bill] = []
     var habits: [Habit] = []
     var exercises: [Exercise] = []
@@ -75,7 +77,9 @@ final class AppState {
 
     func save() {
         let snapshot = makeSnapshot()
-        if let data = try? JSONEncoder().encode(snapshot) {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        if let data = try? encoder.encode(snapshot) {
             UserDefaults.standard.set(data, forKey: PersistenceKey.appState)
         }
         WidgetSync.sync(tasks: tasks)
@@ -101,7 +105,8 @@ final class AppState {
             careDays: careDays,
             careSettings: careSettings,
             workoutSettings: workoutSettings,
-            userName: userName
+            userName: userName,
+            taskLists: taskLists
         )
     }
 
@@ -121,6 +126,11 @@ final class AppState {
         careSettings = snapshot.careSettings
         workoutSettings = snapshot.workoutSettings
         userName = snapshot.userName
+        if let lists = snapshot.taskLists, !lists.isEmpty {
+            taskLists = lists
+        } else {
+            taskLists = Self.defaultTaskLists
+        }
     }
 
     // MARK: Cloud Sync
@@ -144,8 +154,10 @@ final class AppState {
     }
 
     private func load() {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
         if let data = UserDefaults.standard.data(forKey: PersistenceKey.appState),
-           let snapshot = try? JSONDecoder().decode(StateSnapshot.self, from: data) {
+           let snapshot = try? decoder.decode(StateSnapshot.self, from: data) {
             apply(snapshot: snapshot)
         } else {
             // First launch — seed default data
@@ -155,11 +167,20 @@ final class AppState {
         }
     }
 
+    static let defaultTaskLists: [TaskList] = [
+        TaskList(id: "work",     name: "Work",     emoji: "💼", colorHex: "#5E5CE6", isSystem: true),
+        TaskList(id: "gym",      name: "Gym",      emoji: "💪", colorHex: "#30d158", isSystem: true),
+        TaskList(id: "personal", name: "Personal", emoji: "🌱", colorHex: "#FF9F0A", isSystem: true),
+        TaskList(id: "home",     name: "Home",     emoji: "🏠", colorHex: "#5E9BF0", isSystem: false),
+        TaskList(id: "health",   name: "Health",   emoji: "❤️", colorHex: "#FF375F", isSystem: false),
+    ]
+
     private func seedDefaults() {
+        taskLists = Self.defaultTaskLists
         tasks = [
-            AppTask(title: "Reply to client email", category: .work, dueDate: .today),
-            AppTask(title: "Push session — legs", category: .gym, dueDate: .today),
-            AppTask(title: "Refill water bottle", category: .personal, dueDate: .today),
+            AppTask(title: "Reply to client email", listId: "work", dueDate: .today),
+            AppTask(title: "Push session — legs",   listId: "gym",      dueDate: .today),
+            AppTask(title: "Refill water bottle",   listId: "personal", dueDate: .today),
         ]
         bills = [
             Bill(name: "Rent", amount: 1200, dayOfMonth: 1),
@@ -184,11 +205,12 @@ final class AppState {
 
     // MARK: - Task Mutations
 
-    func addTask(title: String, category: TaskCategory, dueDate: DueDate, dueDateOverride: Date? = nil, priority: TaskPriority = .none, notes: String = "") {
-        var task = AppTask(title: title, category: category, dueDate: dueDate)
+    func addTask(title: String, listId: String = "personal", dueDate: DueDate? = .today, dueDateOverride: Date? = nil, priority: TaskPriority = .none, notes: String = "", reminderDate: Date? = nil) {
+        var task = AppTask(title: title, listId: listId, dueDate: dueDate)
         task.dueDateOverride = dueDateOverride
         task.priority = priority
         task.notes = notes
+        task.reminderDate = reminderDate
         tasks.append(task)
         save()
     }
@@ -205,15 +227,45 @@ final class AppState {
         save()
     }
 
-    func updateTask(id: String, title: String? = nil, category: TaskCategory? = nil, dueDate: DueDate? = nil, dueDateOverride: Date? = nil, priority: TaskPriority? = nil, notes: String? = nil) {
+    func updateTask(id: String, title: String? = nil, listId: String? = nil, dueDate: DueDate?? = nil, dueDateOverride: Date?? = nil, priority: TaskPriority? = nil, notes: String? = nil, reminderDate: Date?? = nil) {
         guard let idx = tasks.firstIndex(where: { $0.id == id }) else { return }
         if let title = title { tasks[idx].title = title }
-        if let category = category { tasks[idx].category = category }
+        if let listId = listId { tasks[idx].listId = listId }
         if let dueDate = dueDate { tasks[idx].dueDate = dueDate }
-        if dueDateOverride != nil { tasks[idx].dueDateOverride = dueDateOverride }
+        if let dueDateOverride = dueDateOverride { tasks[idx].dueDateOverride = dueDateOverride }
         if let priority = priority { tasks[idx].priority = priority }
         if let notes = notes { tasks[idx].notes = notes }
+        if let reminderDate = reminderDate { tasks[idx].reminderDate = reminderDate }
         save()
+    }
+
+    // MARK: - Task List Mutations
+
+    func addTaskList(name: String, emoji: String, colorHex: String) {
+        let list = TaskList(name: name, emoji: emoji, colorHex: colorHex, isSystem: false)
+        taskLists.append(list)
+        save()
+    }
+
+    func updateTaskList(id: String, name: String, emoji: String, colorHex: String) {
+        guard let idx = taskLists.firstIndex(where: { $0.id == id }) else { return }
+        taskLists[idx].name = name
+        taskLists[idx].emoji = emoji
+        taskLists[idx].colorHex = colorHex
+        save()
+    }
+
+    func deleteTaskList(id: String) {
+        guard let list = taskLists.first(where: { $0.id == id }), !list.isSystem else { return }
+        for idx in tasks.indices where tasks[idx].listId == id {
+            tasks[idx].listId = "personal"
+        }
+        taskLists.removeAll { $0.id == id }
+        save()
+    }
+
+    func taskList(for task: AppTask) -> TaskList? {
+        taskLists.first { $0.id == task.listId }
     }
 
     // MARK: - Subtask Mutations

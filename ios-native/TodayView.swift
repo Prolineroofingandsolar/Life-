@@ -20,7 +20,13 @@ struct TodayView: View {
     }
 
     private var todayTasks: [AppTask] {
-        appState.tasks.filter { $0.dueDate == .today && !$0.done }
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        return appState.tasks.filter { task in
+            guard !task.done else { return false }
+            guard let resolved = task.resolvedDate else { return false }
+            return cal.startOfDay(for: resolved) == today
+        }
     }
 
     private var todayHabits: [Habit] {
@@ -284,24 +290,32 @@ private struct TodayTaskRow: View {
     @Environment(AppState.self) private var appState
     let task: AppTask
 
+    private var list: TaskList? { appState.taskList(for: task) }
+
     var body: some View {
-        Button {
-            HapticManager.impact(.light)
-            appState.toggleTask(id: task.id)
-        } label: {
+        NavigationLink(destination: TaskDetailView(taskId: task.id)) {
             HStack(spacing: 12) {
-                Image(systemName: task.done ? "checkmark.circle.fill" : "circle")
-                    .foregroundColor(task.done ? .green : task.category.color)
-                    .font(.title3)
+                Button {
+                    HapticManager.impact(.light)
+                    appState.toggleTask(id: task.id)
+                } label: {
+                    Image(systemName: task.done ? "checkmark.circle.fill" : "circle")
+                        .foregroundColor(task.done ? .green : (list?.color ?? AppTheme.primary))
+                        .font(.title3)
+                }
+                .buttonStyle(.plain)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(task.title)
                         .strikethrough(task.done)
                         .foregroundColor(task.done ? .secondary : .primary)
+                        .font(.subheadline)
 
-                    Text(task.category.emoji + " " + task.category.label)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    if let list = list {
+                        Text(list.emoji + " " + list.name)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                 }
                 Spacer()
             }

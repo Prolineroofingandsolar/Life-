@@ -1,14 +1,12 @@
 import SwiftUI
 
-// MARK: - Tasks Filter
+// MARK: - Task Section Model
 
-private enum TaskFilter: String, CaseIterable, Identifiable {
-    case all = "All"
-    case today = "Today"
-    case work = "Work"
-    case gym = "Gym"
-    case personal = "Personal"
-    var id: String { rawValue }
+private struct TaskSection: Identifiable {
+    let id: String
+    let title: String
+    let color: Color
+    let tasks: [AppTask]
 }
 
 // MARK: - TasksView
@@ -16,94 +14,124 @@ private enum TaskFilter: String, CaseIterable, Identifiable {
 struct TasksView: View {
 
     @Environment(AppState.self) private var appState
-    @State private var filter: TaskFilter = .all
+    @State private var selectedListId: String = "all"
     @State private var searchText = ""
     @State private var showAddTask = false
+    @State private var showManageLists = false
+    @State private var quickTitle = ""
+    @State private var collapsedSections: Set<String> = ["done"]
     @State private var undoTask: AppTask? = nil
     @State private var undoTimer: Timer? = nil
     @State private var showUndo = false
-    @State private var expandedTaskId: String? = nil
+
+    // MARK: - Filtered tasks
 
     private var filteredTasks: [AppTask] {
-        var base: [AppTask]
+        var base = appState.tasks
         if !searchText.isEmpty {
-            base = appState.tasks.filter {
+            base = base.filter {
                 $0.title.localizedCaseInsensitiveContains(searchText) ||
                 $0.notes.localizedCaseInsensitiveContains(searchText)
             }
-        } else {
-            switch filter {
-            case .all:      base = appState.tasks
-            case .today:    base = appState.tasks.filter { $0.dueDate == .today }
-            case .work:     base = appState.tasks.filter { $0.category == .work }
-            case .gym:      base = appState.tasks.filter { $0.category == .gym }
-            case .personal: base = appState.tasks.filter { $0.category == .personal }
-            }
+        } else if selectedListId != "all" {
+            base = base.filter { $0.listId == selectedListId }
         }
         return base
     }
 
-    private var pendingTasks: [AppTask] {
-        filteredTasks.filter { !$0.done }
-            .sorted { $0.priority.sortOrder < $1.priority.sortOrder }
+    // MARK: - Date-grouped sections
+
+    private var taskSections: [TaskSection] {
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        let tomorrow = cal.date(byAdding: .day, value: 1, to: today)!
+        let weekEnd  = cal.date(byAdding: .day, value: 7, to: today)!
+
+        let pending = filteredTasks.filter { !$0.done }
+        let done    = filteredTasks.filter { $0.done }
+            .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
+
+        var overdue: [AppTask] = []
+        var todayTasks: [AppTask] = []
+        var tomorrowTasks: [AppTask] = []
+        var thisWeekTasks: [AppTask] = []
+        var laterTasks: [AppTask] = []
+        var noDate: [AppTask] = []
+
+        for task in pending.sorted(by: { $0.priority.sortOrder < $1.priority.sortOrder }) {
+            guard let date = task.resolvedDate else { noDate.append(task); continue }
+            let day = cal.startOfDay(for: date)
+            if day < today           { overdue.append(task) }
+            else if day == today     { todayTasks.append(task) }
+            else if day == tomorrow  { tomorrowTasks.append(task) }
+            else if day < weekEnd    { thisWeekTasks.append(task) }
+            else                     { laterTasks.append(task) }
+        }
+
+        var sections: [TaskSection] = []
+        if !overdue.isEmpty     { sections.append(.init(id: "overdue",   title: "Overdue",    color: .red,             tasks: overdue)) }
+        if !todayTasks.isEmpty  { sections.append(.init(id: "today",     title: "Today",      color: AppTheme.primary, tasks: todayTasks)) }
+        if !tomorrowTasks.isEmpty { sections.append(.init(id: "tomorrow", title: "Tomorrow",  color: .orange,          tasks: tomorrowTasks)) }
+        if !thisWeekTasks.isEmpty { sections.append(.init(id: "thisWeek", title: "This Week", color: .blue,            tasks: thisWeekTasks)) }
+        if !laterTasks.isEmpty  { sections.append(.init(id: "later",     title: "Later",      color: .secondary,       tasks: laterTasks)) }
+        if !noDate.isEmpty      { sections.append(.init(id: "noDate",    title: "No Date",    color: .secondary,       tasks: noDate)) }
+        if !done.isEmpty        { sections.append(.init(id: "done",      title: "Done",       color: .secondary,       tasks: done)) }
+        return sections
     }
 
-    private var doneTasks: [AppTask] {
-        filteredTasks.filter { $0.done }
-            .sorted { ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast) }
-    }
+    // MARK: - Body
 
     var body: some View {
         NavigationStack {
             ZStack(alignment: .bottom) {
                 Group {
-                    if filteredTasks.isEmpty {
-                        EmptyTasksView(isSearching: !searchText.isEmpty)
+                    if taskSections.isEmpty && searchText.isEmpty {
+                        EmptyTasksView(isSearching: false)
+                    } else if taskSections.isEmpty {
+                        EmptyTasksView(isSearching: true)
                     } else {
                         List {
-                            if !pendingTasks.isEmpty {
+                            ForEach(taskSections) { section in
                                 Section {
-                                    ForEach(pendingTasks) { task in
-                                        TaskRow(
-                                            task: task,
-                                            isExpanded: expandedTaskId == task.id,
-                                            onExpand: {
-                                                withAnimation(.spring(response: 0.35)) {
-                                                    expandedTaskId = expandedTaskId == task.id ? nil : task.id
+                                    if !collapsedSections.contains(section.id) {
+                                        ForEach(section.tasks) { task in
+                                            NavigationLink(destination: TaskDetailView(taskId: task.id)) {
+                                                TaskRow(task: task, listColor: appState.taskList(for: task)?.color)
+                                            }
+                                            .swipeActions(edge: .leading) {
+                                                Button {
+                                                    HapticManager.impact(.light)
+                                                    appState.toggleTask(id: task.id)
+                                                } label: {
+                                                    Label("Done", systemImage: "checkmark.circle.fill")
                                                 }
-                                            },
-                                            onDelete: { deleteTask(task) }
-                                        )
-                                    }
-                                } header: {
-                                    Text("Pending (\(pendingTasks.count))")
-                                }
-                            }
-
-                            if !doneTasks.isEmpty {
-                                Section {
-                                    ForEach(doneTasks) { task in
-                                        TaskRow(
-                                            task: task,
-                                            isExpanded: expandedTaskId == task.id,
-                                            onExpand: {
-                                                withAnimation(.spring(response: 0.35)) {
-                                                    expandedTaskId = expandedTaskId == task.id ? nil : task.id
+                                                .tint(.green)
+                                            }
+                                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                                Button(role: .destructive) {
+                                                    deleteTask(task)
+                                                } label: {
+                                                    Label("Delete", systemImage: "trash")
                                                 }
-                                            },
-                                            onDelete: { deleteTask(task) }
-                                        )
-                                    }
-                                } header: {
-                                    HStack {
-                                        Text("Done (\(doneTasks.count))")
-                                        Spacer()
-                                        Button("Clear All") {
-                                            HapticManager.impact(.medium)
-                                            doneTasks.forEach { appState.deleteTask(id: $0.id) }
+                                            }
                                         }
-                                        .font(.caption.weight(.medium))
-                                        .foregroundColor(AppTheme.primary)
+                                    }
+                                } header: {
+                                    TaskSectionHeader(
+                                        section: section,
+                                        isCollapsed: collapsedSections.contains(section.id),
+                                        onClearDone: section.id == "done" ? {
+                                            HapticManager.impact(.medium)
+                                            section.tasks.forEach { appState.deleteTask(id: $0.id) }
+                                        } : nil
+                                    ) {
+                                        withAnimation(.spring(response: 0.3)) {
+                                            if collapsedSections.contains(section.id) {
+                                                collapsedSections.remove(section.id)
+                                            } else {
+                                                collapsedSections.insert(section.id)
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -119,28 +147,25 @@ struct TasksView: View {
                         dismissUndo()
                     }
                     .transition(.move(edge: .bottom).combined(with: .opacity))
-                    .padding(.bottom, 16)
+                    .padding(.bottom, 8)
+                    .zIndex(1)
                 }
             }
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Tasks")
             .navigationBarTitleDisplayMode(.large)
             .searchable(text: $searchText, prompt: "Search tasks")
-            .safeAreaInset(edge: .top) {
+            .safeAreaInset(edge: .top, spacing: 0) {
                 if searchText.isEmpty {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(TaskFilter.allCases) { f in
-                                FilterChip(label: f.rawValue, isSelected: filter == f) {
-                                    filter = f
-                                }
-                            }
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                    }
-                    .background(Color(.systemGroupedBackground))
+                    ListPickerBar(
+                        lists: appState.taskLists,
+                        selectedId: $selectedListId,
+                        onManage: { showManageLists = true }
+                    )
                 }
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                QuickAddBar(text: $quickTitle, onSubmit: addQuickTask, onExpand: { showAddTask = true })
             }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -150,20 +175,33 @@ struct TasksView: View {
                 }
             }
             .sheet(isPresented: $showAddTask) {
-                AddTaskSheet()
+                AddTaskSheet(initialListId: selectedListId == "all" ? "personal" : selectedListId)
+            }
+            .sheet(isPresented: $showManageLists) {
+                ManageListsSheet()
             }
         }
         .animation(.spring(response: 0.3), value: showUndo)
     }
 
+    // MARK: - Actions
+
+    private func addQuickTask() {
+        let t = quickTitle.trimmingCharacters(in: .whitespaces)
+        guard !t.isEmpty else { return }
+        let listId = selectedListId == "all" ? "personal" : selectedListId
+        appState.addTask(title: t, listId: listId, dueDate: nil)
+        HapticManager.impact(.light)
+        quickTitle = ""
+    }
+
     private func deleteTask(_ task: AppTask) {
         undoTask = task
-        expandedTaskId = nil
         appState.deleteTask(id: task.id)
         showUndo = true
         undoTimer?.invalidate()
         undoTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: false) { _ in
-            dismissUndo()
+            DispatchQueue.main.async { dismissUndo() }
         }
     }
 
@@ -180,242 +218,211 @@ struct TasksView: View {
 private struct TaskRow: View {
     @Environment(AppState.self) private var appState
     let task: AppTask
-    let isExpanded: Bool
-    let onExpand: () -> Void
-    let onDelete: () -> Void
-
-    @State private var draftTitle: String = ""
-    @State private var draftNotes: String = ""
-    @State private var newSubtaskText: String = ""
+    var listColor: Color?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Main row
-            HStack(spacing: 0) {
-                // Priority bar
-                if task.priority != .none {
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(task.priority.color)
-                        .frame(width: 3)
-                        .padding(.trailing, 10)
-                }
-
-                Button {
-                    HapticManager.impact(.light)
-                    appState.toggleTask(id: task.id)
-                } label: {
-                    Image(systemName: task.done ? "checkmark.circle.fill" : "circle")
-                        .foregroundColor(task.done ? .green : task.category.color)
-                        .font(.title3)
-                        .scaleEffect(task.done ? 1.1 : 1.0)
-                        .animation(.spring(response: 0.3, dampingFraction: 0.5), value: task.done)
-                }
-                .buttonStyle(.plain)
-                .padding(.trailing, 12)
-
-                Button(action: onExpand) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(task.title)
-                            .strikethrough(task.done)
-                            .foregroundColor(task.done ? .secondary : .primary)
-
-                        HStack(spacing: 6) {
-                            Circle().fill(task.category.color).frame(width: 6, height: 6)
-                            Text(task.category.label).font(.caption).foregroundColor(.secondary)
-                            Text("·").foregroundColor(.secondary).font(.caption)
-                            Text(task.dueDateLabel)
-                                .font(.caption)
-                                .foregroundColor(task.dueDate == .today ? .orange : .secondary)
-                            if !task.notes.isEmpty {
-                                Image(systemName: "note.text").font(.caption2).foregroundColor(.secondary)
-                            }
-                            if !task.subtasks.isEmpty {
-                                Text("\(task.subtasks.filter(\.done).count)/\(task.subtasks.count)")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                    }
-                }
-                .buttonStyle(.plain)
-
-                Spacer()
-
-                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .onTapGesture(perform: onExpand)
+        HStack(spacing: 12) {
+            // Checkbox
+            Button {
+                HapticManager.impact(.light)
+                appState.toggleTask(id: task.id)
+            } label: {
+                Image(systemName: task.done ? "checkmark.circle.fill" : "circle")
+                    .foregroundColor(task.done ? .green : (listColor ?? .secondary))
+                    .font(.title3)
+                    .scaleEffect(task.done ? 1.05 : 1.0)
+                    .animation(.spring(response: 0.25, dampingFraction: 0.5), value: task.done)
             }
-            .padding(.vertical, 4)
+            .buttonStyle(.plain)
 
-            // Expanded content
-            if isExpanded {
-                VStack(alignment: .leading, spacing: 12) {
-                    Divider().padding(.top, 4)
+            // Text content
+            VStack(alignment: .leading, spacing: 3) {
+                Text(task.title)
+                    .strikethrough(task.done)
+                    .foregroundColor(task.done ? .secondary : .primary)
+                    .font(.subheadline)
 
-                    // Edit title
-                    TextField("Task title", text: $draftTitle)
-                        .font(.subheadline)
-                        .padding(8)
-                        .background(Color(.tertiarySystemFill))
-                        .cornerRadius(8)
-                        .onSubmit { appState.updateTask(id: task.id, title: draftTitle) }
-                        .onChange(of: draftTitle) { _, v in appState.updateTask(id: task.id, title: v) }
-
-                    // Category picker
-                    HStack(spacing: 8) {
-                        Text("Category").font(.caption).foregroundColor(.secondary)
-                        ForEach(TaskCategory.allCases) { cat in
-                            Button {
-                                appState.updateTask(id: task.id, category: cat)
-                                HapticManager.selection()
-                            } label: {
-                                Circle()
-                                    .fill(cat.color)
-                                    .frame(width: 22, height: 22)
-                                    .overlay(
-                                        task.category == cat ?
-                                        Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)).foregroundColor(.white) : nil
-                                    )
-                            }
-                            .buttonStyle(.plain)
-                        }
+                HStack(spacing: 6) {
+                    if let list = appState.taskList(for: task) {
+                        Label(list.name, systemImage: "circle.fill")
+                            .font(.caption2)
+                            .foregroundColor(list.color)
+                            .labelStyle(CompactLabelStyle())
                     }
-
-                    // Priority picker
-                    HStack(spacing: 8) {
-                        Text("Priority").font(.caption).foregroundColor(.secondary)
-                        ForEach(TaskPriority.allCases.filter { $0 != .none }) { p in
-                            Button {
-                                appState.updateTask(id: task.id, priority: task.priority == p ? .none : p)
-                                HapticManager.selection()
-                            } label: {
-                                Text(p.label)
-                                    .font(.caption.bold())
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 4)
-                                    .background(task.priority == p ? p.color : Color(.tertiarySystemFill))
-                                    .foregroundColor(task.priority == p ? .white : .secondary)
-                                    .cornerRadius(6)
-                            }
-                            .buttonStyle(.plain)
-                        }
+                    if task.dueDate != nil || task.dueDateOverride != nil {
+                        Text("·").font(.caption2).foregroundColor(.secondary)
+                        Text(task.dueDateLabel)
+                            .font(.caption2)
+                            .foregroundColor(isOverdue(task) ? .red : .secondary)
                     }
-
-                    // Due date picker
-                    HStack(spacing: 8) {
-                        Text("Due").font(.caption).foregroundColor(.secondary)
-                        ForEach(DueDate.allCases) { d in
-                            Button {
-                                appState.updateTask(id: task.id, dueDate: d)
-                                HapticManager.selection()
-                            } label: {
-                                Text(d.label)
-                                    .font(.caption)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 4)
-                                    .background(task.dueDate == d ? AppTheme.primary : Color(.tertiarySystemFill))
-                                    .foregroundColor(task.dueDate == d ? .white : .secondary)
-                                    .cornerRadius(6)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-
-                    // Notes
-                    TextField("Add a note...", text: $draftNotes, axis: .vertical)
-                        .font(.caption)
-                        .padding(8)
-                        .background(Color(.tertiarySystemFill))
-                        .cornerRadius(8)
-                        .lineLimit(2...4)
-                        .onChange(of: draftNotes) { _, v in appState.updateTask(id: task.id, notes: v) }
-
-                    // Subtasks
                     if !task.subtasks.isEmpty {
-                        VStack(alignment: .leading, spacing: 6) {
-                            ForEach(task.subtasks) { sub in
-                                HStack(spacing: 8) {
-                                    Button {
-                                        appState.toggleSubtask(taskId: task.id, subtaskId: sub.id)
-                                        HapticManager.impact(.light)
-                                    } label: {
-                                        Image(systemName: sub.done ? "checkmark.circle.fill" : "circle")
-                                            .foregroundColor(sub.done ? .green : .secondary)
-                                            .font(.subheadline)
-                                    }
-                                    .buttonStyle(.plain)
-                                    Text(sub.title)
-                                        .font(.caption)
-                                        .strikethrough(sub.done)
-                                        .foregroundColor(sub.done ? .secondary : .primary)
-                                    Spacer()
-                                    Button {
-                                        appState.deleteSubtask(taskId: task.id, subtaskId: sub.id)
-                                    } label: {
-                                        Image(systemName: "xmark").font(.caption2).foregroundColor(.secondary)
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
-                        }
+                        Text("·").font(.caption2).foregroundColor(.secondary)
+                        Text("\(task.subtasks.filter(\.done).count)/\(task.subtasks.count)")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
                     }
-
-                    // Add subtask
-                    HStack(spacing: 8) {
-                        Image(systemName: "plus.circle").font(.caption).foregroundColor(AppTheme.primary)
-                        TextField("Add subtask...", text: $newSubtaskText)
-                            .font(.caption)
-                            .onSubmit {
-                                let t = newSubtaskText.trimmingCharacters(in: .whitespaces)
-                                guard !t.isEmpty else { return }
-                                appState.addSubtask(taskId: task.id, title: t)
-                                newSubtaskText = ""
-                            }
-                    }
-                    .padding(.bottom, 4)
                 }
-                .padding(.leading, task.priority != .none ? 13 : 0)
-                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+
+            Spacer()
+
+            // Priority indicator
+            if task.priority != .none {
+                Image(systemName: task.priority.icon)
+                    .font(.caption)
+                    .foregroundColor(task.priority.color)
             }
         }
-        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-        .onAppear {
-            draftTitle = task.title
-            draftNotes = task.notes
-        }
-        .onChange(of: task.title) { _, v in draftTitle = v }
-        .onChange(of: task.notes) { _, v in draftNotes = v }
-        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-            Button(role: .destructive) { onDelete() } label: {
-                Label("Delete", systemImage: "trash")
-            }
+        .padding(.vertical, 2)
+    }
+
+    private func isOverdue(_ task: AppTask) -> Bool {
+        guard !task.done, let date = task.resolvedDate else { return false }
+        return Calendar.current.startOfDay(for: date) < Calendar.current.startOfDay(for: Date())
+    }
+}
+
+// Custom label style: just text, no icon
+private struct CompactLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 3) {
+            configuration.icon.font(.system(size: 6))
+            configuration.title
         }
     }
 }
 
-// MARK: - Filter Chip
+// MARK: - Section Header
 
-private struct FilterChip: View {
-    let label: String
-    let isSelected: Bool
-    let action: () -> Void
+private struct TaskSectionHeader: View {
+    let section: TaskSection
+    let isCollapsed: Bool
+    var onClearDone: (() -> Void)?
+    let onToggle: () -> Void
 
     var body: some View {
+        Button(action: onToggle) {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(section.color)
+                    .frame(width: 8, height: 8)
+                Text(section.title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(section.id == "overdue" ? .red : .primary)
+                Text("\(section.tasks.count)")
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 7).padding(.vertical, 2)
+                    .background(section.color.opacity(0.15))
+                    .foregroundColor(section.color)
+                    .clipShape(Capsule())
+                Spacer()
+                if let clearDone = onClearDone {
+                    Button("Clear All") { clearDone() }
+                        .font(.caption.weight(.medium))
+                        .foregroundColor(AppTheme.primary)
+                        .padding(.trailing, 4)
+                }
+                Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(.secondary)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - List Picker Bar
+
+private struct ListPickerBar: View {
+    let lists: [TaskList]
+    @Binding var selectedId: String
+    let onManage: () -> Void
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                listChip(id: "all", emoji: nil, name: "All", color: AppTheme.primary)
+                ForEach(lists) { list in
+                    listChip(id: list.id, emoji: list.emoji, name: list.name, color: list.color)
+                }
+                Button(action: onManage) {
+                    Image(systemName: "plus")
+                        .font(.subheadline.weight(.semibold))
+                        .padding(.horizontal, 12).padding(.vertical, 6)
+                        .background(Color(.secondarySystemGroupedBackground))
+                        .foregroundColor(.secondary)
+                        .cornerRadius(20)
+                }
+                .buttonStyle(PressableButtonStyle(scale: 0.95))
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+        }
+        .background(Color(.systemGroupedBackground))
+    }
+
+    @ViewBuilder
+    private func listChip(id: String, emoji: String?, name: String, color: Color) -> some View {
+        let isSelected = selectedId == id
         Button {
             HapticManager.selection()
-            action()
+            selectedId = id
         } label: {
-            Text(label)
-                .font(.subheadline.weight(isSelected ? .semibold : .regular))
-                .padding(.horizontal, 14)
-                .padding(.vertical, 6)
-                .background(isSelected ? AppTheme.primary : Color(.secondarySystemGroupedBackground))
-                .foregroundColor(isSelected ? .white : .primary)
-                .cornerRadius(20)
-                .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isSelected)
+            HStack(spacing: 4) {
+                if let emoji = emoji {
+                    Text(emoji).font(.caption)
+                }
+                Text(name)
+                    .font(.subheadline.weight(isSelected ? .semibold : .regular))
+            }
+            .padding(.horizontal, 14).padding(.vertical, 6)
+            .background(isSelected ? color : Color(.secondarySystemGroupedBackground))
+            .foregroundColor(isSelected ? .white : .primary)
+            .cornerRadius(20)
+            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isSelected)
         }
         .buttonStyle(PressableButtonStyle(scale: 0.95))
+    }
+}
+
+// MARK: - Quick Add Bar
+
+private struct QuickAddBar: View {
+    @Binding var text: String
+    let onSubmit: () -> Void
+    let onExpand: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "plus.circle.fill")
+                .foregroundColor(AppTheme.primary)
+                .font(.title3)
+
+            TextField("Quick add task...", text: $text)
+                .font(.subheadline)
+                .submitLabel(.done)
+                .onSubmit(onSubmit)
+
+            if !text.isEmpty {
+                Button(action: onSubmit) {
+                    Image(systemName: "arrow.up.circle.fill")
+                        .font(.title3)
+                        .foregroundColor(AppTheme.primary)
+                }
+                .buttonStyle(.plain)
+            }
+
+            Button(action: onExpand) {
+                Image(systemName: "list.bullet.rectangle")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(.regularMaterial)
+        .overlay(Divider(), alignment: .top)
     }
 }
 
@@ -426,12 +433,12 @@ private struct EmptyTasksView: View {
     var body: some View {
         VStack(spacing: 16) {
             Spacer()
-            Image(systemName: isSearching ? "magnifyingglass" : "tray")
+            Image(systemName: isSearching ? "magnifyingglass" : "checkmark.circle")
                 .font(.system(size: 56))
                 .foregroundColor(.secondary)
-            Text(isSearching ? "No Results" : "No Tasks")
+            Text(isSearching ? "No Results" : "All Clear!")
                 .font(.title2.bold())
-            Text(isSearching ? "Try a different search." : "Tap + to add your first task.")
+            Text(isSearching ? "Try a different search." : "Add a task below or tap +")
                 .foregroundColor(.secondary)
             Spacer()
         }
@@ -468,9 +475,11 @@ struct AddTaskSheet: View {
     @Environment(AppState.self) private var appState
     @Environment(\.dismiss) private var dismiss
 
+    var initialListId: String = "personal"
+
     @State private var title = ""
-    @State private var category: TaskCategory = .personal
-    @State private var dueDate: DueDate = .today
+    @State private var listId: String = "personal"
+    @State private var dueDate: DueDate? = .today
     @State private var useCustomDate = false
     @State private var customDate = Date()
     @State private var priority: TaskPriority = .none
@@ -488,11 +497,10 @@ struct AddTaskSheet: View {
                 }
 
                 Section("Details") {
-                    Picker("Category", selection: $category) {
-                        ForEach(TaskCategory.allCases) { cat in
-                            Label(cat.label, systemImage: "circle.fill")
-                                .foregroundColor(cat.color)
-                                .tag(cat)
+                    Picker("List", selection: $listId) {
+                        ForEach(appState.taskLists) { l in
+                            Label(l.name, systemImage: "circle.fill")
+                                .tag(l.id)
                         }
                     }
 
@@ -500,9 +508,13 @@ struct AddTaskSheet: View {
                     if useCustomDate {
                         DatePicker("Date", selection: $customDate, displayedComponents: .date)
                     } else {
-                        Picker("Due Date", selection: $dueDate) {
+                        Picker("Due Date", selection: Binding(
+                            get: { dueDate ?? .today },
+                            set: { dueDate = $0 }
+                        )) {
+                            Text("No Date").tag(Optional<DueDate>.none)
                             ForEach(DueDate.allCases) { d in
-                                Text(d.label).tag(d)
+                                Text(d.label).tag(Optional(d))
                             }
                         }
                     }
@@ -531,7 +543,7 @@ struct AddTaskSheet: View {
                         guard !title.trimmingCharacters(in: .whitespaces).isEmpty else { return }
                         appState.addTask(
                             title: title.trimmingCharacters(in: .whitespaces),
-                            category: category,
+                            listId: listId,
                             dueDate: useCustomDate ? .today : dueDate,
                             dueDateOverride: useCustomDate ? customDate : nil,
                             priority: priority,
@@ -542,7 +554,156 @@ struct AddTaskSheet: View {
                     .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
-            .onAppear { isTitleFocused = true }
+            .onAppear {
+                listId = initialListId
+                isTitleFocused = true
+            }
+        }
+    }
+}
+
+// MARK: - Manage Lists Sheet
+
+struct ManageListsSheet: View {
+
+    @Environment(AppState.self) private var appState
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var showAddList = false
+    @State private var editingList: TaskList? = nil
+
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(appState.taskLists) { list in
+                    HStack(spacing: 12) {
+                        Text(list.emoji).font(.title3)
+                        Text(list.name).font(.subheadline)
+                        Spacer()
+                        Circle()
+                            .fill(list.color)
+                            .frame(width: 12, height: 12)
+                        if !list.isSystem {
+                            Button {
+                                editingList = list
+                            } label: {
+                                Image(systemName: "pencil")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .onDelete { indexSet in
+                    for idx in indexSet {
+                        let list = appState.taskLists[idx]
+                        if !list.isSystem { appState.deleteTaskList(id: list.id) }
+                    }
+                }
+            }
+            .navigationTitle("Lists")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button { showAddList = true } label: {
+                        Image(systemName: "plus")
+                    }
+                }
+            }
+            .sheet(isPresented: $showAddList) {
+                EditListSheet(existingList: nil)
+            }
+            .sheet(item: $editingList) { list in
+                EditListSheet(existingList: list)
+            }
+        }
+    }
+}
+
+// MARK: - Edit List Sheet
+
+private struct EditListSheet: View {
+
+    @Environment(AppState.self) private var appState
+    @Environment(\.dismiss) private var dismiss
+
+    var existingList: TaskList?
+
+    @State private var name: String = ""
+    @State private var emoji: String = "📋"
+    @State private var colorHex: String = "#5E9BF0"
+
+    private let presetColors: [(String, String)] = [
+        ("#5E9BF0", "Blue"), ("#30d158", "Green"), ("#FF9F0A", "Orange"),
+        ("#FF375F", "Red"), ("#BF5AF2", "Purple"), ("#5E5CE6", "Indigo"),
+        ("#64D2FF", "Cyan"), ("#FFD700", "Gold"),
+    ]
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Name") {
+                    HStack {
+                        TextField("Emoji", text: $emoji)
+                            .frame(width: 44)
+                            .multilineTextAlignment(.center)
+                        TextField("List name", text: $name)
+                    }
+                }
+                Section("Colour") {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 4), spacing: 12) {
+                        ForEach(presetColors, id: \.0) { hex, label in
+                            Button {
+                                colorHex = hex
+                                HapticManager.selection()
+                            } label: {
+                                ZStack {
+                                    Circle().fill(Color(hex: hex)).frame(width: 44, height: 44)
+                                    if colorHex == hex {
+                                        Image(systemName: "checkmark")
+                                            .font(.system(size: 16, weight: .bold))
+                                            .foregroundColor(.white)
+                                    }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.vertical, 8)
+                }
+            }
+            .navigationTitle(existingList == nil ? "New List" : "Edit List")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        let n = name.trimmingCharacters(in: .whitespaces)
+                        guard !n.isEmpty else { return }
+                        let em = emoji.isEmpty ? "📋" : String(emoji.prefix(2))
+                        if let existing = existingList {
+                            appState.updateTaskList(id: existing.id, name: n, emoji: em, colorHex: colorHex)
+                        } else {
+                            appState.addTaskList(name: n, emoji: em, colorHex: colorHex)
+                        }
+                        dismiss()
+                    }
+                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+            .onAppear {
+                if let list = existingList {
+                    name     = list.name
+                    emoji    = list.emoji
+                    colorHex = list.colorHex
+                }
+            }
         }
     }
 }

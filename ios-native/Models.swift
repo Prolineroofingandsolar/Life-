@@ -35,27 +35,19 @@ struct Subtask: Codable, Identifiable {
     var createdAt: Date = Date()
 }
 
-enum TaskCategory: String, Codable, CaseIterable, Identifiable {
+// Legacy enum kept only for Codable migration (maps old "category" key → listId)
+enum TaskCategory: String, Codable {
     case work, gym, personal
-    var id: String { rawValue }
+}
 
-    var emoji: String {
-        switch self {
-        case .work:     return "💼"
-        case .gym:      return "🏋️"
-        case .personal: return "🌱"
-        }
-    }
+struct TaskList: Codable, Identifiable {
+    var id: String = UUID().uuidString
+    var name: String
+    var emoji: String = "📋"
+    var colorHex: String = "#5E9BF0"
+    var isSystem: Bool = false
 
-    var label: String { rawValue.capitalized }
-
-    var color: Color {
-        switch self {
-        case .work:     return Color(red: 0.37, green: 0.36, blue: 0.90)
-        case .gym:      return Color(red: 0.19, green: 0.82, blue: 0.35)
-        case .personal: return Color(red: 1.00, green: 0.62, blue: 0.04)
-        }
-    }
+    var color: Color { Color(hex: colorHex) }
 }
 
 enum DueDate: String, Codable, CaseIterable, Identifiable {
@@ -71,25 +63,85 @@ enum DueDate: String, Codable, CaseIterable, Identifiable {
     }
 }
 
-struct AppTask: Codable, Identifiable {
+struct AppTask: Identifiable {
     var id: String = UUID().uuidString
     var title: String
-    var category: TaskCategory
+    var listId: String = "personal"
     var done: Bool = false
-    var dueDate: DueDate
-    var dueDateOverride: Date? = nil  // when set, shown instead of dueDate label
+    var dueDate: DueDate? = .today
+    var dueDateOverride: Date? = nil
     var priority: TaskPriority = .none
     var notes: String = ""
     var subtasks: [Subtask] = []
     var createdAt: Date = Date()
     var completedAt: Date? = nil
+    var reminderDate: Date? = nil
 
-    /// Human-readable due label, favouring the concrete date when set.
     var dueDateLabel: String {
-        guard let override = dueDateOverride else { return dueDate.label }
-        if Calendar.current.isDateInToday(override)    { return "Today" }
-        if Calendar.current.isDateInTomorrow(override) { return "Tomorrow" }
-        return override.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
+        if let override = dueDateOverride {
+            if Calendar.current.isDateInToday(override)    { return "Today" }
+            if Calendar.current.isDateInTomorrow(override) { return "Tomorrow" }
+            return override.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
+        }
+        return dueDate?.label ?? "No Date"
+    }
+
+    var resolvedDate: Date? {
+        if let override = dueDateOverride { return override }
+        guard let due = dueDate else { return nil }
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        switch due {
+        case .today:    return today
+        case .tomorrow: return cal.date(byAdding: .day, value: 1, to: today)
+        case .thisWeek: return cal.date(byAdding: .day, value: 6, to: today)
+        }
+    }
+}
+
+extension AppTask: Codable {
+    private enum CodingKeys: String, CodingKey {
+        case id, title, listId, done, dueDate, dueDateOverride, priority, notes
+        case subtasks, createdAt, completedAt, reminderDate
+        case category
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id              = try c.decodeIfPresent(String.self,        forKey: .id)             ?? UUID().uuidString
+        title           = try c.decode(String.self,                  forKey: .title)
+        done            = try c.decodeIfPresent(Bool.self,          forKey: .done)            ?? false
+        dueDate         = try c.decodeIfPresent(DueDate.self,       forKey: .dueDate)
+        dueDateOverride = try c.decodeIfPresent(Date.self,          forKey: .dueDateOverride)
+        priority        = try c.decodeIfPresent(TaskPriority.self,  forKey: .priority)        ?? .none
+        notes           = try c.decodeIfPresent(String.self,        forKey: .notes)           ?? ""
+        subtasks        = try c.decodeIfPresent([Subtask].self,     forKey: .subtasks)        ?? []
+        createdAt       = try c.decodeIfPresent(Date.self,          forKey: .createdAt)       ?? Date()
+        completedAt     = try c.decodeIfPresent(Date.self,          forKey: .completedAt)
+        reminderDate    = try c.decodeIfPresent(Date.self,          forKey: .reminderDate)
+        if let id = try c.decodeIfPresent(String.self, forKey: .listId) {
+            listId = id
+        } else if let cat = try c.decodeIfPresent(String.self, forKey: .category) {
+            listId = cat  // legacy migration: "work"/"gym"/"personal" → matching TaskList ids
+        } else {
+            listId = "personal"
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id,            forKey: .id)
+        try c.encode(title,         forKey: .title)
+        try c.encode(listId,        forKey: .listId)
+        try c.encode(done,          forKey: .done)
+        try c.encodeIfPresent(dueDate,         forKey: .dueDate)
+        try c.encodeIfPresent(dueDateOverride, forKey: .dueDateOverride)
+        try c.encode(priority,      forKey: .priority)
+        try c.encode(notes,         forKey: .notes)
+        try c.encode(subtasks,      forKey: .subtasks)
+        try c.encode(createdAt,     forKey: .createdAt)
+        try c.encodeIfPresent(completedAt,  forKey: .completedAt)
+        try c.encodeIfPresent(reminderDate, forKey: .reminderDate)
     }
 }
 
