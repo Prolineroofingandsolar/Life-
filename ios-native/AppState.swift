@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import WidgetKit
 
 // MARK: - Persistence Keys
 
@@ -78,6 +79,7 @@ final class AppState {
             UserDefaults.standard.set(data, forKey: PersistenceKey.appState)
         }
         WidgetSync.sync(tasks: tasks)
+        syncHabitsToWidget()
         if let uid = cloudUserId {
             FirestoreSync.shared.scheduleUpload(snapshot, userId: uid)
         }
@@ -166,10 +168,16 @@ final class AppState {
             Bill(name: "Phone", amount: 35, dayOfMonth: 28),
         ]
         habits = [
-            Habit(name: "Drink 8 glasses of water", emoji: "💧", kind: .build, cadence: .daily, targetCount: 8),
-            Habit(name: "Read for 20 minutes", emoji: "📚", kind: .build, cadence: .daily, targetCount: 1),
-            Habit(name: "No social media after 9pm", emoji: "📵", kind: .break, cadence: .daily, targetCount: 1),
-            Habit(name: "Exercise 4x per week", emoji: "🏃", kind: .build, cadence: .weekly, targetCount: 4),
+            Habit(name: "Drink 8 glasses of water", emoji: "💧", kind: .build, cadence: .daily, targetCount: 8,
+                  category: .nutrition, targetType: .count, targetUnit: "glasses"),
+            Habit(name: "Read for 20 minutes", emoji: "📚", kind: .build, cadence: .daily, targetCount: 20,
+                  category: .mindset, targetType: .timer),
+            Habit(name: "No social media after 9pm", emoji: "📵", kind: .break, cadence: .daily, targetCount: 1,
+                  category: .mindset, targetType: .yesNo),
+            Habit(name: "Exercise", emoji: "🏃", kind: .build, cadence: .weekly, targetCount: 4,
+                  category: .fitness, targetType: .count, targetUnit: "sessions"),
+            Habit(name: "Morning meditation", emoji: "🧘", kind: .build, cadence: .daily, targetCount: 10,
+                  category: .mindset, targetType: .timer),
         ]
         save()
     }
@@ -251,23 +259,61 @@ final class AppState {
 
     // MARK: - Habit Mutations
 
-    func addHabit(name: String, emoji: String, kind: HabitKind, cadence: HabitCadence, targetCount: Int) {
-        let habit = Habit(name: name, emoji: emoji, kind: kind, cadence: cadence, targetCount: targetCount)
+    func addHabit(
+        name: String, emoji: String,
+        category: HabitCategory = .health,
+        kind: HabitKind, cadence: HabitCadence,
+        targetType: HabitTargetType = .yesNo,
+        targetCount: Int = 1, targetUnit: String = "",
+        reminderEnabled: Bool = false, reminderTime: Date? = nil,
+        notes: String = ""
+    ) {
+        var habit = Habit(name: name, emoji: emoji, kind: kind, cadence: cadence, targetCount: targetCount)
+        habit.category = category
+        habit.targetType = targetType
+        habit.targetUnit = targetUnit
+        habit.reminderEnabled = reminderEnabled
+        habit.reminderTime = reminderTime
+        habit.notes = notes
         habits.append(habit)
+        if reminderEnabled, let time = reminderTime {
+            HabitReminderManager.shared.scheduleReminder(for: habit, at: time)
+        }
         save()
     }
 
-    func updateHabit(id: String, name: String? = nil, emoji: String? = nil, kind: HabitKind? = nil, cadence: HabitCadence? = nil, targetCount: Int? = nil) {
+    func updateHabit(
+        id: String, name: String? = nil, emoji: String? = nil,
+        category: HabitCategory? = nil,
+        kind: HabitKind? = nil, cadence: HabitCadence? = nil,
+        targetType: HabitTargetType? = nil,
+        targetCount: Int? = nil, targetUnit: String? = nil,
+        reminderEnabled: Bool? = nil, reminderTime: Date? = nil,
+        notes: String? = nil
+    ) {
         guard let idx = habits.firstIndex(where: { $0.id == id }) else { return }
         if let name = name { habits[idx].name = name }
         if let emoji = emoji { habits[idx].emoji = emoji }
+        if let category = category { habits[idx].category = category }
         if let kind = kind { habits[idx].kind = kind }
         if let cadence = cadence { habits[idx].cadence = cadence }
+        if let tt = targetType { habits[idx].targetType = tt }
         if let target = targetCount { habits[idx].targetCount = target }
+        if let unit = targetUnit { habits[idx].targetUnit = unit }
+        if let re = reminderEnabled { habits[idx].reminderEnabled = re }
+        if let rt = reminderTime { habits[idx].reminderTime = rt }
+        if let notes = notes { habits[idx].notes = notes }
+        let h = habits[idx]
+        if h.reminderEnabled, let time = h.reminderTime {
+            HabitReminderManager.shared.scheduleReminder(for: h, at: time)
+        } else {
+            HabitReminderManager.shared.cancelReminder(habitId: id)
+        }
         save()
     }
 
     func deleteHabit(id: String) {
+        HabitReminderManager.shared.cancelReminder(habitId: id)
         habits.removeAll { $0.id == id }
         save()
     }
@@ -295,7 +341,7 @@ final class AppState {
         if let logIdx = habits[idx].logs.firstIndex(where: { $0.dayKey == key }) {
             habits[idx].logs.remove(at: logIdx)
         } else {
-            habits[idx].logs.append(HabitLogEntry(dayKey: key, count: 1))
+            habits[idx].logs.append(HabitLogEntry(dayKey: key, count: habits[idx].targetCount, completedAt: Date()))
         }
         save()
     }
@@ -305,8 +351,48 @@ final class AppState {
         let key = todayKey
         if let logIdx = habits[idx].logs.firstIndex(where: { $0.dayKey == key }) {
             habits[idx].logs[logIdx].count += 1
+            if habits[idx].logs[logIdx].count >= habits[idx].targetCount {
+                habits[idx].logs[logIdx].completedAt = Date()
+            }
         } else {
             habits[idx].logs.append(HabitLogEntry(dayKey: key, count: 1))
+        }
+        save()
+    }
+
+    func setHabitCount(id: String, count: Int, dayKey: String? = nil) {
+        guard let idx = habits.firstIndex(where: { $0.id == id }) else { return }
+        let key = dayKey ?? todayKey
+        let clampedCount = max(0, count)
+        if let logIdx = habits[idx].logs.firstIndex(where: { $0.dayKey == key }) {
+            if clampedCount == 0 {
+                habits[idx].logs.remove(at: logIdx)
+            } else {
+                habits[idx].logs[logIdx].count = clampedCount
+                if clampedCount >= habits[idx].targetCount {
+                    habits[idx].logs[logIdx].completedAt = Date()
+                }
+            }
+        } else if clampedCount > 0 {
+            habits[idx].logs.append(HabitLogEntry(dayKey: key, count: clampedCount))
+        }
+        save()
+    }
+
+    func completeHabitTimer(id: String, seconds: Int, dayKey: String? = nil) {
+        guard let idx = habits.firstIndex(where: { $0.id == id }) else { return }
+        let key = dayKey ?? todayKey
+        let targetSecs = habits[idx].targetCount * 60
+        let count = seconds >= targetSecs ? habits[idx].targetCount : max(1, seconds / 60)
+        if let logIdx = habits[idx].logs.firstIndex(where: { $0.dayKey == key }) {
+            habits[idx].logs[logIdx].count = count
+            habits[idx].logs[logIdx].durationSecs = seconds
+            habits[idx].logs[logIdx].completedAt = Date()
+        } else {
+            var entry = HabitLogEntry(dayKey: key, count: count)
+            entry.durationSecs = seconds
+            entry.completedAt = Date()
+            habits[idx].logs.append(entry)
         }
         save()
     }
@@ -320,6 +406,125 @@ final class AppState {
             habits[idx].logs.append(HabitLogEntry(dayKey: key, count: 1, slipped: true))
         }
         save()
+    }
+
+    func undoHabitCompletion(id: String, dayKey: String? = nil) {
+        guard let idx = habits.firstIndex(where: { $0.id == id }) else { return }
+        let key = dayKey ?? todayKey
+        habits[idx].logs.removeAll { $0.dayKey == key }
+        save()
+    }
+
+    // MARK: - Habit Analytics
+
+    func streakFor(_ habit: Habit) -> Int {
+        let cal = Calendar.current
+        var streak = 0
+        var date = Date()
+        while true {
+            let key = date.dayKey
+            if let log = habit.logs.first(where: { $0.dayKey == key }) {
+                let done = habit.kind == .break ? !log.slipped : (log.count >= habit.targetCount && !log.slipped)
+                if done { streak += 1 } else { break }
+            } else {
+                if cal.isDateInToday(date) { date = cal.date(byAdding: .day, value: -1, to: date) ?? date; continue }
+                break
+            }
+            date = cal.date(byAdding: .day, value: -1, to: date) ?? date
+        }
+        return streak
+    }
+
+    func bestStreakFor(_ habit: Habit) -> Int {
+        let cal = Calendar.current
+        guard !habit.logs.isEmpty else { return 0 }
+        let sortedLogs = habit.logs.sorted { $0.dayKey < $1.dayKey }
+        var best = 0, current = 0
+        var prevDate: Date? = nil
+        let fmt = DateFormatter(); fmt.dateFormat = "yyyy-MM-dd"; fmt.locale = Locale(identifier: "en_US_POSIX")
+        for log in sortedLogs {
+            let done = habit.kind == .break ? !log.slipped : (log.count >= habit.targetCount && !log.slipped)
+            guard done, let date = fmt.date(from: log.dayKey) else { current = 0; prevDate = nil; continue }
+            if let prev = prevDate, let expected = cal.date(byAdding: .day, value: 1, to: prev), cal.isDate(expected, inSameDayAs: date) {
+                current += 1
+            } else {
+                current = 1
+            }
+            best = max(best, current)
+            prevDate = date
+        }
+        return best
+    }
+
+    func weeklyCompletionFor(_ habit: Habit) -> Double {
+        let cal = Calendar.current
+        var done = 0
+        for i in 0..<7 {
+            guard let date = cal.date(byAdding: .day, value: -i, to: Date()) else { continue }
+            let key = date.dayKey
+            if let log = habit.logs.first(where: { $0.dayKey == key }) {
+                let completed = habit.kind == .break ? !log.slipped : (log.count >= habit.targetCount && !log.slipped)
+                if completed { done += 1 }
+            }
+        }
+        return Double(done) / 7.0
+    }
+
+    func totalCompletionsFor(_ habit: Habit) -> Int {
+        habit.logs.filter { log in
+            habit.kind == .break ? !log.slipped : (log.count >= habit.targetCount && !log.slipped)
+        }.count
+    }
+
+    func applyPendingWidgetCompletions() {
+        let pending = SharedHabitStore.popPendingCompletions()
+        guard !pending.isEmpty else { return }
+        let key = Date().dayKey
+        for habitId in pending {
+            guard let idx = habits.firstIndex(where: { $0.id == habitId }) else { continue }
+            if habits[idx].logs.first(where: { $0.dayKey == key }) == nil {
+                habits[idx].logs.append(HabitLogEntry(dayKey: key, count: habits[idx].targetCount, completedAt: Date()))
+            }
+        }
+        save()
+    }
+
+    private func syncHabitsToWidget() {
+        let todayKey = Date().dayKey
+        let pending = SharedHabitStore.pendingIDs()
+        let widgetHabits: [WidgetHabit] = habits.filter { !$0.isArchived }.map { h in
+            let log = h.logs.first { $0.dayKey == todayKey }
+            let currentCount = (log?.count ?? 0)
+            let slipped = log?.slipped ?? false
+            let completed: Bool
+            if pending.contains(h.id) {
+                completed = true
+            } else if h.kind == .break {
+                completed = !slipped
+            } else {
+                completed = currentCount >= h.targetCount && !slipped
+            }
+            let progress = h.kind == .build
+                ? min(Double(currentCount) / Double(max(h.targetCount, 1)), 1.0)
+                : (completed ? 1.0 : 0.0)
+            return WidgetHabit(
+                id: h.id,
+                name: h.name,
+                emoji: h.emoji,
+                category: h.category.rawValue,
+                kind: h.kind.rawValue,
+                targetType: h.targetType.rawValue,
+                targetCount: h.targetCount,
+                targetUnit: h.targetUnit,
+                currentCount: currentCount,
+                isCompleted: completed,
+                isSlipped: slipped,
+                streak: streakFor(h),
+                progress: progress
+            )
+        }
+        SharedHabitStore.write(widgetHabits)
+        WidgetCenter.shared.reloadTimelines(ofKind: "LifeHabitsWidget")
     }
 
     // MARK: - Routine Mutations

@@ -103,19 +103,103 @@ enum HabitKind: String, Codable, CaseIterable, Identifiable {
 }
 
 enum HabitCadence: String, Codable, CaseIterable, Identifiable {
-    case daily, weekly
+    case daily, weekly, specificWeekdays, timesPerWeek, timesPerMonth
     var id: String { rawValue }
-    var label: String { rawValue.capitalized }
+    var label: String {
+        switch self {
+        case .daily:            return "Daily"
+        case .weekly:           return "Weekly"
+        case .specificWeekdays: return "Specific Days"
+        case .timesPerWeek:     return "Times / Week"
+        case .timesPerMonth:    return "Times / Month"
+        }
+    }
 }
 
-struct HabitLogEntry: Codable, Identifiable {
+enum HabitCategory: String, Codable, CaseIterable, Identifiable {
+    case health, fitness, mindset, productivity, sleep, nutrition, custom
+    var id: String { rawValue }
+    var label: String { rawValue.capitalized }
+    var emoji: String {
+        switch self {
+        case .health:       return "❤️"
+        case .fitness:      return "💪"
+        case .mindset:      return "🧠"
+        case .productivity: return "⚡️"
+        case .sleep:        return "😴"
+        case .nutrition:    return "🥗"
+        case .custom:       return "✨"
+        }
+    }
+    var color: Color {
+        switch self {
+        case .health:       return Color(hex: "#FF375F")
+        case .fitness:      return Color(hex: "#30d158")
+        case .mindset:      return Color(hex: "#BF5AF2")
+        case .productivity: return Color(hex: "#FF9F0A")
+        case .sleep:        return Color(hex: "#5E9BF0")
+        case .nutrition:    return Color(hex: "#32ADE6")
+        case .custom:       return Color(hex: "#64D2FF")
+        }
+    }
+}
+
+enum HabitTargetType: String, Codable, CaseIterable, Identifiable {
+    case yesNo, count, timer
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .yesNo:  return "Yes / No"
+        case .count:  return "Count"
+        case .timer:  return "Timer"
+        }
+    }
+    var icon: String {
+        switch self {
+        case .yesNo:  return "checkmark.circle"
+        case .count:  return "number"
+        case .timer:  return "timer"
+        }
+    }
+}
+
+struct HabitLogEntry: Identifiable {
     var id: String = UUID().uuidString
     var dayKey: String
     var count: Int = 1
     var slipped: Bool = false
+    var durationSecs: Int = 0
+    var note: String = ""
+    var completedAt: Date? = nil
 }
 
-struct Habit: Codable, Identifiable {
+extension HabitLogEntry: Codable {
+    private enum CodingKeys: String, CodingKey {
+        case id, dayKey, count, slipped, durationSecs, note, completedAt
+    }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id           = try c.decodeIfPresent(String.self,  forKey: .id)           ?? UUID().uuidString
+        dayKey       = try c.decode(String.self,            forKey: .dayKey)
+        count        = try c.decodeIfPresent(Int.self,     forKey: .count)         ?? 1
+        slipped      = try c.decodeIfPresent(Bool.self,    forKey: .slipped)       ?? false
+        durationSecs = try c.decodeIfPresent(Int.self,     forKey: .durationSecs)  ?? 0
+        note         = try c.decodeIfPresent(String.self,  forKey: .note)          ?? ""
+        completedAt  = try c.decodeIfPresent(Date.self,    forKey: .completedAt)
+    }
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id,          forKey: .id)
+        try c.encode(dayKey,      forKey: .dayKey)
+        try c.encode(count,       forKey: .count)
+        try c.encode(slipped,     forKey: .slipped)
+        try c.encode(durationSecs, forKey: .durationSecs)
+        try c.encode(note,        forKey: .note)
+        try c.encodeIfPresent(completedAt, forKey: .completedAt)
+    }
+}
+
+struct Habit: Identifiable {
     var id: String = UUID().uuidString
     var name: String
     var emoji: String = "⭐️"
@@ -125,6 +209,69 @@ struct Habit: Codable, Identifiable {
     var isArchived: Bool = false
     var logs: [HabitLogEntry] = []
     var createdAt: Date = Date()
+    // v2 fields — custom decoder uses decodeIfPresent for backward compatibility
+    var category: HabitCategory = .health
+    var targetType: HabitTargetType = .yesNo
+    var targetUnit: String = ""
+    var reminderTime: Date? = nil
+    var reminderEnabled: Bool = false
+    var notes: String = ""
+    var startDate: Date = Date()
+    var endDate: Date? = nil
+    var weekdays: [Int] = []       // 1=Mon…7=Sun for specificWeekdays
+    var timesPerPeriod: Int = 1    // for timesPerWeek / timesPerMonth
+}
+
+extension Habit: Codable {
+    private enum CodingKeys: String, CodingKey {
+        case id, name, emoji, kind, cadence, targetCount, isArchived, logs, createdAt
+        case category, targetType, targetUnit
+        case reminderTime, reminderEnabled, notes, startDate, endDate, weekdays, timesPerPeriod
+    }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id             = try c.decodeIfPresent(String.self,           forKey: .id)             ?? UUID().uuidString
+        name           = try c.decode(String.self,                     forKey: .name)
+        emoji          = try c.decodeIfPresent(String.self,           forKey: .emoji)          ?? "⭐️"
+        kind           = try c.decodeIfPresent(HabitKind.self,        forKey: .kind)           ?? .build
+        cadence        = try c.decodeIfPresent(HabitCadence.self,     forKey: .cadence)        ?? .daily
+        targetCount    = try c.decodeIfPresent(Int.self,              forKey: .targetCount)    ?? 1
+        isArchived     = try c.decodeIfPresent(Bool.self,             forKey: .isArchived)     ?? false
+        logs           = try c.decodeIfPresent([HabitLogEntry].self,  forKey: .logs)           ?? []
+        createdAt      = try c.decodeIfPresent(Date.self,             forKey: .createdAt)      ?? Date()
+        category       = try c.decodeIfPresent(HabitCategory.self,   forKey: .category)       ?? .health
+        targetType     = try c.decodeIfPresent(HabitTargetType.self, forKey: .targetType)     ?? .yesNo
+        targetUnit     = try c.decodeIfPresent(String.self,           forKey: .targetUnit)     ?? ""
+        reminderTime   = try c.decodeIfPresent(Date.self,             forKey: .reminderTime)
+        reminderEnabled = try c.decodeIfPresent(Bool.self,            forKey: .reminderEnabled) ?? false
+        notes          = try c.decodeIfPresent(String.self,           forKey: .notes)          ?? ""
+        startDate      = try c.decodeIfPresent(Date.self,             forKey: .startDate)      ?? Date()
+        endDate        = try c.decodeIfPresent(Date.self,             forKey: .endDate)
+        weekdays       = try c.decodeIfPresent([Int].self,            forKey: .weekdays)       ?? []
+        timesPerPeriod = try c.decodeIfPresent(Int.self,              forKey: .timesPerPeriod) ?? 1
+    }
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id,              forKey: .id)
+        try c.encode(name,            forKey: .name)
+        try c.encode(emoji,           forKey: .emoji)
+        try c.encode(kind,            forKey: .kind)
+        try c.encode(cadence,         forKey: .cadence)
+        try c.encode(targetCount,     forKey: .targetCount)
+        try c.encode(isArchived,      forKey: .isArchived)
+        try c.encode(logs,            forKey: .logs)
+        try c.encode(createdAt,       forKey: .createdAt)
+        try c.encode(category,        forKey: .category)
+        try c.encode(targetType,      forKey: .targetType)
+        try c.encode(targetUnit,      forKey: .targetUnit)
+        try c.encodeIfPresent(reminderTime,  forKey: .reminderTime)
+        try c.encode(reminderEnabled, forKey: .reminderEnabled)
+        try c.encode(notes,           forKey: .notes)
+        try c.encode(startDate,       forKey: .startDate)
+        try c.encodeIfPresent(endDate, forKey: .endDate)
+        try c.encode(weekdays,        forKey: .weekdays)
+        try c.encode(timesPerPeriod,  forKey: .timesPerPeriod)
+    }
 }
 
 // MARK: - Exercise / Workout Models
