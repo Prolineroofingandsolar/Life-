@@ -314,13 +314,3 @@ struct LifeTasksWidget: Widget {
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
     }
 }
-
-// MARK: - Widget Bundle
-
-@main
-struct LifeWidgetBundle: WidgetBundle {
-    var body: some Widget {
-        LifeTasksWidget()
-        LifeHabitsWidget()
-    }
-}
