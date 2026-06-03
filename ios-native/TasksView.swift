@@ -220,45 +220,63 @@ private struct TaskRow: View {
     let task: AppTask
     var listColor: Color?
 
+    private var overdue: Bool {
+        guard !task.done, let date = task.resolvedDate else { return false }
+        return Calendar.current.startOfDay(for: date) < Calendar.current.startOfDay(for: Date())
+    }
+
+    private var checkboxColor: Color {
+        task.done ? (listColor ?? AppTheme.primary) : (overdue ? .red : (listColor ?? Color(.systemFill)))
+    }
+
     var body: some View {
         HStack(spacing: 12) {
-            // Checkbox
+            // Priority stripe
+            if task.priority != .none {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(task.priority.color)
+                    .frame(width: 3)
+                    .padding(.vertical, 2)
+            }
+
+            // Square checkbox
             Button {
                 HapticManager.impact(.light)
                 appState.toggleTask(id: task.id)
             } label: {
-                Image(systemName: task.done ? "checkmark.circle.fill" : "circle")
-                    .foregroundColor(task.done ? .green : (listColor ?? .secondary))
-                    .font(.title3)
-                    .scaleEffect(task.done ? 1.05 : 1.0)
-                    .animation(.spring(response: 0.25, dampingFraction: 0.5), value: task.done)
+                ZStack {
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(task.done ? checkboxColor : .clear)
+                        .frame(width: 22, height: 22)
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(checkboxColor, lineWidth: task.done ? 0 : 1.5)
+                        .frame(width: 22, height: 22)
+                    if task.done {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(.white)
+                    }
+                }
+                .animation(.spring(response: 0.2, dampingFraction: 0.6), value: task.done)
             }
             .buttonStyle(.plain)
 
-            // Text content
-            VStack(alignment: .leading, spacing: 3) {
+            // Title + list subtitle
+            VStack(alignment: .leading, spacing: 2) {
                 Text(task.title)
                     .strikethrough(task.done)
                     .foregroundColor(task.done ? .secondary : .primary)
-                    .font(.subheadline)
+                    .font(.subheadline.weight(.medium))
 
-                HStack(spacing: 6) {
+                HStack(spacing: 4) {
                     if let list = appState.taskList(for: task) {
-                        Label(list.name, systemImage: "circle.fill")
-                            .font(.caption2)
-                            .foregroundColor(list.color)
-                            .labelStyle(CompactLabelStyle())
-                    }
-                    if task.dueDate != nil || task.dueDateOverride != nil {
-                        Text("·").font(.caption2).foregroundColor(.secondary)
-                        Text(task.dueDateLabel)
-                            .font(.caption2)
-                            .foregroundColor(isOverdue(task) ? .red : .secondary)
+                        Text(list.emoji + " " + list.name)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     }
                     if !task.subtasks.isEmpty {
-                        Text("·").font(.caption2).foregroundColor(.secondary)
-                        Text("\(task.subtasks.filter(\.done).count)/\(task.subtasks.count)")
-                            .font(.caption2)
+                        Text("· \(task.subtasks.filter(\.done).count)/\(task.subtasks.count)")
+                            .font(.caption)
                             .foregroundColor(.secondary)
                     }
                 }
@@ -266,29 +284,21 @@ private struct TaskRow: View {
 
             Spacer()
 
-            // Priority indicator
-            if task.priority != .none {
-                Image(systemName: task.priority.icon)
-                    .font(.caption)
-                    .foregroundColor(task.priority.color)
+            // Right column: date label + bell
+            VStack(alignment: .trailing, spacing: 2) {
+                if task.dueDate != nil || task.dueDateOverride != nil {
+                    Text(task.dueDateLabel)
+                        .font(.caption)
+                        .foregroundColor(overdue ? .red : .secondary)
+                }
+                if task.reminderDate != nil {
+                    Image(systemName: "bell.fill")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
             }
         }
-        .padding(.vertical, 2)
-    }
-
-    private func isOverdue(_ task: AppTask) -> Bool {
-        guard !task.done, let date = task.resolvedDate else { return false }
-        return Calendar.current.startOfDay(for: date) < Calendar.current.startOfDay(for: Date())
-    }
-}
-
-// Custom label style: just text, no icon
-private struct CompactLabelStyle: LabelStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        HStack(spacing: 3) {
-            configuration.icon.font(.system(size: 6))
-            configuration.title
-        }
+        .padding(.vertical, 4)
     }
 }
 
@@ -300,30 +310,29 @@ private struct TaskSectionHeader: View {
     var onClearDone: (() -> Void)?
     let onToggle: () -> Void
 
+    private var titleColor: Color {
+        switch section.id {
+        case "overdue": return .red
+        case "today":   return AppTheme.primary
+        default:        return .secondary
+        }
+    }
+
     var body: some View {
         Button(action: onToggle) {
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(section.color)
-                    .frame(width: 8, height: 8)
-                Text(section.title)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundColor(section.id == "overdue" ? .red : .primary)
-                Text("\(section.tasks.count)")
-                    .font(.caption.weight(.semibold))
-                    .padding(.horizontal, 7).padding(.vertical, 2)
-                    .background(section.color.opacity(0.15))
-                    .foregroundColor(section.color)
-                    .clipShape(Capsule())
+            HStack(spacing: 8) {
+                Text(section.title.uppercased())
+                    .font(.caption.weight(.bold))
+                    .foregroundColor(titleColor)
+                    .tracking(0.5)
                 Spacer()
                 if let clearDone = onClearDone {
-                    Button("Clear All") { clearDone() }
+                    Button("Clear") { clearDone() }
                         .font(.caption.weight(.medium))
                         .foregroundColor(AppTheme.primary)
-                        .padding(.trailing, 4)
                 }
                 Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
-                    .font(.caption.weight(.semibold))
+                    .font(.caption2.weight(.semibold))
                     .foregroundColor(.secondary)
             }
         }
@@ -393,12 +402,8 @@ private struct QuickAddBar: View {
     let onExpand: () -> Void
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "plus.circle.fill")
-                .foregroundColor(AppTheme.primary)
-                .font(.title3)
-
-            TextField("Quick add task...", text: $text)
+        HStack(spacing: 12) {
+            TextField("Add task...", text: $text)
                 .font(.subheadline)
                 .submitLabel(.done)
                 .onSubmit(onSubmit)
@@ -410,19 +415,25 @@ private struct QuickAddBar: View {
                         .foregroundColor(AppTheme.primary)
                 }
                 .buttonStyle(.plain)
+                .transition(.scale.combined(with: .opacity))
             }
 
             Button(action: onExpand) {
-                Image(systemName: "list.bullet.rectangle")
-                    .font(.subheadline)
+                Image(systemName: "calendar")
+                    .font(.subheadline.weight(.medium))
                     .foregroundColor(.secondary)
             }
             .buttonStyle(.plain)
+
+            Image(systemName: "mic")
+                .font(.subheadline.weight(.medium))
+                .foregroundColor(.secondary)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(.regularMaterial)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 14)
+        .background(Color(.systemBackground))
         .overlay(Divider(), alignment: .top)
+        .animation(.spring(response: 0.25), value: text.isEmpty)
     }
 }
 
