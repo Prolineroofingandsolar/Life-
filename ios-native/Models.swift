@@ -77,11 +77,20 @@ struct AppTask: Codable, Identifiable {
     var category: TaskCategory
     var done: Bool = false
     var dueDate: DueDate
+    var dueDateOverride: Date? = nil  // when set, shown instead of dueDate label
     var priority: TaskPriority = .none
     var notes: String = ""
     var subtasks: [Subtask] = []
     var createdAt: Date = Date()
     var completedAt: Date? = nil
+
+    /// Human-readable due label, favouring the concrete date when set.
+    var dueDateLabel: String {
+        guard let override = dueDateOverride else { return dueDate.label }
+        if Calendar.current.isDateInToday(override)    { return "Today" }
+        if Calendar.current.isDateInTomorrow(override) { return "Tomorrow" }
+        return override.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
+    }
 }
 
 // MARK: - Bill Models

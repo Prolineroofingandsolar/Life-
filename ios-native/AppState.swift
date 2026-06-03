@@ -184,8 +184,9 @@ final class AppState {
 
     // MARK: - Task Mutations
 
-    func addTask(title: String, category: TaskCategory, dueDate: DueDate, priority: TaskPriority = .none, notes: String = "") {
+    func addTask(title: String, category: TaskCategory, dueDate: DueDate, dueDateOverride: Date? = nil, priority: TaskPriority = .none, notes: String = "") {
         var task = AppTask(title: title, category: category, dueDate: dueDate)
+        task.dueDateOverride = dueDateOverride
         task.priority = priority
         task.notes = notes
         tasks.append(task)
@@ -204,11 +205,12 @@ final class AppState {
         save()
     }
 
-    func updateTask(id: String, title: String? = nil, category: TaskCategory? = nil, dueDate: DueDate? = nil, priority: TaskPriority? = nil, notes: String? = nil) {
+    func updateTask(id: String, title: String? = nil, category: TaskCategory? = nil, dueDate: DueDate? = nil, dueDateOverride: Date? = nil, priority: TaskPriority? = nil, notes: String? = nil) {
         guard let idx = tasks.firstIndex(where: { $0.id == id }) else { return }
         if let title = title { tasks[idx].title = title }
         if let category = category { tasks[idx].category = category }
         if let dueDate = dueDate { tasks[idx].dueDate = dueDate }
+        if dueDateOverride != nil { tasks[idx].dueDateOverride = dueDateOverride }
         if let priority = priority { tasks[idx].priority = priority }
         if let notes = notes { tasks[idx].notes = notes }
         save()
@@ -412,6 +414,19 @@ final class AppState {
         guard let idx = habits.firstIndex(where: { $0.id == id }) else { return }
         let key = dayKey ?? todayKey
         habits[idx].logs.removeAll { $0.dayKey == key }
+        save()
+    }
+
+    func addNoteToTodayLog(id: String, note: String) {
+        guard let idx = habits.firstIndex(where: { $0.id == id }) else { return }
+        let key = todayKey
+        if let logIdx = habits[idx].logs.firstIndex(where: { $0.dayKey == key }) {
+            habits[idx].logs[logIdx].note = note
+        } else {
+            var entry = HabitLogEntry(dayKey: key, count: habits[idx].targetCount, completedAt: Date())
+            entry.note = note
+            habits[idx].logs.append(entry)
+        }
         save()
     }
 

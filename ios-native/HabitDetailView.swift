@@ -87,14 +87,14 @@ struct HabitDetailView: View {
             HStack(spacing: 8) {
                 habitBadge(habit.category.label, color: habit.category.color)
                 habitBadge(habit.kind == .build ? "Build" : "Break",
-                           color: habit.kind == .build ? Color(hex: "#30d158") : .red)
+                           color: habit.kind == .build ? AppTheme.primary : .red)
                 habitBadge(habit.cadence.label, color: .secondary)
             }
         }
         .frame(maxWidth: .infinity)
         .padding(24)
-        .background(Color(.systemBackground))
-        .cornerRadius(20)
+        .background(AppTheme.cardBg)
+        .cornerRadius(AppTheme.cardRadius)
     }
 
     private func habitBadge(_ text: String, color: Color) -> some View {
@@ -118,7 +118,7 @@ struct HabitDetailView: View {
             DetailStatCard(value: "\(streak)",         label: "Current\nStreak", icon: "flame.fill",          color: .orange)
             DetailStatCard(value: "\(best)",           label: "Best\nStreak",    icon: "trophy.fill",         color: Color(hex: "#FFD700"))
             DetailStatCard(value: "\(Int(weekly*100))%", label: "This\nWeek",   icon: "chart.bar.fill",       color: Color(hex: "#5E9BF0"))
-            DetailStatCard(value: "\(total)",          label: "Total\nDone",     icon: "checkmark.seal.fill", color: Color(hex: "#30d158"))
+            DetailStatCard(value: "\(total)",          label: "Total\nDone",     icon: "checkmark.seal.fill", color: AppTheme.primary)
         }
     }
 
@@ -152,8 +152,8 @@ struct HabitDetailView: View {
             }
         }
         .padding(20)
-        .background(Color(.systemBackground))
-        .cornerRadius(20)
+        .background(AppTheme.cardBg)
+        .cornerRadius(AppTheme.cardRadius)
     }
 
     // YES/NO
@@ -166,7 +166,7 @@ struct HabitDetailView: View {
         } label: {
             ZStack {
                 Circle()
-                    .fill(isCompleted ? Color(hex: "#30d158") : Color(.systemFill))
+                    .fill(isCompleted ? AppTheme.primary : Color(.systemFill))
                     .frame(width: 88, height: 88)
                 Image(systemName: isCompleted ? "checkmark" : "circle")
                     .font(.system(size: 36, weight: .semibold))
@@ -188,7 +188,7 @@ struct HabitDetailView: View {
                     .font(.subheadline.weight(.semibold))
                     .foregroundColor(.white)
                     .padding(.horizontal, 18).padding(.vertical, 13)
-                    .background(isCompleted ? Color(hex: "#30d158") : Color.gray.opacity(0.3))
+                    .background(isCompleted ? AppTheme.primary : Color.gray.opacity(0.3))
                     .clipShape(Capsule())
             }
             .buttonStyle(.plain)
@@ -238,13 +238,13 @@ struct HabitDetailView: View {
                 } label: {
                     Image(systemName: "plus.circle.fill")
                         .font(.system(size: 44))
-                        .foregroundColor(Color(hex: "#30d158"))
+                        .foregroundColor(AppTheme.primary)
                 }
                 .buttonStyle(.plain)
             }
 
             ProgressView(value: progress)
-                .tint(Color(hex: "#30d158"))
+                .tint(AppTheme.primary)
                 .animation(.spring(response: 0.4), value: progress)
         }
     }
@@ -259,7 +259,7 @@ struct HabitDetailView: View {
                     .frame(width: 148, height: 148)
                 Circle()
                     .trim(from: 0, to: min(Double(elapsed) / Double(max(targetSecs, 1)), 1.0))
-                    .stroke(Color(hex: "#30d158"),
+                    .stroke(AppTheme.primary,
                             style: StrokeStyle(lineWidth: 10, lineCap: .round))
                     .frame(width: 148, height: 148)
                     .rotationEffect(.degrees(-90))
@@ -294,9 +294,9 @@ struct HabitDetailView: View {
                         .font(.title2)
                         .foregroundColor(.white)
                         .frame(width: 64, height: 64)
-                        .background(timerRunning ? Color.orange : Color(hex: "#30d158"))
+                        .background(timerRunning ? Color.orange : AppTheme.primary)
                         .clipShape(Circle())
-                        .shadow(color: (timerRunning ? Color.orange : Color(hex: "#30d158")).opacity(0.4), radius: 8)
+                        .shadow(color: (timerRunning ? Color.orange : AppTheme.primary).opacity(0.4), radius: 8)
                 }
                 .buttonStyle(.plain)
 
@@ -310,7 +310,7 @@ struct HabitDetailView: View {
                             .font(.title3)
                             .foregroundColor(.white)
                             .frame(width: 48, height: 48)
-                            .background(Color(hex: "#30d158"))
+                            .background(AppTheme.primary)
                             .clipShape(Circle())
                     }
                     .buttonStyle(.plain)
@@ -330,8 +330,8 @@ struct HabitDetailView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .background(Color(.systemBackground))
-        .cornerRadius(20)
+        .background(AppTheme.cardBg)
+        .cornerRadius(AppTheme.cardRadius)
     }
 
     // MARK: - Notes Card
@@ -344,8 +344,8 @@ struct HabitDetailView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
-        .background(Color(.systemBackground))
-        .cornerRadius(20)
+        .background(AppTheme.cardBg)
+        .cornerRadius(AppTheme.cardRadius)
     }
 }
 

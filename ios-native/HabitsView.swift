@@ -17,9 +17,34 @@ struct HabitsView: View {
     @State private var showAnalytics = false
     @State private var editingHabit: Habit? = nil
     @State private var showUndoFor: String? = nil
+    @State private var noteHabitId: String? = nil
+    @State private var noteText = ""
 
     private var activeHabits: [Habit] { appState.habits.filter { !$0.isArchived } }
     private var archivedHabits: [Habit] { appState.habits.filter { $0.isArchived } }
+
+    private var filteredHabits: [Habit] {
+        let cal = Calendar.current
+        let weekday = cal.component(.weekday, from: Date()) // 1=Sun…7=Sat
+        let mondayBased = weekday == 1 ? 7 : weekday - 1   // 1=Mon…7=Sun
+        switch filter {
+        case .today:
+            return activeHabits.filter { h in
+                switch h.cadence {
+                case .daily: return true
+                case .weekly, .timesPerWeek: return true
+                case .specificWeekdays: return h.weekdays.contains(mondayBased)
+                case .timesPerMonth: return true
+                }
+            }
+        case .week:
+            return activeHabits.filter { h in
+                h.cadence == .daily || h.cadence == .weekly || h.cadence == .timesPerWeek || h.cadence == .specificWeekdays
+            }
+        case .month:
+            return activeHabits
+        }
+    }
 
     private var motivationMessage: String {
         let done = activeHabits.filter { isCompletedToday($0) }.count
@@ -78,9 +103,9 @@ struct HabitsView: View {
                         .font(.system(size: 20, weight: .semibold))
                         .foregroundColor(.white)
                         .frame(width: 56, height: 56)
-                        .background(Color(hex: "#30d158"))
+                        .background(AppTheme.primary)
                         .clipShape(Circle())
-                        .shadow(color: Color(hex: "#30d158").opacity(0.4), radius: 10, x: 0, y: 4)
+                        .shadow(color: AppTheme.primary.opacity(0.4), radius: 10, x: 0, y: 4)
                 }
                 .padding(.bottom, 24)
             }
@@ -96,6 +121,20 @@ struct HabitsView: View {
             .sheet(isPresented: $showAddHabit) { AddHabitView() }
             .sheet(item: $editingHabit) { h in EditHabitView(habit: h) }
             .navigationDestination(isPresented: $showAnalytics) { HabitAnalyticsView() }
+            .sheet(item: Binding(
+                get: { noteHabitId.map { HabitNoteContext(id: $0) } },
+                set: { noteHabitId = $0?.id }
+            )) { ctx in
+                HabitQuickNoteSheet(habitId: ctx.id, note: $noteText) {
+                    if !noteText.trimmingCharacters(in: .whitespaces).isEmpty {
+                        appState.addNoteToTodayLog(id: ctx.id, note: noteText)
+                    }
+                    noteHabitId = nil
+                    noteText = ""
+                }
+                .presentationDetents([.height(220)])
+                .presentationDragIndicator(.visible)
+            }
             .overlay(alignment: .bottom) {
                 if let undoId = showUndoFor {
                     undoToast(id: undoId)
@@ -129,7 +168,7 @@ struct HabitsView: View {
                         .frame(width: 68, height: 68)
                     Circle()
                         .trim(from: 0, to: completionToday)
-                        .stroke(Color(hex: "#30d158"),
+                        .stroke(AppTheme.primary,
                                 style: StrokeStyle(lineWidth: 7, lineCap: .round))
                         .frame(width: 68, height: 68)
                         .rotationEffect(.degrees(-90))
@@ -152,7 +191,7 @@ struct HabitsView: View {
                 DashStatPill(icon: "checkmark.circle.fill",
                              value: "\(activeHabits.filter { isCompletedToday($0) }.count)/\(activeHabits.count)",
                              label: "Today",
-                             color: Color(hex: "#30d158"))
+                             color: AppTheme.primary)
                 DashStatPill(icon: "chart.bar.fill",
                              value: "\(Int(weeklyPct * 100))%",
                              label: "This Week",
@@ -164,7 +203,7 @@ struct HabitsView: View {
         .padding(.bottom, 20)
         .background(
             LinearGradient(
-                colors: [Color(hex: "#30d158").opacity(0.12), Color(.systemGroupedBackground)],
+                colors: [AppTheme.primary.opacity(0.12), Color(.systemGroupedBackground)],
                 startPoint: .top, endPoint: .bottom
             )
         )
@@ -187,12 +226,21 @@ struct HabitsView: View {
     private var habitsList: some View {
         if activeHabits.isEmpty {
             emptyState
+        } else if filteredHabits.isEmpty {
+            VStack(spacing: 8) {
+                Text("No habits for this period")
+                    .font(.subheadline).foregroundColor(.secondary)
+                    .padding(.top, 32)
+            }
+            .frame(maxWidth: .infinity)
         } else {
             LazyVStack(spacing: 12) {
-                ForEach(activeHabits) { habit in
+                ForEach(filteredHabits) { habit in
                     NavigationLink(destination: HabitDetailView(habitId: habit.id)) {
                         HabitCardView(habit: habit, onComplete: { id in
                             showUndoFor = id
+                            noteHabitId = id
+                            noteText = ""
                             DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                                 if showUndoFor == id { showUndoFor = nil }
                             }
@@ -206,7 +254,7 @@ struct HabitsView: View {
                         } label: {
                             Label("Done", systemImage: "checkmark.circle.fill")
                         }
-                        .tint(Color(hex: "#30d158"))
+                        .tint(AppTheme.primary)
                     }
                     .swipeActions(edge: .trailing) {
                         Button(role: .destructive) {
@@ -245,7 +293,7 @@ struct HabitsView: View {
         VStack(spacing: 20) {
             Image(systemName: "chart.bar.doc.horizontal")
                 .font(.system(size: 60))
-                .foregroundColor(Color(hex: "#30d158").opacity(0.7))
+                .foregroundColor(AppTheme.primary.opacity(0.7))
                 .padding(.top, 48)
             VStack(spacing: 8) {
                 Text("No habits yet")
@@ -263,7 +311,7 @@ struct HabitsView: View {
                 }
                 .foregroundColor(.white)
                 .padding(.horizontal, 28).padding(.vertical, 14)
-                .background(Color(hex: "#30d158"))
+                .background(AppTheme.primary)
                 .clipShape(Capsule())
             }
             .padding(.bottom, 48)
@@ -287,7 +335,7 @@ struct HabitsView: View {
                     Button { appState.toggleArchiveHabit(id: habit.id) } label: {
                         Text("Restore")
                             .font(.caption.weight(.medium))
-                            .foregroundColor(Color(hex: "#30d158"))
+                            .foregroundColor(AppTheme.primary)
                     }
                 }
                 .padding(14)
@@ -304,7 +352,7 @@ struct HabitsView: View {
     private func undoToast(id: String) -> some View {
         HStack(spacing: 12) {
             Image(systemName: "checkmark.circle.fill")
-                .foregroundColor(Color(hex: "#30d158"))
+                .foregroundColor(AppTheme.primary)
             Text("Habit completed")
                 .font(.subheadline.weight(.medium))
             Spacer()
@@ -313,7 +361,7 @@ struct HabitsView: View {
                 showUndoFor = nil
             }
             .font(.subheadline.weight(.semibold))
-            .foregroundColor(Color(hex: "#30d158"))
+            .foregroundColor(AppTheme.primary)
         }
         .padding(16)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
@@ -386,7 +434,7 @@ struct HabitCardView: View {
                     HStack(spacing: 6) {
                         badgeView(habit.category.label, color: habit.category.color)
                         badgeView(habit.kind == .build ? "Build" : "Break",
-                                  color: habit.kind == .build ? Color(hex: "#30d158") : .red)
+                                  color: habit.kind == .build ? AppTheme.primary : .red)
                     }
                 }
                 Spacer()
@@ -401,7 +449,7 @@ struct HabitCardView: View {
                             RoundedRectangle(cornerRadius: 3)
                                 .fill(Color(.systemFill)).frame(height: 6)
                             RoundedRectangle(cornerRadius: 3)
-                                .fill(isCompleted ? Color(hex: "#30d158") : Color(hex: "#30d158").opacity(0.6))
+                                .fill(isCompleted ? AppTheme.primary : AppTheme.primary.opacity(0.6))
                                 .frame(width: geo.size.width * progress, height: 6)
                                 .animation(.spring(response: 0.4, dampingFraction: 0.7), value: progress)
                         }
@@ -426,9 +474,9 @@ struct HabitCardView: View {
             }
         }
         .padding(16)
-        .background(Color(.systemBackground))
-        .cornerRadius(18)
-        .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 2)
+        .background(AppTheme.cardBg)
+        .cornerRadius(AppTheme.cardRadius)
+        .shadow(color: .black.opacity(0.07), radius: 10, x: 0, y: 3)
     }
 
     private func badgeView(_ text: String, color: Color) -> some View {
@@ -442,36 +490,50 @@ struct HabitCardView: View {
 
     @ViewBuilder
     private var completionButton: some View {
-        Button {
-            withAnimation(.spring(response: 0.25, dampingFraction: 0.5)) { completing = true }
-            HapticManager.success()
-            if habit.kind == .break {
+        if habit.kind == .break {
+            // Break habits: show status indicator, tap to confirm slip
+            Button {
+                withAnimation(.spring(response: 0.25, dampingFraction: 0.5)) { completing = true }
+                HapticManager.impact(.heavy)
                 appState.slipHabitToday(id: habit.id)
-            } else if habit.targetType == .count && habit.targetCount > 1 {
-                appState.incHabitToday(id: habit.id)
-            } else {
-                appState.toggleHabitToday(id: habit.id)
-                if !isCompleted { onComplete?(habit.id) }
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { completing = false }
-        } label: {
-            ZStack {
-                Circle()
-                    .fill(isCompleted ? Color(hex: "#30d158") : Color(.systemFill))
-                    .frame(width: 38, height: 38)
-                if habit.kind == .break {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { completing = false }
+            } label: {
+                ZStack {
+                    Circle()
+                        .fill(todayLog?.slipped == true ? Color.red : AppTheme.primary)
+                        .frame(width: 38, height: 38)
                     Image(systemName: todayLog?.slipped == true ? "xmark" : "checkmark")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(todayLog?.slipped == true ? .white : (isCompleted ? .white : .secondary))
+                        .foregroundColor(.white)
+                }
+                .scaleEffect(completing ? 1.3 : 1.0)
+            }
+            .buttonStyle(.plain)
+            .confirmationDialog("Mark as slipped today?", isPresented: .constant(false)) {}
+        } else {
+            Button {
+                withAnimation(.spring(response: 0.25, dampingFraction: 0.5)) { completing = true }
+                HapticManager.success()
+                if habit.targetType == .count && habit.targetCount > 1 {
+                    appState.incHabitToday(id: habit.id)
                 } else {
+                    appState.toggleHabitToday(id: habit.id)
+                    if !isCompleted { onComplete?(habit.id) }
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { completing = false }
+            } label: {
+                ZStack {
+                    Circle()
+                        .fill(isCompleted ? AppTheme.primary : Color(.systemFill))
+                        .frame(width: 38, height: 38)
                     Image(systemName: isCompleted ? "checkmark" : "circle")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundColor(isCompleted ? .white : .secondary)
                 }
+                .scaleEffect(completing ? 1.3 : 1.0)
             }
-            .scaleEffect(completing ? 1.3 : 1.0)
+            .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
     }
 }
 
@@ -775,7 +837,7 @@ struct HabitHeatmapView: View {
     private func cellColor(_ v: Double) -> Color {
         if v < 0 { return .red.opacity(0.6) }
         if v == 0 { return Color(.systemFill) }
-        return Color(hex: "#30d158").opacity(0.25 + v * 0.75)
+        return AppTheme.primary.opacity(0.25 + v * 0.75)
     }
 
     var body: some View {
@@ -789,6 +851,68 @@ struct HabitHeatmapView: View {
                         .aspectRatio(1, contentMode: .fit)
                 }
             }
+            // Legend
+            HStack(spacing: 10) {
+                Spacer()
+                legendItem(color: Color(.systemFill), label: "None")
+                legendItem(color: AppTheme.primary.opacity(0.7), label: "Done")
+                legendItem(color: .red.opacity(0.6), label: "Slipped")
+            }
         }
+    }
+
+    private func legendItem(color: Color, label: String) -> some View {
+        HStack(spacing: 4) {
+            RoundedRectangle(cornerRadius: 2).fill(color).frame(width: 10, height: 10)
+            Text(label).font(.caption2).foregroundColor(.secondary)
+        }
+    }
+}
+
+// MARK: - Habit Note Helper
+
+private struct HabitNoteContext: Identifiable {
+    let id: String
+}
+
+struct HabitQuickNoteSheet: View {
+    let habitId: String
+    @Binding var note: String
+    let onDone: () -> Void
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Text("Add a note for today")
+                .font(.headline)
+                .padding(.top, 20)
+
+            TextField("How did it go? (optional)", text: $note, axis: .vertical)
+                .lineLimit(2...4)
+                .padding(12)
+                .background(Color(.secondarySystemGroupedBackground))
+                .cornerRadius(AppTheme.chipRadius)
+                .focused($focused)
+                .padding(.horizontal, 20)
+
+            HStack(spacing: 12) {
+                Button("Skip") { onDone() }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Color(.systemFill))
+                    .cornerRadius(AppTheme.buttonRadius)
+                    .foregroundColor(.primary)
+
+                Button("Save") { onDone() }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(AppTheme.primary)
+                    .cornerRadius(AppTheme.buttonRadius)
+                    .foregroundColor(.white)
+            }
+            .padding(.horizontal, 20)
+            .buttonStyle(.plain)
+        }
+        .onAppear { focused = true }
     }
 }

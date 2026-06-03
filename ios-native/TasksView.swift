@@ -95,7 +95,16 @@ struct TasksView: View {
                                         )
                                     }
                                 } header: {
-                                    Text("Done (\(doneTasks.count))")
+                                    HStack {
+                                        Text("Done (\(doneTasks.count))")
+                                        Spacer()
+                                        Button("Clear All") {
+                                            HapticManager.impact(.medium)
+                                            doneTasks.forEach { appState.deleteTask(id: $0.id) }
+                                        }
+                                        .font(.caption.weight(.medium))
+                                        .foregroundColor(AppTheme.primary)
+                                    }
                                 }
                             }
                         }
@@ -214,7 +223,7 @@ private struct TaskRow: View {
                             Circle().fill(task.category.color).frame(width: 6, height: 6)
                             Text(task.category.label).font(.caption).foregroundColor(.secondary)
                             Text("·").foregroundColor(.secondary).font(.caption)
-                            Text(task.dueDate.label)
+                            Text(task.dueDateLabel)
                                 .font(.caption)
                                 .foregroundColor(task.dueDate == .today ? .orange : .secondary)
                             if !task.notes.isEmpty {
@@ -305,7 +314,7 @@ private struct TaskRow: View {
                                     .font(.caption)
                                     .padding(.horizontal, 8)
                                     .padding(.vertical, 4)
-                                    .background(task.dueDate == d ? Color(hex: "#30d158") : Color(.tertiarySystemFill))
+                                    .background(task.dueDate == d ? AppTheme.primary : Color(.tertiarySystemFill))
                                     .foregroundColor(task.dueDate == d ? .white : .secondary)
                                     .cornerRadius(6)
                             }
@@ -354,7 +363,7 @@ private struct TaskRow: View {
 
                     // Add subtask
                     HStack(spacing: 8) {
-                        Image(systemName: "plus.circle").font(.caption).foregroundColor(Color(hex: "#30d158"))
+                        Image(systemName: "plus.circle").font(.caption).foregroundColor(AppTheme.primary)
                         TextField("Add subtask...", text: $newSubtaskText)
                             .font(.caption)
                             .onSubmit {
@@ -401,7 +410,7 @@ private struct FilterChip: View {
                 .font(.subheadline.weight(isSelected ? .semibold : .regular))
                 .padding(.horizontal, 14)
                 .padding(.vertical, 6)
-                .background(isSelected ? Color(hex: "#30d158") : Color(.secondarySystemGroupedBackground))
+                .background(isSelected ? AppTheme.primary : Color(.secondarySystemGroupedBackground))
                 .foregroundColor(isSelected ? .white : .primary)
                 .cornerRadius(20)
                 .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isSelected)
@@ -437,18 +446,18 @@ struct UndoToast: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Text(message).font(.subheadline).foregroundColor(.white)
+            Text(message)
+                .font(.subheadline.weight(.medium))
             Spacer()
             Button("Undo", action: onUndo)
                 .font(.subheadline.bold())
-                .foregroundColor(Color(hex: "#30d158"))
+                .foregroundColor(AppTheme.primary)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 14)
-        .background(Color(.darkGray))
-        .cornerRadius(12)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: AppTheme.chipRadius))
         .padding(.horizontal, 24)
-        .shadow(radius: 8)
+        .shadow(color: .black.opacity(0.1), radius: 10)
     }
 }
 
@@ -462,6 +471,8 @@ struct AddTaskSheet: View {
     @State private var title = ""
     @State private var category: TaskCategory = .personal
     @State private var dueDate: DueDate = .today
+    @State private var useCustomDate = false
+    @State private var customDate = Date()
     @State private var priority: TaskPriority = .none
     @State private var notes = ""
     @FocusState private var isTitleFocused: Bool
@@ -485,9 +496,14 @@ struct AddTaskSheet: View {
                         }
                     }
 
-                    Picker("Due Date", selection: $dueDate) {
-                        ForEach(DueDate.allCases) { d in
-                            Text(d.label).tag(d)
+                    Toggle("Pick a specific date", isOn: $useCustomDate)
+                    if useCustomDate {
+                        DatePicker("Date", selection: $customDate, displayedComponents: .date)
+                    } else {
+                        Picker("Due Date", selection: $dueDate) {
+                            ForEach(DueDate.allCases) { d in
+                                Text(d.label).tag(d)
+                            }
                         }
                     }
 
@@ -516,7 +532,8 @@ struct AddTaskSheet: View {
                         appState.addTask(
                             title: title.trimmingCharacters(in: .whitespaces),
                             category: category,
-                            dueDate: dueDate,
+                            dueDate: useCustomDate ? .today : dueDate,
+                            dueDateOverride: useCustomDate ? customDate : nil,
                             priority: priority,
                             notes: notes
                         )

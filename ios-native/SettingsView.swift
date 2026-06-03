@@ -156,7 +156,6 @@ struct SettingsView: View {
                 // App info
                 Section {
                     InfoRow(label: "Version", value: appVersion)
-                    InfoRow(label: "App Group", value: "group.uk.co.prolineroofingandsolar.life")
                 } header: {
                     Text("About")
                 }

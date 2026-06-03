@@ -69,7 +69,7 @@ struct HabitAnalyticsView: View {
     private var summaryCards: some View {
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
             AnalyticsStatCard(title: "Total Completions", value: "\(totalCompletions)",
-                              icon: "checkmark.seal.fill", color: Color(hex: "#30d158"))
+                              icon: "checkmark.seal.fill", color: AppTheme.primary)
             AnalyticsStatCard(title: "Longest Streak", value: "\(longestStreak) days",
                               icon: "flame.fill", color: .orange)
             AnalyticsStatCard(title: "Active Habits", value: "\(active.count)",
@@ -89,11 +89,16 @@ struct HabitAnalyticsView: View {
                 emptyChartPlaceholder(height: 160)
             } else {
                 Chart(data) { p in
-                    BarMark(x: .value("Day", p.label), y: .value("Completion", p.pct))
-                        .foregroundStyle(Color(hex: "#30d158").gradient)
+                    BarMark(x: .value("Day", p.date, unit: .day), y: .value("Completion", p.pct))
+                        .foregroundStyle(AppTheme.primary.gradient)
                         .cornerRadius(6)
                 }
                 .chartYScale(domain: 0...1)
+                .chartXAxis {
+                    AxisMarks(values: .stride(by: .day)) { _ in
+                        AxisValueLabel(format: .dateTime.weekday(.abbreviated))
+                    }
+                }
                 .chartYAxis {
                     AxisMarks(values: [0, 0.5, 1.0]) { v in
                         AxisGridLine()
@@ -106,8 +111,9 @@ struct HabitAnalyticsView: View {
             }
         }
         .padding(20)
-        .background(Color(.systemBackground))
-        .cornerRadius(20)
+        .background(AppTheme.cardBg)
+        .cornerRadius(AppTheme.cardRadius)
+        .shadow(color: .black.opacity(0.07), radius: 10, x: 0, y: 3)
     }
 
     // MARK: - Monthly Line Chart
@@ -146,8 +152,9 @@ struct HabitAnalyticsView: View {
             }
         }
         .padding(20)
-        .background(Color(.systemBackground))
-        .cornerRadius(20)
+        .background(AppTheme.cardBg)
+        .cornerRadius(AppTheme.cardRadius)
+        .shadow(color: .black.opacity(0.07), radius: 10, x: 0, y: 3)
     }
 
     // MARK: - Top Habits
@@ -183,8 +190,9 @@ struct HabitAnalyticsView: View {
             }
         }
         .padding(20)
-        .background(Color(.systemBackground))
-        .cornerRadius(20)
+        .background(AppTheme.cardBg)
+        .cornerRadius(AppTheme.cardRadius)
+        .shadow(color: .black.opacity(0.07), radius: 10, x: 0, y: 3)
     }
 
     // MARK: - Category Breakdown
@@ -221,8 +229,9 @@ struct HabitAnalyticsView: View {
             }
         }
         .padding(20)
-        .background(Color(.systemBackground))
-        .cornerRadius(20)
+        .background(AppTheme.cardBg)
+        .cornerRadius(AppTheme.cardRadius)
+        .shadow(color: .black.opacity(0.07), radius: 10, x: 0, y: 3)
     }
 
     private func emptyChartPlaceholder(height: CGFloat) -> some View {

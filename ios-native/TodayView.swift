@@ -141,17 +141,18 @@ private struct CareSection: View {
                     color: .green,
                     label: "Move",
                     count: "\(today.steps.formatted())/\(settings.stepGoal.formatted())",
-                    done: today.steps >= settings.stepGoal
+                    done: today.steps >= settings.stepGoal,
+                    actionIcon: "arrow.clockwise"
                 ) {
-                    appState.syncSteps(today.steps + 1000)
+                    Task { await syncStepsFromHealth() }
                 }
             }
             .padding(.trailing, 4)
         }
         .padding(16)
-        .background(Color(.secondarySystemGroupedBackground))
-        .cornerRadius(16)
-        .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 2)
+        .background(AppTheme.cardBg)
+        .cornerRadius(AppTheme.cardRadius)
+        .shadow(color: .black.opacity(0.07), radius: 10, x: 0, y: 3)
         .padding(.horizontal, 16)
         .task {
             await syncStepsFromHealth()
@@ -182,6 +183,7 @@ private struct CareRow: View {
     let label: String
     let count: String
     let done: Bool
+    var actionIcon: String = "plus"
     let action: () -> Void
 
     var body: some View {
@@ -206,7 +208,7 @@ private struct CareRow: View {
                 HapticManager.impact(done ? .light : .medium)
                 action()
             } label: {
-                Image(systemName: done ? "checkmark" : "plus")
+                Image(systemName: done && actionIcon == "plus" ? "checkmark" : actionIcon)
                     .font(.system(size: 16, weight: .bold))
                     .foregroundColor(.white)
                     .frame(width: 44, height: 44)
@@ -256,8 +258,9 @@ private struct TodayTasksSection: View {
                     .padding()
                     Spacer()
                 }
-                .background(Color(.secondarySystemGroupedBackground))
-                .cornerRadius(12)
+                .background(AppTheme.cardBg)
+                .cornerRadius(AppTheme.chipRadius)
+                .shadow(color: .black.opacity(0.05), radius: 6, x: 0, y: 2)
                 .padding(.horizontal, 16)
             } else {
                 VStack(spacing: 0) {
@@ -268,8 +271,9 @@ private struct TodayTasksSection: View {
                         }
                     }
                 }
-                .background(Color(.secondarySystemGroupedBackground))
-                .cornerRadius(12)
+                .background(AppTheme.cardBg)
+                .cornerRadius(AppTheme.chipRadius)
+                .shadow(color: .black.opacity(0.05), radius: 6, x: 0, y: 2)
                 .padding(.horizontal, 16)
             }
         }
@@ -338,8 +342,9 @@ private struct TodayHabitsSection: View {
                         }
                     }
                 }
-                .background(Color(.secondarySystemGroupedBackground))
-                .cornerRadius(12)
+                .background(AppTheme.cardBg)
+                .cornerRadius(AppTheme.chipRadius)
+                .shadow(color: .black.opacity(0.05), radius: 6, x: 0, y: 2)
                 .padding(.horizontal, 16)
             }
         }
@@ -349,6 +354,7 @@ private struct TodayHabitsSection: View {
 private struct TodayHabitRow: View {
     @Environment(AppState.self) private var appState
     let habit: Habit
+    @State private var showSlipConfirm = false
 
     private var todayLog: HabitLogEntry? {
         habit.logs.first { $0.dayKey == Date().dayKey }
@@ -356,6 +362,7 @@ private struct TodayHabitRow: View {
 
     private var isComplete: Bool {
         guard let log = todayLog else { return false }
+        if habit.kind == .break { return !log.slipped }
         return log.count >= habit.targetCount && !log.slipped
     }
 
@@ -365,7 +372,8 @@ private struct TodayHabitRow: View {
             if habit.kind == .build {
                 appState.incHabitToday(id: habit.id)
             } else {
-                appState.slipHabitToday(id: habit.id)
+                // Break habits: confirm before marking slipped
+                showSlipConfirm = true
             }
         } label: {
             HStack(spacing: 12) {
@@ -387,9 +395,9 @@ private struct TodayHabitRow: View {
                                 .font(.caption)
                                 .foregroundColor(.red)
                         } else {
-                            Text("Maintained today")
+                            Text("Maintained ✓")
                                 .font(.caption)
-                                .foregroundColor(.green)
+                                .foregroundColor(AppTheme.primary)
                         }
                     }
                 }
@@ -398,7 +406,7 @@ private struct TodayHabitRow: View {
 
                 if isComplete {
                     Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.green)
+                        .foregroundColor(AppTheme.primary)
                 } else if todayLog?.slipped == true {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundColor(.red)
@@ -408,5 +416,12 @@ private struct TodayHabitRow: View {
             .padding(.vertical, 10)
         }
         .buttonStyle(.plain)
+        .confirmationDialog("Mark \"\(habit.name)\" as slipped today?", isPresented: $showSlipConfirm, titleVisibility: .visible) {
+            Button("Mark as Slipped", role: .destructive) {
+                HapticManager.impact(.heavy)
+                appState.slipHabitToday(id: habit.id)
+            }
+            Button("Cancel", role: .cancel) {}
+        }
     }
 }
