@@ -45,6 +45,22 @@
     <array>
         <string>fetch</string>
         <string>remote-notification</string>
+        <string>location</string>
+    </array>
+
+    <!-- Location -->
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>Life uses your location to reveal the world map as you explore.</string>
+
+    <!-- URL scheme for widget deep linking -->
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>life</string>
+            </array>
+        </dict>
     </array>
 </dict>
 </plist>

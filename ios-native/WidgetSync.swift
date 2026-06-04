@@ -57,4 +57,42 @@ enum WidgetSync {
         // Tell WidgetKit to refresh immediately
         WidgetCenter.shared.reloadAllTimelines()
     }
+
+    // MARK: - Habit Shape
+
+    struct WidgetHabit: Codable {
+        let id: String
+        let name: String
+        let emoji: String
+        let completedToday: Bool
+    }
+
+    private static let habitsDefaultsKey = "life_widget_habits"
+    private static let habitsFileName = "life_habits.json"
+
+    // MARK: - Sync Habits
+
+    static func syncHabits(habits: [Habit], todayKey: String) {
+        let widgetHabits = habits.filter { !$0.isArchived }.map { habit in
+            let completedToday = habit.logs.contains { $0.dayKey == todayKey && !$0.slipped }
+            return WidgetHabit(id: habit.id, name: habit.name, emoji: habit.emoji, completedToday: completedToday)
+        }
+
+        guard let data = try? JSONEncoder().encode(widgetHabits) else { return }
+        let jsonString = String(data: data, encoding: .utf8)
+
+        if let defaults = UserDefaults(suiteName: appGroup) {
+            defaults.set(jsonString, forKey: habitsDefaultsKey)
+            defaults.synchronize()
+        }
+
+        if let containerURL = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: appGroup
+        ) {
+            let fileURL = containerURL.appendingPathComponent(habitsFileName)
+            try? data.write(to: fileURL, options: .atomic)
+        }
+
+        WidgetCenter.shared.reloadAllTimelines()
+    }
 }

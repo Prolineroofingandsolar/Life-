@@ -286,16 +286,19 @@ struct LifeTasksWidgetEntryView: View {
     @Environment(\.widgetFamily) var family
 
     var body: some View {
-        switch family {
-        case .systemSmall:
-            SmallWidgetView(tasks: entry.tasks)
-        case .systemMedium:
-            MediumWidgetView(tasks: entry.tasks)
-        case .systemLarge:
-            LargeWidgetView(tasks: entry.tasks)
-        default:
-            MediumWidgetView(tasks: entry.tasks)
+        Group {
+            switch family {
+            case .systemSmall:
+                SmallWidgetView(tasks: entry.tasks)
+            case .systemMedium:
+                MediumWidgetView(tasks: entry.tasks)
+            case .systemLarge:
+                LargeWidgetView(tasks: entry.tasks)
+            default:
+                MediumWidgetView(tasks: entry.tasks)
+            }
         }
+        .widgetURL(URL(string: "life://tasks")!)
     }
 }
 

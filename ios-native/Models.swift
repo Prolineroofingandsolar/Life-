@@ -28,6 +28,31 @@ enum TaskPriority: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+enum RecurrenceType: String, Codable, CaseIterable, Identifiable {
+    case daily, weekly, biweekly, monthly, yearly
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .daily:     return "Daily"
+        case .weekly:    return "Weekly"
+        case .biweekly:  return "Every 2 Weeks"
+        case .monthly:   return "Monthly"
+        case .yearly:    return "Yearly"
+        }
+    }
+}
+
+struct TaskList: Codable, Identifiable {
+    var id: String = UUID().uuidString
+    var name: String
+    var emoji: String = "📋"
+    var colorHex: String = "#5E9BF0"
+    var isSystem: Bool = false
+    var createdAt: Date = Date()
+
+    var color: Color { Color(hex: colorHex) }
+}
+
 struct Subtask: Codable, Identifiable {
     var id: String = UUID().uuidString
     var title: String
@@ -69,19 +94,52 @@ enum DueDate: String, Codable, CaseIterable, Identifiable {
         case .thisWeek: return "This Week"
         }
     }
+
+    var date: Date {
+        let cal = Calendar.current
+        switch self {
+        case .today:    return cal.startOfDay(for: Date())
+        case .tomorrow: return cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: Date())) ?? Date()
+        case .thisWeek: return cal.date(byAdding: .day, value: 7, to: cal.startOfDay(for: Date())) ?? Date()
+        }
+    }
 }
 
 struct AppTask: Codable, Identifiable {
     var id: String = UUID().uuidString
     var title: String
-    var category: TaskCategory
+    var category: TaskCategory = .personal
+    var listId: String = "personal"
     var done: Bool = false
-    var dueDate: DueDate
+    var dueDate: DueDate? = .today
+    var dueDateOverride: Date? = nil
     var priority: TaskPriority = .none
     var notes: String = ""
     var subtasks: [Subtask] = []
+    var scheduledTime: Date? = nil
+    var estimatedMinutes: Int? = nil
+    var isRecurring: Bool = false
+    var recurrenceType: RecurrenceType? = nil
+    var recurrenceInterval: Int? = nil
+    var reminderDate: Date? = nil
+    var sortOrder: Int = 0
     var createdAt: Date = Date()
     var completedAt: Date? = nil
+
+    var resolvedDate: Date? {
+        if let override = dueDateOverride { return override }
+        return dueDate?.date
+    }
+
+    var dueDateLabel: String {
+        if let override = dueDateOverride {
+            let cal = Calendar.current
+            if cal.isDateInToday(override) { return "Today" }
+            if cal.isDateInTomorrow(override) { return "Tomorrow" }
+            return override.formatted(.dateTime.month(.abbreviated).day())
+        }
+        return dueDate?.label ?? ""
+    }
 }
 
 // MARK: - Bill Models
@@ -103,9 +161,62 @@ enum HabitKind: String, Codable, CaseIterable, Identifiable {
 }
 
 enum HabitCadence: String, Codable, CaseIterable, Identifiable {
-    case daily, weekly
+    case daily, weekly, timesPerWeek, specificWeekdays, timesPerMonth
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .daily:            return "Daily"
+        case .weekly:           return "Weekly"
+        case .timesPerWeek:     return "Times/Week"
+        case .specificWeekdays: return "Specific Days"
+        case .timesPerMonth:    return "Times/Month"
+        }
+    }
+}
+
+enum HabitCategory: String, Codable, CaseIterable, Identifiable {
+    case health, fitness, mindset, productivity, sleep, nutrition
     var id: String { rawValue }
     var label: String { rawValue.capitalized }
+    var emoji: String {
+        switch self {
+        case .health:       return "❤️"
+        case .fitness:      return "💪"
+        case .mindset:      return "🧠"
+        case .productivity: return "⚡️"
+        case .sleep:        return "😴"
+        case .nutrition:    return "🥗"
+        }
+    }
+    var color: Color {
+        switch self {
+        case .health:       return Color(red: 1.0,  green: 0.22, blue: 0.37)
+        case .fitness:      return Color(red: 0.19, green: 0.82, blue: 0.35)
+        case .mindset:      return Color(red: 0.75, green: 0.35, blue: 0.95)
+        case .productivity: return Color(red: 1.0,  green: 0.62, blue: 0.04)
+        case .sleep:        return Color(red: 0.37, green: 0.60, blue: 0.95)
+        case .nutrition:    return Color(red: 0.20, green: 0.67, blue: 0.90)
+        }
+    }
+}
+
+enum HabitTargetType: String, Codable, CaseIterable, Identifiable {
+    case yesNo, count, timer
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .yesNo:  return "Yes / No"
+        case .count:  return "Count"
+        case .timer:  return "Timer"
+        }
+    }
+    var icon: String {
+        switch self {
+        case .yesNo:  return "checkmark.circle"
+        case .count:  return "number.circle"
+        case .timer:  return "timer"
+        }
+    }
 }
 
 struct HabitLogEntry: Codable, Identifiable {
@@ -113,16 +224,24 @@ struct HabitLogEntry: Codable, Identifiable {
     var dayKey: String
     var count: Int = 1
     var slipped: Bool = false
+    var note: String = ""
 }
 
 struct Habit: Codable, Identifiable {
     var id: String = UUID().uuidString
     var name: String
     var emoji: String = "⭐️"
+    var category: HabitCategory = .health
     var kind: HabitKind = .build
     var cadence: HabitCadence = .daily
+    var targetType: HabitTargetType = .yesNo
     var targetCount: Int = 1
+    var targetUnit: String = ""
+    var weekdays: [Int] = []
     var isArchived: Bool = false
+    var reminderEnabled: Bool = false
+    var reminderTime: Date? = nil
+    var notes: String = ""
     var logs: [HabitLogEntry] = []
     var createdAt: Date = Date()
 }
@@ -140,28 +259,28 @@ enum ExerciseEquipment: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
     var label: String {
         switch self {
-        case .barbell: return "Barbell"
-        case .dumbbell: return "Dumbbell"
-        case .cable: return "Cable"
-        case .machine: return "Machine"
+        case .barbell:    return "Barbell"
+        case .dumbbell:   return "Dumbbell"
+        case .cable:      return "Cable"
+        case .machine:    return "Machine"
         case .bodyweight: return "Bodyweight"
         case .kettlebell: return "Kettlebell"
-        case .band: return "Band"
-        case .ezBar: return "EZ Bar"
-        case .other: return "Other"
+        case .band:       return "Band"
+        case .ezBar:      return "EZ Bar"
+        case .other:      return "Other"
         }
     }
     var icon: String {
         switch self {
-        case .barbell: return "figure.strengthtraining.traditional"
-        case .dumbbell: return "dumbbell.fill"
-        case .cable: return "cable.connector"
-        case .machine: return "gearshape.fill"
+        case .barbell:    return "figure.strengthtraining.traditional"
+        case .dumbbell:   return "dumbbell.fill"
+        case .cable:      return "cable.connector"
+        case .machine:    return "gearshape.fill"
         case .bodyweight: return "figure.stand"
         case .kettlebell: return "dumbbell"
-        case .band: return "arrow.left.and.right"
-        case .ezBar: return "wave.3.right"
-        case .other: return "questionmark.circle"
+        case .band:       return "arrow.left.and.right"
+        case .ezBar:      return "wave.3.right"
+        case .other:      return "questionmark.circle"
         }
     }
 }
@@ -191,7 +310,7 @@ enum AchievementKind: String, Codable, CaseIterable {
         case .totalSessions10, .totalSessions50, .totalSessions100: return "dumbbell.fill"
         }
     }
-    var color: String { // hex
+    var color: String {
         switch self {
         case .firstWorkout: return "#FF6B35"
         case .streak7: return "#30d158"
@@ -204,6 +323,12 @@ enum AchievementKind: String, Codable, CaseIterable {
     }
 }
 
+enum MovementType: String, Codable, CaseIterable, Identifiable {
+    case compound, isolation, cardio
+    var id: String { rawValue }
+    var label: String { rawValue.capitalized }
+}
+
 struct Exercise: Codable, Identifiable {
     var id: String = UUID().uuidString
     var name: String
@@ -213,7 +338,8 @@ struct Exercise: Codable, Identifiable {
     var equipment: ExerciseEquipment = .barbell
     var isFavorite: Bool = false
     var instructions: String = ""
-    var difficulty: Int = 2  // 1=beginner, 2=intermediate, 3=advanced
+    var difficulty: Int = 2
+    var movementType: MovementType = .compound
 }
 
 struct RoutineExercise: Codable, Identifiable {
@@ -270,7 +396,7 @@ struct WorkoutSession: Codable, Identifiable {
     var startedAt: Date = Date()
     var finishedAt: Date? = nil
     var notes: String = ""
-    var rating: Int? = nil   // 1-5 stars post-workout
+    var rating: Int? = nil
     var bodyweightKg: Double? = nil
 
     var durationSeconds: Int {
@@ -364,7 +490,7 @@ struct WorkoutSettings: Codable {
 
 struct ProgramDay: Codable, Identifiable {
     var id: String = UUID().uuidString
-    var weekday: Int    // 1 = Monday … 7 = Sunday
+    var weekday: Int
     var routineId: String? = nil
     var label: String = ""
 }
@@ -375,6 +501,16 @@ struct WorkoutProgram: Codable, Identifiable {
     var days: [ProgramDay] = []
     var isActive: Bool = false
     var createdAt: Date = Date()
+}
+
+// MARK: - Travel Models
+
+struct VisitedLocation: Codable, Identifiable {
+    var id: String = UUID().uuidString
+    var latitude: Double
+    var longitude: Double
+    var timestamp: Date = Date()
+    var revealRadiusKm: Double = 2.0
 }
 
 // MARK: - Weight Unit

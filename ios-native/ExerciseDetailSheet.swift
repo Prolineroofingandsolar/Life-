@@ -7,6 +7,7 @@ struct ExerciseDetailSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     let exerciseId: String
+    @State private var showAddToRoutine = false
 
     private var exercise: Exercise? {
         appState.exercises.first { $0.id == exerciseId }
@@ -60,10 +61,23 @@ struct ExerciseDetailSheet: View {
                         SessionHistoryCard(sessions: recentSessions, kind: exercise?.kind ?? .weight)
                         StrengthChartCard(sessions: recentSessions)
                     }
+
+                    Button { showAddToRoutine = true } label: {
+                        Label("Add to Routine", systemImage: "plus.circle.fill")
+                            .font(.subheadline.bold())
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(Color(hex: "#30d158").opacity(0.15))
+                            .foregroundColor(Color(hex: "#30d158"))
+                            .cornerRadius(12)
+                    }
                 }
                 .padding()
             }
             .background(Color(.systemGroupedBackground))
+            .sheet(isPresented: $showAddToRoutine) {
+                AddExerciseToRoutineSheet(exerciseId: exerciseId)
+            }
             .navigationTitle(exercise?.name ?? "Exercise")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -342,5 +356,53 @@ private struct StrengthChartCard: View {
         .padding()
         .background(Color(.secondarySystemGroupedBackground))
         .cornerRadius(12)
+    }
+}
+
+// MARK: - Add Exercise to Routine Sheet
+
+private struct AddExerciseToRoutineSheet: View {
+    @Environment(AppState.self) private var appState
+    @Environment(\.dismiss) private var dismiss
+    let exerciseId: String
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if appState.routines.isEmpty {
+                    ContentUnavailableView("No Routines", systemImage: "list.bullet.rectangle",
+                        description: Text("Create a routine in the Train tab first."))
+                } else {
+                    ForEach(appState.routines) { routine in
+                        Button {
+                            let alreadyIn = routine.exercises.contains { $0.exerciseId == exerciseId }
+                            guard !alreadyIn else { dismiss(); return }
+                            let re = RoutineExercise(exerciseId: exerciseId)
+                            appState.updateRoutine(
+                                id: routine.id,
+                                exercises: routine.exercises + [re]
+                            )
+                            HapticManager.success()
+                            dismiss()
+                        } label: {
+                            HStack {
+                                Text(routine.name)
+                                    .foregroundColor(.primary)
+                                Spacer()
+                                if routine.exercises.contains(where: { $0.exerciseId == exerciseId }) {
+                                    Image(systemName: "checkmark")
+                                        .foregroundColor(Color(hex: "#30d158"))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Add to Routine")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+            }
+        }
     }
 }
