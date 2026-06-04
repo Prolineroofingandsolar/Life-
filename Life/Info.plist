@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>Life</string>
+    <key>CFBundleDisplayName</key>
+    <string>Life</string>
+    <key>CFBundleIdentifier</key>
+    <string>uk.co.prolineroofingandsolar.life</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleExecutable</key>
+    <string>$(EXECUTABLE_NAME)</string>
+    <key>LSRequiresIPhoneOS</key>
+    <true/>
+    <key>UILaunchStoryboardName</key>
+    <string>LaunchScreen</string>
+    <key>UIRequiredDeviceCapabilities</key>
+    <array>
+        <string>armv7</string>
+    </array>
+    <key>UISupportedInterfaceOrientations</key>
+    <array>
+        <string>UIInterfaceOrientationPortrait</string>
+        <string>UIInterfaceOrientationLandscapeLeft</string>
+        <string>UIInterfaceOrientationLandscapeRight</string>
+    </array>
+
+    <!-- HealthKit -->
+    <key>NSHealthShareUsageDescription</key>
+    <string>Life uses Apple Health to import your weight, body fat, and BMI data.</string>
+    <key>NSHealthUpdateUsageDescription</key>
+    <string>Life does not write to Apple Health.</string>
+
+    <!-- App Group for widget sync -->
+    <!-- App Group entitlement must be set in Entitlements file, not Info.plist -->
+
+    <!-- Background modes for notifications -->
+    <key>UIBackgroundModes</key>
+    <array>
+        <string>fetch</string>
+        <string>remote-notification</string>
+        <string>location</string>
+    </array>
+
+    <!-- Location -->
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>Life uses your location to reveal the world map as you explore.</string>
+
+    <!-- URL scheme for widget deep linking -->
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>life</string>
+            </array>
+        </dict>
+    </array>
+</dict>
+</plist>
