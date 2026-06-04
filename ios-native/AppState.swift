@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import CoreLocation
 
 // MARK: - Persistence Keys
 
@@ -25,6 +26,7 @@ struct StateSnapshot: Codable {
     var careSettings: CareSettings = CareSettings()
     var workoutSettings: WorkoutSettings = WorkoutSettings()
     var userName: String = ""
+    var visitedLocations: [VisitedLocation] = []
 }
 
 // MARK: - AppState
@@ -51,6 +53,7 @@ final class AppState {
     var workoutSettings: WorkoutSettings = WorkoutSettings()
     var userName: String = ""
     var cloudUserId: String? = nil
+    var visitedLocations: [VisitedLocation] = []
 
     // MARK: Computed Properties
 
@@ -78,6 +81,7 @@ final class AppState {
             UserDefaults.standard.set(data, forKey: PersistenceKey.appState)
         }
         WidgetSync.sync(tasks: tasks)
+        WidgetSync.syncHabits(habits: habits, todayKey: todayKey)
         if let uid = cloudUserId {
             FirestoreSync.shared.scheduleUpload(snapshot, userId: uid)
         }
@@ -99,7 +103,8 @@ final class AppState {
             careDays: careDays,
             careSettings: careSettings,
             workoutSettings: workoutSettings,
-            userName: userName
+            userName: userName,
+            visitedLocations: visitedLocations
         )
     }
 
@@ -119,6 +124,7 @@ final class AppState {
         careSettings = snapshot.careSettings
         workoutSettings = snapshot.workoutSettings
         userName = snapshot.userName
+        visitedLocations = snapshot.visitedLocations
     }
 
     // MARK: Cloud Sync
@@ -569,8 +575,11 @@ final class AppState {
 
     // MARK: - Exercise Mutations
 
-    func addCustomExercise(name: String, muscle: String, kind: ExerciseKind) {
-        let exercise = Exercise(name: name, muscle: muscle, kind: kind, isCustom: true)
+    func addCustomExercise(name: String, muscle: String, kind: ExerciseKind,
+                            equipment: ExerciseEquipment = .barbell,
+                            movementType: MovementType = .compound) {
+        let exercise = Exercise(name: name, muscle: muscle, kind: kind, isCustom: true,
+                                equipment: equipment, movementType: movementType)
         exercises.append(exercise)
         save()
     }
@@ -923,7 +932,21 @@ final class AppState {
         careSettings = CareSettings()
         workoutSettings = WorkoutSettings()
         userName = ""
+        visitedLocations = []
         seedDefaults()
+    }
+
+    // MARK: - Travel
+
+    func recordVisit(lat: Double, lon: Double) {
+        let newLoc = CLLocation(latitude: lat, longitude: lon)
+        let tooClose = visitedLocations.contains { existing in
+            let existingLoc = CLLocation(latitude: existing.latitude, longitude: existing.longitude)
+            return existingLoc.distance(from: newLoc) < 500
+        }
+        guard !tooClose else { return }
+        visitedLocations.append(VisitedLocation(latitude: lat, longitude: lon))
+        save()
     }
 
     // MARK: - Export

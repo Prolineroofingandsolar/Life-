@@ -204,6 +204,12 @@ enum AchievementKind: String, Codable, CaseIterable {
     }
 }
 
+enum MovementType: String, Codable, CaseIterable, Identifiable {
+    case compound, isolation, cardio
+    var id: String { rawValue }
+    var label: String { rawValue.capitalized }
+}
+
 struct Exercise: Codable, Identifiable {
     var id: String = UUID().uuidString
     var name: String
@@ -214,6 +220,7 @@ struct Exercise: Codable, Identifiable {
     var isFavorite: Bool = false
     var instructions: String = ""
     var difficulty: Int = 2  // 1=beginner, 2=intermediate, 3=advanced
+    var movementType: MovementType = .compound
 }
 
 struct RoutineExercise: Codable, Identifiable {
@@ -375,6 +382,16 @@ struct WorkoutProgram: Codable, Identifiable {
     var days: [ProgramDay] = []
     var isActive: Bool = false
     var createdAt: Date = Date()
+}
+
+// MARK: - Travel Models
+
+struct VisitedLocation: Codable, Identifiable {
+    var id: String = UUID().uuidString
+    var latitude: Double
+    var longitude: Double
+    var timestamp: Date = Date()
+    var revealRadiusKm: Double = 2.0
 }
 
 // MARK: - Weight Unit
