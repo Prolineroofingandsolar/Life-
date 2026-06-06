@@ -32,7 +32,7 @@ enum WidgetSync {
                 title: task.title,
                 category: task.category.rawValue,
                 done: task.done,
-                dueDate: task.dueDate.rawValue,
+                dueDate: task.dueDate?.rawValue,
                 priority: task.priority.rawValue
             )
         }
