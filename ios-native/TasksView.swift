@@ -214,7 +214,7 @@ private struct TaskRow: View {
                             Circle().fill(task.category.color).frame(width: 6, height: 6)
                             Text(task.category.label).font(.caption).foregroundColor(.secondary)
                             Text("·").foregroundColor(.secondary).font(.caption)
-                            Text(task.dueDate.label)
+                            Text(task.dueDate?.label ?? "")
                                 .font(.caption)
                                 .foregroundColor(task.dueDate == .today ? .orange : .secondary)
                             if !task.notes.isEmpty {
