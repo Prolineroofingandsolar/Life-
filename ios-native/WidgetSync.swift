@@ -58,41 +58,77 @@ enum WidgetSync {
         WidgetCenter.shared.reloadAllTimelines()
     }
 
-    // MARK: - Habit Shape
+    // MARK: - Habit Shape (matches SharedHabitStore.WidgetHabit exactly)
 
-    struct WidgetHabit: Codable {
+    private struct WidgetHabit: Codable {
         let id: String
         let name: String
         let emoji: String
-        let completedToday: Bool
+        let category: String
+        let kind: String
+        let targetType: String
+        let targetCount: Int
+        let targetUnit: String
+        let currentCount: Int
+        let isCompleted: Bool
+        let isSlipped: Bool
+        let streak: Int
+        let progress: Double
     }
 
-    private static let habitsDefaultsKey = "life_widget_habits"
-    private static let habitsFileName = "life_habits.json"
+    private static let habitsDefaultsKey = "life_widget_habits_v1"
 
     // MARK: - Sync Habits
 
     static func syncHabits(habits: [Habit], todayKey: String) {
-        let widgetHabits = habits.filter { !$0.isArchived }.map { habit in
-            let completedToday = habit.logs.contains { $0.dayKey == todayKey && !$0.slipped }
-            return WidgetHabit(id: habit.id, name: habit.name, emoji: habit.emoji, completedToday: completedToday)
+        let widgetHabits: [WidgetHabit] = habits.filter { !$0.isArchived }.map { habit in
+            let log = habit.logs.first { $0.dayKey == todayKey }
+            let currentCount = log?.count ?? 0
+            let isSlipped = log?.slipped ?? false
+            let isCompleted = !isSlipped && currentCount >= habit.targetCount
+            let progress = habit.targetCount > 0
+                ? min(1.0, Double(currentCount) / Double(habit.targetCount))
+                : 0.0
+            return WidgetHabit(
+                id: habit.id,
+                name: habit.name,
+                emoji: habit.emoji,
+                category: habit.category.rawValue,
+                kind: habit.kind.rawValue,
+                targetType: habit.targetType.rawValue,
+                targetCount: habit.targetCount,
+                targetUnit: habit.targetUnit,
+                currentCount: currentCount,
+                isCompleted: isCompleted,
+                isSlipped: isSlipped,
+                streak: streakFor(habit),
+                progress: progress
+            )
         }
 
         guard let data = try? JSONEncoder().encode(widgetHabits) else { return }
-        let jsonString = String(data: data, encoding: .utf8)
-
         if let defaults = UserDefaults(suiteName: appGroup) {
-            defaults.set(jsonString, forKey: habitsDefaultsKey)
+            defaults.set(data, forKey: habitsDefaultsKey)
             defaults.synchronize()
         }
-
-        if let containerURL = FileManager.default.containerURL(
-            forSecurityApplicationGroupIdentifier: appGroup
-        ) {
-            let fileURL = containerURL.appendingPathComponent(habitsFileName)
-            try? data.write(to: fileURL, options: .atomic)
-        }
-
         WidgetCenter.shared.reloadAllTimelines()
+    }
+
+    private static func streakFor(_ habit: Habit) -> Int {
+        let cal = Calendar.current
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        fmt.locale = Locale(identifier: "en_US_POSIX")
+        var count = 0
+        var date = cal.startOfDay(for: Date())
+        while true {
+            let key = fmt.string(from: date)
+            if let log = habit.logs.first(where: { $0.dayKey == key }),
+               log.count >= habit.targetCount, !log.slipped {
+                count += 1
+                date = cal.date(byAdding: .day, value: -1, to: date) ?? date
+            } else { break }
+        }
+        return count
     }
 }
