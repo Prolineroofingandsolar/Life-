@@ -10,7 +10,7 @@ set -e
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 XCODE_APP="${1:-$HOME/Desktop/Life/Life}"
-XCODE_WIDGET="${2:-$HOME/Desktop/Life/LifeWidget}"
+XCODE_WIDGET="${2:-$HOME/Desktop/Life/LifeTasksWidget}"
 
 echo "Pulling latest changes from GitHub..."
 git -C "$REPO_DIR" pull

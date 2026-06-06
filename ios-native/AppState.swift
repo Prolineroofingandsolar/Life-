@@ -255,6 +255,65 @@ final class AppState {
         save()
     }
 
+    // MARK: - Habit Analytics
+
+    func streakFor(_ habit: Habit) -> Int {
+        var count = 0
+        let cal = Calendar.current
+        var date = Date()
+        while true {
+            let key = date.dayKey
+            if let log = habit.logs.first(where: { $0.dayKey == key }),
+               log.count >= habit.targetCount, !log.slipped {
+                count += 1
+                date = cal.date(byAdding: .day, value: -1, to: date) ?? date
+            } else {
+                break
+            }
+        }
+        return count
+    }
+
+    func bestStreakFor(_ habit: Habit) -> Int {
+        guard !habit.logs.isEmpty else { return 0 }
+        let cal = Calendar.current
+        let sortedDays = habit.logs
+            .filter { $0.count >= habit.targetCount && !$0.slipped }
+            .compactMap { entry -> Date? in
+                let fmt = DateFormatter()
+                fmt.dateFormat = "yyyy-MM-dd"
+                fmt.locale = Locale(identifier: "en_US_POSIX")
+                return fmt.date(from: entry.dayKey)
+            }
+            .sorted()
+        guard !sortedDays.isEmpty else { return 0 }
+        var best = 1, current = 1
+        for i in 1..<sortedDays.count {
+            let diff = cal.dateComponents([.day], from: sortedDays[i-1], to: sortedDays[i]).day ?? 0
+            if diff == 1 { current += 1; best = max(best, current) } else { current = 1 }
+        }
+        return best
+    }
+
+    func totalCompletionsFor(_ habit: Habit) -> Int {
+        habit.logs.filter { $0.count >= habit.targetCount && !$0.slipped }.count
+    }
+
+    func weeklyCompletionFor(_ habit: Habit) -> Double {
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        var completed = 0
+        for offset in 0..<7 {
+            guard let day = cal.date(byAdding: .day, value: -offset, to: today) else { continue }
+            let key = day.dayKey
+            if let log = habit.logs.first(where: { $0.dayKey == key }),
+               log.count >= habit.targetCount, !log.slipped {
+                completed += 1
+            }
+        }
+        return Double(completed) / 7.0
+    }
+
     // MARK: - Habit Mutations
 
     func addHabit(name: String, emoji: String, kind: HabitKind, cadence: HabitCadence, targetCount: Int) {
