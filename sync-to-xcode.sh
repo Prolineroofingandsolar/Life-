@@ -13,7 +13,8 @@ XCODE_APP="${1:-$HOME/Desktop/Life/Life}"
 XCODE_WIDGET="${2:-$HOME/Desktop/Life/LifeTasksWidget}"
 
 echo "Pulling latest changes from GitHub..."
-git -C "$REPO_DIR" pull
+git -C "$REPO_DIR" fetch origin
+git -C "$REPO_DIR" reset --hard origin/main
 
 echo ""
 echo "Copying ios-native/*.swift → $XCODE_APP"
