@@ -14,7 +14,7 @@ XCODE_WIDGET="${2:-$HOME/Desktop/Life/LifeTasksWidget}"
 
 echo "Pulling latest changes from GitHub..."
 git -C "$REPO_DIR" fetch origin
-git -C "$REPO_DIR" reset --hard origin/main
+git -C "$REPO_DIR" reset --hard origin/claude/plan-code-changes-brlVi
 
 echo ""
 echo "Copying ios-native/*.swift → $XCODE_APP"
