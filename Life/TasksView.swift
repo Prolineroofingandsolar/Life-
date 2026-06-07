@@ -23,6 +23,7 @@ struct TasksView: View {
     @State private var undoTimer: Timer? = nil
     @State private var showUndo = false
     @State private var expandedTaskId: String? = nil
+    @State private var crm = CRMService()
 
     private var filteredTasks: [AppTask] {
         var base: [AppTask]
@@ -57,7 +58,15 @@ struct TasksView: View {
         NavigationStack {
             ZStack(alignment: .bottom) {
                 Group {
-                    if filteredTasks.isEmpty {
+                    if filter == .work {
+                        WorkView(
+                            pendingTasks: pendingTasks,
+                            doneTasks: doneTasks,
+                            expandedTaskId: $expandedTaskId,
+                            crm: crm,
+                            onDelete: { deleteTask($0) }
+                        )
+                    } else if filteredTasks.isEmpty {
                         EmptyTasksView(isSearching: !searchText.isEmpty)
                     } else {
                         List {
@@ -142,6 +151,11 @@ struct TasksView: View {
             }
             .sheet(isPresented: $showAddTask) {
                 AddTaskSheet()
+            }
+            .onChange(of: filter) { _, newFilter in
+                if newFilter == .work && crm.jobTasks.isEmpty && crm.generalTasks.isEmpty {
+                    Task { await crm.fetchAll() }
+                }
             }
         }
         .animation(.spring(response: 0.3), value: showUndo)
@@ -449,6 +463,208 @@ struct UndoToast: View {
         .cornerRadius(12)
         .padding(.horizontal, 24)
         .shadow(radius: 8)
+    }
+}
+
+// MARK: - Work View (local work tasks + CRM job & general tasks)
+
+private struct WorkView: View {
+    let pendingTasks: [AppTask]
+    let doneTasks: [AppTask]
+    @Binding var expandedTaskId: String?
+    var crm: CRMService
+    let onDelete: (AppTask) -> Void
+
+    @State private var showCRMCompleted = false
+
+    private var incompleteJobTasks: [CRMJobTask] { crm.jobTasks.filter { !$0.completed } }
+
+    private var jobGroups: [(key: String, ref: String, title: String, tasks: [CRMJobTask])] {
+        let filtered = showCRMCompleted ? crm.jobTasks : incompleteJobTasks
+        let grouped = Dictionary(grouping: filtered) { $0.leadId }
+        return grouped.compactMap { (leadId, tasks) -> (key: String, ref: String, title: String, tasks: [CRMJobTask])? in
+            guard let first = tasks.first else { return nil }
+            return (key: leadId, ref: first.jobRef, title: first.jobTitle, tasks: tasks.sorted { $0.title < $1.title })
+        }
+        .sorted { $0.ref < $1.ref }
+    }
+
+    private var visibleGeneralTasks: [CRMGeneralTask] {
+        crm.generalTasks.filter { showCRMCompleted || !$0.completed }
+    }
+
+    var body: some View {
+        List {
+            // Local work tasks
+            if !pendingTasks.isEmpty {
+                Section {
+                    ForEach(pendingTasks) { task in
+                        TaskRow(
+                            task: task,
+                            isExpanded: expandedTaskId == task.id,
+                            onExpand: {
+                                withAnimation(.spring(response: 0.35)) {
+                                    expandedTaskId = expandedTaskId == task.id ? nil : task.id
+                                }
+                            },
+                            onDelete: { onDelete(task) }
+                        )
+                    }
+                } header: { Text("Pending (\(pendingTasks.count))") }
+            }
+
+            if !doneTasks.isEmpty {
+                Section {
+                    ForEach(doneTasks) { task in
+                        TaskRow(
+                            task: task,
+                            isExpanded: expandedTaskId == task.id,
+                            onExpand: {
+                                withAnimation(.spring(response: 0.35)) {
+                                    expandedTaskId = expandedTaskId == task.id ? nil : task.id
+                                }
+                            },
+                            onDelete: { onDelete(task) }
+                        )
+                    }
+                } header: { Text("Done (\(doneTasks.count))") }
+            }
+
+            // CRM divider
+            if crm.isLoading {
+                HStack { Spacer(); ProgressView(); Spacer() }
+                    .listRowBackground(Color.clear)
+            } else if crm.error != nil {
+                Text("Could not load CRM tasks")
+                    .font(.caption).foregroundColor(.secondary)
+            } else {
+                // CRM General Tasks
+                if !visibleGeneralTasks.isEmpty {
+                    Section {
+                        ForEach(visibleGeneralTasks) { task in
+                            CRMGeneralTaskRow(task: task) {
+                                Task { await crm.completeGeneralTask(task) }
+                            }
+                        }
+                    } header: {
+                        Label("CRM — General Tasks", systemImage: "checklist")
+                    }
+                }
+
+                // CRM Job Tasks grouped by job
+                ForEach(jobGroups, id: \.key) { group in
+                    Section {
+                        ForEach(group.tasks) { task in
+                            CRMJobTaskRow(task: task) {
+                                Task { await crm.completeJobTask(task) }
+                            }
+                        }
+                    } header: {
+                        HStack(spacing: 6) {
+                            Text(group.ref)
+                                .font(.caption.weight(.bold))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Color.orange)
+                                .clipShape(Capsule())
+                            Text(group.title)
+                                .font(.caption.weight(.semibold))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button { Task { await crm.fetchAll() } } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button { showCRMCompleted.toggle() } label: {
+                    Image(systemName: showCRMCompleted ? "eye.slash" : "eye")
+                        .font(.subheadline)
+                }
+            }
+        }
+    }
+}
+
+private struct CRMJobTaskRow: View {
+    let task: CRMJobTask
+    let onComplete: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Button(action: onComplete) {
+                Image(systemName: task.completed ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundColor(task.completed ? .green : .orange)
+            }
+            .buttonStyle(.plain)
+            .disabled(task.completed)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(task.title)
+                    .font(.subheadline)
+                    .strikethrough(task.completed)
+                    .foregroundColor(task.completed ? .secondary : .primary)
+                if let due = task.dueDateParsed {
+                    Text(due, style: .date)
+                        .font(.caption)
+                        .foregroundColor(due < Date() && !task.completed ? .red : .secondary)
+                }
+            }
+        }
+        .padding(.vertical, 2)
+    }
+}
+
+private struct CRMGeneralTaskRow: View {
+    let task: CRMGeneralTask
+    let onComplete: () -> Void
+
+    private var priorityColor: Color {
+        switch task.priority {
+        case "high": return .red
+        case "medium": return .orange
+        default: return Color(hex: "#5E9BF0")
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Button(action: onComplete) {
+                Image(systemName: task.completed ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundColor(task.completed ? .green : priorityColor)
+            }
+            .buttonStyle(.plain)
+            .disabled(task.completed)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(task.title)
+                    .font(.subheadline)
+                    .strikethrough(task.completed)
+                    .foregroundColor(task.completed ? .secondary : .primary)
+                HStack(spacing: 6) {
+                    if task.priority != "low" {
+                        Text(task.priority.capitalized)
+                            .font(.caption2.weight(.semibold))
+                            .foregroundColor(priorityColor)
+                    }
+                    if let due = task.dueDateParsed {
+                        Text(due, style: .date)
+                            .font(.caption)
+                            .foregroundColor(due < Date() && !task.completed ? .red : .secondary)
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 2)
     }
 }
 

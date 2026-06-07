@@ -23,7 +23,9 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
         switch manager.authorizationStatus {
         case .notDetermined:
             manager.requestWhenInUseAuthorization()
-        case .authorizedWhenInUse, .authorizedAlways:
+        case .authorizedWhenInUse:
+            manager.requestAlwaysAuthorization()
+        case .authorizedAlways:
             startTracking()
         default:
             break
@@ -38,8 +40,13 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         authStatus = manager.authorizationStatus
-        if authStatus == .authorizedWhenInUse || authStatus == .authorizedAlways {
+        switch authStatus {
+        case .authorizedAlways:
             startTracking()
+        case .authorizedWhenInUse:
+            manager.requestAlwaysAuthorization()
+        default:
+            break
         }
     }
 

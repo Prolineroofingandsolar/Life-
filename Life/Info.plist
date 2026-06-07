@@ -51,6 +51,8 @@
     <!-- Location -->
     <key>NSLocationWhenInUseUsageDescription</key>
     <string>Life uses your location to reveal the world map as you explore.</string>
+    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+    <string>Life uses your location in the background to automatically track the countries and regions you visit on your world map.</string>
 
     <!-- URL scheme for widget deep linking -->
     <key>CFBundleURLTypes</key>
