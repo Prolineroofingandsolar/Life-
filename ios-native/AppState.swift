@@ -12,6 +12,7 @@ private enum PersistenceKey {
 
 struct StateSnapshot: Codable {
     var tasks: [AppTask] = []
+    var taskLists: [TaskList] = []
     var bills: [Bill] = []
     var habits: [Habit] = []
     var exercises: [Exercise] = []
@@ -38,6 +39,7 @@ final class AppState {
 
     var latestPR: (exerciseName: String, value: String)? = nil
     var tasks: [AppTask] = []
+    var taskLists: [TaskList] = []
     var bills: [Bill] = []
     var habits: [Habit] = []
     var exercises: [Exercise] = []
@@ -87,9 +89,14 @@ final class AppState {
         }
     }
 
+    func taskList(for task: AppTask) -> TaskList? {
+        taskLists.first { $0.id == task.listId }
+    }
+
     func makeSnapshot() -> StateSnapshot {
         StateSnapshot(
             tasks: tasks,
+            taskLists: taskLists,
             bills: bills,
             habits: habits,
             exercises: exercises,
@@ -110,6 +117,7 @@ final class AppState {
 
     func apply(snapshot: StateSnapshot) {
         tasks = snapshot.tasks
+        taskLists = snapshot.taskLists.isEmpty ? Self.defaultTaskLists : snapshot.taskLists
         bills = snapshot.bills
         habits = snapshot.habits
         exercises = WorkoutSeed.mergeExercises(into: snapshot.exercises)
@@ -151,6 +159,7 @@ final class AppState {
         if let data = UserDefaults.standard.data(forKey: PersistenceKey.appState),
            let snapshot = try? JSONDecoder().decode(StateSnapshot.self, from: data) {
             apply(snapshot: snapshot)
+            if taskLists.isEmpty { taskLists = Self.defaultTaskLists }
         } else {
             // First launch — seed default data
             exercises = WorkoutSeed.exercises
@@ -159,7 +168,14 @@ final class AppState {
         }
     }
 
+    static let defaultTaskLists: [TaskList] = [
+        TaskList(id: "work",     name: "Work",     emoji: "💼", colorHex: "#5E9BF0", isSystem: true),
+        TaskList(id: "gym",      name: "Gym",      emoji: "🏋️", colorHex: "#30d158", isSystem: true),
+        TaskList(id: "personal", name: "Personal", emoji: "🌱", colorHex: "#FF9F0A", isSystem: true),
+    ]
+
     private func seedDefaults() {
+        taskLists = Self.defaultTaskLists
         tasks = [
             AppTask(title: "Reply to client email", category: .work, dueDate: .today),
             AppTask(title: "Push session — legs", category: .gym, dueDate: .today),
