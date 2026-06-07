@@ -58,26 +58,20 @@ struct TrainView: View {
                                 .font(.system(size: 12, weight: .semibold))
                                 .foregroundColor(.secondary)
                             Spacer()
-                            Menu {
-                                Button {
-                                    showAddRoutine = true
-                                } label: {
-                                    Label("New Routine", systemImage: "plus")
+                            HStack(spacing: 14) {
+                                Button { showBrowsePrograms = true } label: {
+                                    Image(systemName: "square.grid.2x2")
+                                        .foregroundColor(Color(hex: "#30d158"))
                                 }
-                                Button {
-                                    showBrowsePrograms = true
-                                } label: {
-                                    Label("Browse Programs", systemImage: "square.grid.2x2")
+                                Button { showPrograms = true } label: {
+                                    Image(systemName: "calendar")
+                                        .foregroundColor(Color(hex: "#30d158"))
                                 }
-                                Button {
-                                    showPrograms = true
-                                } label: {
-                                    Label("My Programs", systemImage: "calendar")
+                                Button { showAddRoutine = true } label: {
+                                    Image(systemName: "plus.circle.fill")
+                                        .foregroundColor(Color(hex: "#30d158"))
+                                        .font(.system(size: 20))
                                 }
-                            } label: {
-                                Image(systemName: "ellipsis.circle")
-                                    .foregroundColor(Color(hex: "#30d158"))
-                                    .font(.system(size: 18))
                             }
                         }
                         .padding(.horizontal, 16)
@@ -154,7 +148,7 @@ struct TrainView: View {
                         }
                     }
 
-                    Color.clear.frame(height: 20)
+                    Color.clear.frame(height: 80)
                 }
                 .padding(.top, 8)
             }
@@ -330,10 +324,11 @@ private struct RoutineCard: View {
                 }
                 .frame(width: 20)
 
-                VStack(alignment: .leading, spacing: 5) {
+                VStack(alignment: .leading, spacing: 6) {
                     Text(routine.name)
                         .font(.headline)
                         .foregroundColor(.primary)
+                        .lineLimit(1)
 
                     // Muscle tags
                     ScrollView(.horizontal, showsIndicators: false) {
@@ -349,43 +344,36 @@ private struct RoutineCard: View {
                             }
                         }
                     }
+                    .frame(height: 22)
 
-                    HStack(spacing: 10) {
-                        Label("\(routine.exercises.count) exercises", systemImage: "dumbbell")
-                        Label("\(totalSets) sets", systemImage: "square.stack")
-                        Label("~\(estimatedMinutes)min", systemImage: "clock")
+                    HStack(spacing: 6) {
+                        Image(systemName: "dumbbell").font(.caption2)
+                        Text("\(routine.exercises.count) ex")
+                        Text("·")
+                        Image(systemName: "square.stack").font(.caption2)
+                        Text("\(totalSets) sets")
+                        Text("·")
+                        Image(systemName: "clock").font(.caption2)
+                        Text("~\(estimatedMinutes)m")
                     }
                     .font(.caption)
                     .foregroundColor(.secondary)
+                    .lineLimit(1)
                 }
 
-                Spacer()
+                Spacer(minLength: 8)
 
-                VStack(spacing: 8) {
-                    Button {
-                        HapticManager.impact(.medium)
-                        onStart()
-                    } label: {
-                        Image(systemName: "play.fill")
-                            .foregroundColor(.white)
-                            .frame(width: 38, height: 38)
-                            .background(Color(hex: "#30d158"))
-                            .clipShape(Circle())
-                    }
-                    .buttonStyle(PressableButtonStyle())
-
-                    Button {
-                        showEdit = true
-                    } label: {
-                        Image(systemName: "pencil")
-                            .font(.system(size: 13))
-                            .foregroundColor(.secondary)
-                            .frame(width: 38, height: 28)
-                            .background(Color(.tertiarySystemFill))
-                            .cornerRadius(7)
-                    }
-                    .buttonStyle(.plain)
+                Button {
+                    HapticManager.impact(.medium)
+                    onStart()
+                } label: {
+                    Image(systemName: "play.fill")
+                        .foregroundColor(.white)
+                        .frame(width: 40, height: 40)
+                        .background(Color(hex: "#30d158"))
+                        .clipShape(Circle())
                 }
+                .buttonStyle(PressableButtonStyle())
             }
             .padding(14)
             .contentShape(Rectangle())
@@ -428,6 +416,16 @@ private struct RoutineCard: View {
         }
         .background(Color(.secondarySystemGroupedBackground))
         .cornerRadius(14)
+        .contextMenu {
+            Button { showEdit = true } label: {
+                Label("Edit Routine", systemImage: "pencil")
+            }
+            Button(role: .destructive) {
+                appState.deleteRoutine(id: routine.id)
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
         .sheet(isPresented: $showEdit) {
             EditRoutineSheet(routine: routine)
         }
