@@ -1,15 +1,6 @@
 import WidgetKit
 import SwiftUI
 
-// MARK: - Data model
-
-struct WidgetHabit: Codable, Identifiable {
-    let id: String
-    let name: String
-    let emoji: String
-    let completedToday: Bool
-}
-
 // MARK: - Timeline Provider
 
 struct HabitsProvider: TimelineProvider {
