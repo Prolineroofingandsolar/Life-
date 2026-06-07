@@ -53,7 +53,7 @@ struct HabitDetailView: View {
                 }
                 .sheet(isPresented: $showEdit) {
                     if let h = appState.habits.first(where: { $0.id == habitId }) {
-                        EditHabitView(habit: h)
+                        EditHabitSheet(habit: h)
                     }
                 }
                 .onReceive(clockTimer) { _ in

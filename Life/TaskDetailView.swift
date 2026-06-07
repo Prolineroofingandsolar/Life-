@@ -70,42 +70,53 @@ struct TaskDetailView: View {
     private var content: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                // Title
-                TextField("Task title", text: $title, axis: .vertical)
-                    .font(.title3.bold())
-                    .focused($titleFocused)
-                    .padding(20)
-                    .onChange(of: title) { _, v in
-                        appState.updateTask(id: taskId, title: v)
-                    }
+                titleSection
+                detailSection
+                subtaskSection
+                Spacer(minLength: 40)
+            }
+        }
+        .background(Color(.systemGroupedBackground))
+    }
 
-                Divider().padding(.horizontal, 20)
-
-                // Notes
-                ZStack(alignment: .topLeading) {
-                    if notes.isEmpty {
-                        Text("Add notes...")
-                            .foregroundColor(.secondary)
-                            .font(.subheadline)
-                            .padding(.top, 8)
-                            .padding(.leading, 4)
-                            .allowsHitTesting(false)
-                    }
-                    TextEditor(text: $notes)
-                        .font(.subheadline)
-                        .frame(minHeight: 80)
-                        .scrollDisabled(true)
-                        .onChange(of: notes) { _, v in
-                            appState.updateTask(id: taskId, notes: v)
-                        }
+    private var titleSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            TextField("Task title", text: $title, axis: .vertical)
+                .font(.title3.bold())
+                .focused($titleFocused)
+                .padding(20)
+                .onChange(of: title) { _, v in
+                    appState.updateTask(id: taskId, title: v)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
 
-                Divider().padding(.horizontal, 20)
+            Divider().padding(.horizontal, 20)
 
-                // Detail rows
-                VStack(spacing: 0) {
+            ZStack(alignment: .topLeading) {
+                if notes.isEmpty {
+                    Text("Add notes...")
+                        .foregroundColor(.secondary)
+                        .font(.subheadline)
+                        .padding(.top, 8)
+                        .padding(.leading, 4)
+                        .allowsHitTesting(false)
+                }
+                TextEditor(text: $notes)
+                    .font(.subheadline)
+                    .frame(minHeight: 80)
+                    .scrollDisabled(true)
+                    .onChange(of: notes) { _, v in
+                        appState.updateTask(id: taskId, notes: v)
+                    }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+
+            Divider().padding(.horizontal, 20)
+        }
+    }
+
+    private var detailSection: some View {
+        VStack(spacing: 0) {
                     // List picker
                     detailRow(icon: "list.bullet", iconColor: list?.color ?? .secondary, label: "List") {
                         Picker("List", selection: $listId) {
@@ -274,78 +285,73 @@ struct TaskDetailView: View {
                 .shadow(color: .black.opacity(0.05), radius: 6, x: 0, y: 2)
                 .padding(.horizontal, 16)
                 .padding(.top, 16)
+    }
 
-                // Subtasks
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("Subtasks")
-                        .font(.headline)
-                        .padding(.horizontal, 20)
-                        .padding(.top, 24)
-                        .padding(.bottom, 10)
+    private var subtaskSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Subtasks")
+                .font(.headline)
+                .padding(.horizontal, 20)
+                .padding(.top, 24)
+                .padding(.bottom, 10)
 
-                    VStack(spacing: 0) {
-                        ForEach(subtasks) { sub in
-                            HStack(spacing: 12) {
-                                Button {
-                                    appState.toggleSubtask(taskId: taskId, subtaskId: sub.id)
-                                    HapticManager.impact(.light)
-                                } label: {
-                                    Image(systemName: sub.done ? "checkmark.circle.fill" : "circle")
-                                        .foregroundColor(sub.done ? .green : .secondary)
-                                        .font(.title3)
-                                }
-                                .buttonStyle(.plain)
-
-                                Text(sub.title)
-                                    .font(.subheadline)
-                                    .strikethrough(sub.done)
-                                    .foregroundColor(sub.done ? .secondary : .primary)
-                                Spacer()
-                                Button {
-                                    appState.deleteSubtask(taskId: taskId, subtaskId: sub.id)
-                                } label: {
-                                    Image(systemName: "xmark")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-
-                            if sub.id != subtasks.last?.id {
-                                Divider().padding(.leading, 48)
-                            }
-                        }
-
-                        // Add subtask row
-                        HStack(spacing: 12) {
-                            Image(systemName: "plus.circle.fill")
-                                .foregroundColor(AppTheme.primary)
+            VStack(spacing: 0) {
+                ForEach(subtasks) { sub in
+                    HStack(spacing: 12) {
+                        Button {
+                            appState.toggleSubtask(taskId: taskId, subtaskId: sub.id)
+                            HapticManager.impact(.light)
+                        } label: {
+                            Image(systemName: sub.done ? "checkmark.circle.fill" : "circle")
+                                .foregroundColor(sub.done ? .green : .secondary)
                                 .font(.title3)
-                            TextField("Add subtask...", text: $newSubtaskText)
-                                .font(.subheadline)
-                                .submitLabel(.done)
-                                .onSubmit {
-                                    let t = newSubtaskText.trimmingCharacters(in: .whitespaces)
-                                    guard !t.isEmpty else { return }
-                                    appState.addSubtask(taskId: taskId, title: t)
-                                    newSubtaskText = ""
-                                }
                         }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
+                        .buttonStyle(.plain)
+
+                        Text(sub.title)
+                            .font(.subheadline)
+                            .strikethrough(sub.done)
+                            .foregroundColor(sub.done ? .secondary : .primary)
+                        Spacer()
+                        Button {
+                            appState.deleteSubtask(taskId: taskId, subtaskId: sub.id)
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .background(AppTheme.cardBg)
-                    .cornerRadius(AppTheme.chipRadius)
-                    .shadow(color: .black.opacity(0.05), radius: 6, x: 0, y: 2)
                     .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+
+                    if sub.id != subtasks.last?.id {
+                        Divider().padding(.leading, 48)
+                    }
                 }
 
-                Spacer(minLength: 40)
+                HStack(spacing: 12) {
+                    Image(systemName: "plus.circle.fill")
+                        .foregroundColor(AppTheme.primary)
+                        .font(.title3)
+                    TextField("Add subtask...", text: $newSubtaskText)
+                        .font(.subheadline)
+                        .submitLabel(.done)
+                        .onSubmit {
+                            let t = newSubtaskText.trimmingCharacters(in: .whitespaces)
+                            guard !t.isEmpty else { return }
+                            appState.addSubtask(taskId: taskId, title: t)
+                            newSubtaskText = ""
+                        }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
             }
+            .background(AppTheme.cardBg)
+            .cornerRadius(AppTheme.chipRadius)
+            .shadow(color: .black.opacity(0.05), radius: 6, x: 0, y: 2)
+            .padding(.horizontal, 16)
         }
-        .background(Color(.systemGroupedBackground))
     }
 
     @ViewBuilder
@@ -392,6 +398,6 @@ struct TaskDetailView: View {
         estimatedMinutes    = task.estimatedMinutes
         isRecurring         = task.isRecurring
         recurrenceType      = task.recurrenceType ?? .daily
-        recurrenceInterval  = task.recurrenceInterval
+        recurrenceInterval  = task.recurrenceInterval ?? 1
     }
 }

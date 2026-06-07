@@ -257,13 +257,7 @@ private struct CompositionTab: View {
                                 x: .value("Date", point.date),
                                 y: .value(selectedMetric.rawValue, point.value)
                             )
-                            .foregroundStyle(AppTheme.primary)
-                            .interpolationMethod(.catmullRom)
-                            AreaMark(
-                                x: .value("Date", point.date),
-                                y: .value(selectedMetric.rawValue, point.value)
-                            )
-                            .foregroundStyle(AppTheme.primary.opacity(0.1).gradient)
+                            .foregroundStyle(.blue)
                             .interpolationMethod(.catmullRom)
                         }
                     }

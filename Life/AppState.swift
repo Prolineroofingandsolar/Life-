@@ -12,6 +12,7 @@ private enum PersistenceKey {
 
 struct StateSnapshot: Codable {
     var tasks: [AppTask] = []
+    var taskLists: [TaskList] = []
     var bills: [Bill] = []
     var habits: [Habit] = []
     var exercises: [Exercise] = []
@@ -38,6 +39,7 @@ final class AppState {
 
     var latestPR: (exerciseName: String, value: String)? = nil
     var tasks: [AppTask] = []
+    var taskLists: [TaskList] = []
     var bills: [Bill] = []
     var habits: [Habit] = []
     var exercises: [Exercise] = []
@@ -87,9 +89,14 @@ final class AppState {
         }
     }
 
+    func taskList(for task: AppTask) -> TaskList? {
+        taskLists.first { $0.id == task.listId }
+    }
+
     func makeSnapshot() -> StateSnapshot {
         StateSnapshot(
             tasks: tasks,
+            taskLists: taskLists,
             bills: bills,
             habits: habits,
             exercises: exercises,
@@ -110,6 +117,7 @@ final class AppState {
 
     func apply(snapshot: StateSnapshot) {
         tasks = snapshot.tasks
+        taskLists = snapshot.taskLists.isEmpty ? Self.defaultTaskLists : snapshot.taskLists
         bills = snapshot.bills
         habits = snapshot.habits
         exercises = WorkoutSeed.mergeExercises(into: snapshot.exercises)
@@ -151,6 +159,7 @@ final class AppState {
         if let data = UserDefaults.standard.data(forKey: PersistenceKey.appState),
            let snapshot = try? JSONDecoder().decode(StateSnapshot.self, from: data) {
             apply(snapshot: snapshot)
+            if taskLists.isEmpty { taskLists = Self.defaultTaskLists }
         } else {
             // First launch — seed default data
             exercises = WorkoutSeed.exercises
@@ -159,7 +168,14 @@ final class AppState {
         }
     }
 
+    static let defaultTaskLists: [TaskList] = [
+        TaskList(id: "work",     name: "Work",     emoji: "💼", colorHex: "#5E9BF0", isSystem: true),
+        TaskList(id: "gym",      name: "Gym",      emoji: "🏋️", colorHex: "#30d158", isSystem: true),
+        TaskList(id: "personal", name: "Personal", emoji: "🌱", colorHex: "#FF9F0A", isSystem: true),
+    ]
+
     private func seedDefaults() {
+        taskLists = Self.defaultTaskLists
         tasks = [
             AppTask(title: "Reply to client email", category: .work, dueDate: .today),
             AppTask(title: "Push session — legs", category: .gym, dueDate: .today),
@@ -202,13 +218,20 @@ final class AppState {
         save()
     }
 
-    func updateTask(id: String, title: String? = nil, category: TaskCategory? = nil, dueDate: DueDate? = nil, priority: TaskPriority? = nil, notes: String? = nil) {
+    func updateTask(id: String, title: String? = nil, category: TaskCategory? = nil, dueDate: DueDate?? = nil, priority: TaskPriority? = nil, notes: String? = nil, listId: String? = nil, dueDateOverride: Date?? = nil, reminderDate: Date?? = nil, scheduledTime: Date?? = nil, estimatedMinutes: Int?? = nil, isRecurring: Bool? = nil, recurrenceType: RecurrenceType?? = nil) {
         guard let idx = tasks.firstIndex(where: { $0.id == id }) else { return }
         if let title = title { tasks[idx].title = title }
         if let category = category { tasks[idx].category = category }
         if let dueDate = dueDate { tasks[idx].dueDate = dueDate }
         if let priority = priority { tasks[idx].priority = priority }
         if let notes = notes { tasks[idx].notes = notes }
+        if let listId = listId { tasks[idx].listId = listId }
+        if let override = dueDateOverride { tasks[idx].dueDateOverride = override }
+        if let rd = reminderDate { tasks[idx].reminderDate = rd }
+        if let st = scheduledTime { tasks[idx].scheduledTime = st }
+        if let em = estimatedMinutes { tasks[idx].estimatedMinutes = em }
+        if let rec = isRecurring { tasks[idx].isRecurring = rec }
+        if let rt = recurrenceType { tasks[idx].recurrenceType = rt }
         save()
     }
 
@@ -372,6 +395,41 @@ final class AppState {
             habits[idx].logs[logIdx].count += 1
         } else {
             habits[idx].logs.append(HabitLogEntry(dayKey: key, count: 1))
+        }
+        save()
+    }
+
+    func undoHabitCompletion(id: String) {
+        guard let idx = habits.firstIndex(where: { $0.id == id }) else { return }
+        let key = todayKey
+        habits[idx].logs.removeAll { $0.dayKey == key }
+        save()
+    }
+
+    func setHabitCount(id: String, count: Int) {
+        guard let idx = habits.firstIndex(where: { $0.id == id }) else { return }
+        let key = todayKey
+        let clamped = max(0, count)
+        if let logIdx = habits[idx].logs.firstIndex(where: { $0.dayKey == key }) {
+            if clamped == 0 {
+                habits[idx].logs.remove(at: logIdx)
+            } else {
+                habits[idx].logs[logIdx].count = clamped
+            }
+        } else if clamped > 0 {
+            habits[idx].logs.append(HabitLogEntry(dayKey: key, count: clamped))
+        }
+        save()
+    }
+
+    func completeHabitTimer(id: String, seconds: Int) {
+        guard let idx = habits.firstIndex(where: { $0.id == id }) else { return }
+        let key = todayKey
+        let minutes = max(1, seconds / 60)
+        if let logIdx = habits[idx].logs.firstIndex(where: { $0.dayKey == key }) {
+            habits[idx].logs[logIdx].count = minutes
+        } else {
+            habits[idx].logs.append(HabitLogEntry(dayKey: key, count: minutes))
         }
         save()
     }

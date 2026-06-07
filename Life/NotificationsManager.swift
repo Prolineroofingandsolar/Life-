@@ -97,28 +97,6 @@ final class NotificationsManager {
         center.removePendingNotificationRequests(withIdentifiers: ["rest_timer"])
     }
 
-    // MARK: - Habit Notification Categories
-
-    func registerHabitCategories() {
-        let snoozeAction = UNNotificationAction(
-            identifier: "SNOOZE_30",
-            title: "Snooze 30 min",
-            options: []
-        )
-        let doneAction = UNNotificationAction(
-            identifier: "MARK_DONE",
-            title: "Mark Done ✓",
-            options: [.foreground]
-        )
-        let habitCategory = UNNotificationCategory(
-            identifier: "HABIT_REMINDER",
-            actions: [doneAction, snoozeAction],
-            intentIdentifiers: [],
-            options: []
-        )
-        center.setNotificationCategories([habitCategory])
-    }
-
     // MARK: - Cancel All
 
     func cancelAll() {

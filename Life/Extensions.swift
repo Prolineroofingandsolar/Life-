@@ -1,36 +1,6 @@
 import SwiftUI
 import Foundation
 
-// MARK: - App Design System
-
-enum AppTheme {
-    // Brand colours
-    static let primary     = Color(hex: "#30d158")
-    static let danger      = Color(hex: "#FF375F")
-    static let warning     = Color(hex: "#FF9F0A")
-
-    // Surfaces
-    static let cardBg      = Color(.systemBackground)
-    static let pageBg      = Color(.systemGroupedBackground)
-    static let fillBg      = Color(.systemFill)
-
-    // Shape
-    static let cardRadius:   CGFloat = 18
-    static let chipRadius:   CGFloat = 12
-    static let buttonRadius: CGFloat = 14
-}
-
-extension View {
-    /// Wraps a view in the standard app card surface (white bg, corner radius, shadow).
-    func appCard(padding: CGFloat = 16) -> some View {
-        self
-            .padding(padding)
-            .background(AppTheme.cardBg)
-            .cornerRadius(AppTheme.cardRadius)
-            .shadow(color: .black.opacity(0.07), radius: 10, x: 0, y: 3)
-    }
-}
-
 // MARK: - Date Extensions
 
 extension Date {

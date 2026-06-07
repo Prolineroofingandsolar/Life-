@@ -1,6 +1,15 @@
 import WidgetKit
 import SwiftUI
 
+// MARK: - Data model
+
+struct WidgetHabit: Codable, Identifiable {
+    let id: String
+    let name: String
+    let emoji: String
+    let completedToday: Bool
+}
+
 // MARK: - Timeline Provider
 
 struct HabitsProvider: TimelineProvider {
@@ -27,10 +36,10 @@ struct HabitsProvider: TimelineProvider {
 
     func placeholder(in context: Context) -> HabitsEntry {
         HabitsEntry(date: Date(), habits: [
-            WidgetHabit(id: "1", name: "Morning run",  emoji: "🏃", category: "fitness", kind: "build", targetType: "yesNo", targetCount: 1, targetUnit: "", currentCount: 1, isCompleted: true,  isSlipped: false, streak: 3, progress: 1.0),
-            WidgetHabit(id: "2", name: "Read 20 mins", emoji: "📚", category: "mind",    kind: "build", targetType: "yesNo", targetCount: 1, targetUnit: "", currentCount: 0, isCompleted: false, isSlipped: false, streak: 0, progress: 0.0),
-            WidgetHabit(id: "3", name: "No sugar",     emoji: "🚫", category: "health",  kind: "break", targetType: "yesNo", targetCount: 1, targetUnit: "", currentCount: 1, isCompleted: true,  isSlipped: false, streak: 5, progress: 1.0),
-            WidgetHabit(id: "4", name: "Meditate",     emoji: "🧘", category: "mind",    kind: "build", targetType: "yesNo", targetCount: 1, targetUnit: "", currentCount: 0, isCompleted: false, isSlipped: false, streak: 0, progress: 0.0),
+            WidgetHabit(id: "1", name: "Morning run", emoji: "🏃", completedToday: true),
+            WidgetHabit(id: "2", name: "Read 20 mins", emoji: "📚", completedToday: false),
+            WidgetHabit(id: "3", name: "No sugar", emoji: "🚫", completedToday: true),
+            WidgetHabit(id: "4", name: "Meditate", emoji: "🧘", completedToday: false),
         ])
     }
 
@@ -50,7 +59,7 @@ struct HabitsEntry: TimelineEntry {
     let date: Date
     let habits: [WidgetHabit]
 
-    var completed: Int { habits.filter(\.isCompleted).count }
+    var completed: Int { habits.filter(\.completedToday).count }
     var total: Int { habits.count }
 }
 
@@ -118,7 +127,7 @@ private struct MediumHabitsView: View {
                 }
                 Spacer()
             } else {
-                ForEach(Array(entry.habits.prefix(4))) { habit in
+                ForEach(entry.habits.prefix(4)) { habit in
                     HStack(spacing: 8) {
                         Text(habit.emoji)
                             .font(.system(size: 14))
@@ -126,8 +135,8 @@ private struct MediumHabitsView: View {
                             .font(.system(size: 13))
                             .lineLimit(1)
                         Spacer()
-                        Image(systemName: habit.isCompleted ? "checkmark.circle.fill" : "circle")
-                            .foregroundColor(habit.isCompleted ? Color(red: 0.19, green: 0.82, blue: 0.35) : Color.secondary.opacity(0.4))
+                        Image(systemName: habit.completedToday ? "checkmark.circle.fill" : "circle")
+                            .foregroundColor(habit.completedToday ? Color(red: 0.19, green: 0.82, blue: 0.35) : Color.secondary.opacity(0.4))
                             .font(.system(size: 16))
                     }
                     .padding(.vertical, 4)
