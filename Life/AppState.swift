@@ -574,6 +574,26 @@ final class AppState {
         save()
     }
 
+    func addDropSet(sessionId: String, exerciseId: String, afterSetId: String) {
+        guard let sIdx = sessions.firstIndex(where: { $0.id == sessionId }),
+              let eIdx = sessions[sIdx].exercises.firstIndex(where: { $0.id == exerciseId }),
+              let setIdx = sessions[sIdx].exercises[eIdx].sets.firstIndex(where: { $0.id == afterSetId }) else { return }
+        let parent = sessions[sIdx].exercises[eIdx].sets[setIdx]
+        let drop = LoggedSet(weight: max(0, parent.weight - 5), reps: parent.reps, isDropSet: true)
+        sessions[sIdx].exercises[eIdx].sets.insert(drop, at: setIdx + 1)
+        save()
+    }
+
+    func setSupersetGroup(sessionId: String, exerciseIds: [String], groupId: String?) {
+        guard let sIdx = sessions.firstIndex(where: { $0.id == sessionId }) else { return }
+        for eIdx in sessions[sIdx].exercises.indices {
+            if exerciseIds.contains(sessions[sIdx].exercises[eIdx].id) {
+                sessions[sIdx].exercises[eIdx].supersetGroupId = groupId
+            }
+        }
+        save()
+    }
+
     func finishSession(sessionId: String) {
         guard let idx = sessions.firstIndex(where: { $0.id == sessionId }) else { return }
         sessions[idx].finishedAt = Date()
