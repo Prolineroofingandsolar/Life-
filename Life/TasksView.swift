@@ -152,8 +152,11 @@ struct TasksView: View {
             .sheet(isPresented: $showAddTask) {
                 AddTaskSheet()
             }
+            .task {
+                await crm.fetchAll()
+            }
             .onChange(of: filter) { _, newFilter in
-                if newFilter == .work && crm.jobTasks.isEmpty && crm.generalTasks.isEmpty {
+                if newFilter == .work {
                     Task { await crm.fetchAll() }
                 }
             }

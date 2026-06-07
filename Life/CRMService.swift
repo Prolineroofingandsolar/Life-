@@ -108,10 +108,56 @@ final class CRMService {
     }
 
     private func fetchJobTasks() async {
+        // Use the RPC function built into the CRM for this exact purpose
+        guard let url = URL(string: "\(supabaseURL)/rest/v1/rpc/get_incomplete_job_tasks") else { return }
+
+        do {
+            var req = URLRequest(url: url)
+            req.httpMethod = "POST"
+            headers.forEach { req.setValue($1, forHTTPHeaderField: $0) }
+            req.httpBody = "{}".data(using: .utf8)
+            let (data, resp) = try await URLSession.shared.data(for: req)
+            print("[CRM] job tasks raw:", String(data: data, encoding: .utf8) ?? "nil")
+
+            // If RPC fails, fall back to direct table query with no stage filter
+            if let http = resp as? HTTPURLResponse, http.statusCode != 200 {
+                await fetchJobTasksDirect()
+                return
+            }
+
+            // RPC returns [{task_id, task_title, lead_id, job_ref, customer_name, due_date}]
+            struct RPCRow: Decodable {
+                let task_id: String
+                let task_title: String
+                let lead_id: String
+                let job_ref: String?
+                let customer_name: String?
+                let due_date: String?
+            }
+            let rows = try JSONDecoder().decode([RPCRow].self, from: data)
+            let tasks = rows.map { r in
+                CRMJobTask(
+                    id: "\(r.lead_id)_\(r.task_id)",
+                    title: r.task_title,
+                    completed: false,
+                    dueDate: r.due_date,
+                    jobRef: r.job_ref ?? "JOB",
+                    jobTitle: r.customer_name ?? "Unknown Job",
+                    leadId: r.lead_id
+                )
+            }
+            await MainActor.run { self.jobTasks = tasks }
+        } catch {
+            print("[CRM] job tasks error:", error)
+            await fetchJobTasksDirect()
+        }
+    }
+
+    private func fetchJobTasksDirect() async {
         var components = URLComponents(string: "\(supabaseURL)/rest/v1/leads")!
         components.queryItems = [
-            URLQueryItem(name: "stage", value: "in.(Won,In Progress,Completed)"),
-            URLQueryItem(name: "select", value: "id,job_ref,name,tasks")
+            URLQueryItem(name: "select", value: "id,job_ref,name,tasks"),
+            URLQueryItem(name: "tasks", value: "not.is.null")
         ]
         guard let url = components.url else { return }
 
@@ -119,11 +165,11 @@ final class CRMService {
             var req = URLRequest(url: url)
             headers.forEach { req.setValue($1, forHTTPHeaderField: $0) }
             let (data, _) = try await URLSession.shared.data(for: req)
-            print("[CRM] job tasks raw:", String(data: data, encoding: .utf8) ?? "nil")
+            print("[CRM] job tasks direct raw:", String(data: data, encoding: .utf8) ?? "nil")
             let rows = try JSONDecoder().decode([LeadRow].self, from: data)
             let tasks = rows.flatMap { lead -> [CRMJobTask] in
                 (lead.tasks ?? [])
-                    .filter { !($0.isTemplate ?? false) }
+                    .filter { !$0.completed }
                     .map { t in
                         CRMJobTask(
                             id: "\(lead.id)_\(t.id)",
@@ -138,7 +184,7 @@ final class CRMService {
             }
             await MainActor.run { self.jobTasks = tasks }
         } catch {
-            print("[CRM] job tasks error:", error)
+            print("[CRM] job tasks direct error:", error)
             await MainActor.run { self.error = "Failed to load job tasks" }
         }
     }
