@@ -550,6 +550,8 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Life uses Health data to track your body composition.";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Life uses your location in the background to automatically track the countries and regions you visit on your world map.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Life uses your location to reveal the world map as you explore.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -583,6 +585,8 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Life uses Health data to track your body composition.";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Life uses your location in the background to automatically track the countries and regions you visit on your world map.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Life uses your location to reveal the world map as you explore.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
