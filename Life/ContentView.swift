@@ -3,7 +3,7 @@ import SwiftUI
 // MARK: - App Tab
 
 enum AppTab: String, CaseIterable {
-    case today, tasks, train, habits, body, money, travel
+    case today, tasks, train, habits, more
 
     var label: String {
         switch self {
@@ -11,9 +11,7 @@ enum AppTab: String, CaseIterable {
         case .tasks:   return "Tasks"
         case .train:   return "Train"
         case .habits:  return "Habits"
-        case .body:    return "Body"
-        case .money:   return "Money"
-        case .travel:  return "Travel"
+        case .more:    return "More"
         }
     }
 
@@ -23,9 +21,7 @@ enum AppTab: String, CaseIterable {
         case .tasks:   return "checkmark.circle.fill"
         case .train:   return "dumbbell.fill"
         case .habits:  return "chart.bar.fill"
-        case .body:    return "figure.stand"
-        case .money:   return "dollarsign.circle.fill"
-        case .travel:  return "map.fill"
+        case .more:    return "ellipsis"
         }
     }
 }
@@ -92,12 +88,8 @@ struct ContentView: View {
                     .tag(AppTab.train)
                 HabitsView()
                     .tag(AppTab.habits)
-                BodyView()
-                    .tag(AppTab.body)
-                MoneyView()
-                    .tag(AppTab.money)
-                WorldMapView()
-                    .tag(AppTab.travel)
+                MoreView()
+                    .tag(AppTab.more)
             }
             .toolbar(.hidden, for: .tabBar)
             // Reserve space so screen content scrolls above the pill
