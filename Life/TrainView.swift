@@ -12,7 +12,11 @@ struct TrainView: View {
     @State private var showBrowsePrograms = false
     @State private var showAchievements = false
     @State private var showPrograms = false
+    @State private var showProgressPhotos = false
     @State private var pulseResume = false
+    @State private var planDate: Date? = nil
+    @State private var sessionForDetail: WorkoutSession? = nil
+    @State private var showSessionDetail = false
 
     private var finishedSessions: [WorkoutSession] {
         appState.sessions
@@ -25,10 +29,20 @@ struct TrainView: View {
             ScrollView {
                 VStack(spacing: 20) {
 
-                    // Weekly strip
-                    WeeklyCalendarStrip()
+                    // Stats row
+                    StatsRow()
                         .padding(.horizontal, 16)
                         .padding(.top, 4)
+
+                    // Calendar card
+                    WorkoutCalendarCard(
+                        onPlanDate: { date in planDate = date },
+                        onTapSession: { session in
+                        sessionForDetail = session
+                        showSessionDetail = true
+                    }
+                    )
+                    .padding(.horizontal, 16)
 
                     // Muscle recovery
                     MuscleRecoverySection()
@@ -42,8 +56,19 @@ struct TrainView: View {
                         .onAppear { pulseResume = true }
                     }
 
-                    // Today's suggested
-                    if let suggested = appState.todaysSuggestedRoutine() {
+                    // Today's planned or suggested routine
+                    if let planned = appState.plannedSessions.first(where: {
+                        Calendar.current.isDateInToday($0.date) && !$0.completed
+                    }) {
+                        TodayPlannedCard(plan: planned) {
+                            appState.startSession(
+                                name: planned.routineName,
+                                routineId: planned.routineId
+                            )
+                            showActiveWorkout = true
+                        }
+                        .padding(.horizontal, 16)
+                    } else if let suggested = appState.todaysSuggestedRoutine() {
                         TodayRoutineCard(routine: suggested) {
                             appState.startSession(name: suggested.name, routineId: suggested.id)
                             showActiveWorkout = true
@@ -51,25 +76,28 @@ struct TrainView: View {
                         .padding(.horizontal, 16)
                     }
 
+                    // Personal Records
+                    PRSection()
+
                     // Routines section
                     VStack(alignment: .leading, spacing: 12) {
                         HStack {
                             Text("MY ROUTINES")
                                 .font(.system(size: 12, weight: .semibold))
-                                .foregroundColor(.secondary)
+                                .foregroundColor(Color(hex: "#A0A0B0"))
                             Spacer()
                             HStack(spacing: 14) {
                                 Button { showBrowsePrograms = true } label: {
                                     Image(systemName: "square.grid.2x2")
-                                        .foregroundColor(Color(hex: "#30d158"))
+                                        .foregroundColor(AppTheme.trainAccent)
                                 }
                                 Button { showPrograms = true } label: {
                                     Image(systemName: "calendar")
-                                        .foregroundColor(Color(hex: "#30d158"))
+                                        .foregroundColor(AppTheme.trainAccent)
                                 }
                                 Button { showAddRoutine = true } label: {
                                     Image(systemName: "plus.circle.fill")
-                                        .foregroundColor(Color(hex: "#30d158"))
+                                        .foregroundColor(AppTheme.trainAccent)
                                         .font(.system(size: 20))
                                 }
                             }
@@ -91,12 +119,10 @@ struct TrainView: View {
                                 Text("No routines yet")
                                     .font(.subheadline)
                                     .foregroundColor(.secondary)
-                                Button {
-                                    showAddRoutine = true
-                                } label: {
+                                Button { showAddRoutine = true } label: {
                                     Text("Create your first routine")
                                         .font(.subheadline.bold())
-                                        .foregroundColor(Color(hex: "#30d158"))
+                                        .foregroundColor(AppTheme.trainAccent)
                                 }
                             }
                             .frame(maxWidth: .infinity)
@@ -112,28 +138,31 @@ struct TrainView: View {
                         }
                     }
 
-                    // Weekly chart
+                    // Volume by muscle
+                    MuscleVolumeSection()
+
+                    // Weekly consistency
                     if !appState.sessions.filter({ $0.finishedAt != nil }).isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("LAST 8 WEEKS")
                                 .font(.system(size: 12, weight: .semibold))
-                                .foregroundColor(.secondary)
+                                .foregroundColor(Color(hex: "#A0A0B0"))
                                 .padding(.horizontal, 16)
                             WeeklyConsistencyChart()
                                 .padding(.horizontal, 16)
                                 .padding(.vertical, 12)
-                                .background(Color(.secondarySystemGroupedBackground))
+                                .background(AppTheme.trainCard)
                                 .cornerRadius(14)
                                 .padding(.horizontal, 16)
                         }
                     }
 
-                    // History
+                    // Session history
                     if !finishedSessions.isEmpty {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("HISTORY")
                                 .font(.system(size: 12, weight: .semibold))
-                                .foregroundColor(.secondary)
+                                .foregroundColor(Color(hex: "#A0A0B0"))
                                 .padding(.horizontal, 16)
 
                             ForEach(finishedSessions.prefix(10)) { session in
@@ -148,21 +177,34 @@ struct TrainView: View {
                         }
                     }
 
+                    // Progress photos nav card
+                    Button { showProgressPhotos = true } label: {
+                        ProgressPhotosNavCard()
+                    }
+                    .buttonStyle(PressableButtonStyle())
+                    .padding(.horizontal, 16)
+
                     Color.clear.frame(height: 80)
                 }
                 .padding(.top, 8)
             }
-            .background(Color(.systemGroupedBackground))
+            .background(AppTheme.trainBg)
             .navigationTitle("Train")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
                     Button { showAchievements = true } label: {
-                        Image(systemName: "trophy.fill").foregroundColor(.yellow)
+                        Image(systemName: "trophy.fill")
+                            .foregroundColor(AppTheme.trainAccent)
                     }
                     Button { showExerciseLibrary = true } label: {
                         Image(systemName: "books.vertical")
                     }
+                }
+            }
+            .sheet(isPresented: $showSessionDetail) {
+                if let session = sessionForDetail {
+                    NavigationStack { SessionDetailView(session: session) }
                 }
             }
             .fullScreenCover(isPresented: $showActiveWorkout) {
@@ -175,6 +217,339 @@ struct TrainView: View {
             .sheet(isPresented: $showBrowsePrograms) { BrowseProgramsSheet() }
             .sheet(isPresented: $showAchievements) { AchievementsView() }
             .sheet(isPresented: $showPrograms) { ProgramsView() }
+            .sheet(isPresented: $showProgressPhotos) { ProgressPhotosView() }
+            .sheet(isPresented: Binding(get: { planDate != nil }, set: { if !$0 { planDate = nil } })) {
+                if let date = planDate {
+                    PlanSessionSheet(date: date) { planDate = nil }
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+    }
+}
+
+// MARK: - Stats Row
+
+private struct StatsRow: View {
+    @Environment(AppState.self) private var appState
+
+    private var workoutsThisWeek: Int {
+        appState.sessionsThisWeek().values.flatMap { $0 }.count
+    }
+
+    private var kgThisWeek: Int {
+        Int(appState.volumeThisWeekByMuscle().map(\.volumeKg).reduce(0, +))
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            StatChip(
+                icon: "figure.strengthtraining.traditional",
+                value: "\(workoutsThisWeek)",
+                label: "WORKOUTS",
+                accent: AppTheme.trainAccent
+            )
+            StatChip(
+                icon: "scalemass.fill",
+                value: kgThisWeek > 0 ? "\(kgThisWeek)kg" : "0kg",
+                label: "VOLUME",
+                accent: Color(hex: "#FF9F0A")
+            )
+            StatChip(
+                icon: "flame.fill",
+                value: "\(appState.workoutStreak)",
+                label: "STREAK",
+                accent: Color(hex: "#FF453A")
+            )
+        }
+    }
+}
+
+private struct StatChip: View {
+    let icon: String
+    let value: String
+    let label: String
+    let accent: Color
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 20))
+                .foregroundColor(accent)
+            Text(value)
+                .font(.system(size: 22, weight: .bold))
+                .foregroundColor(.white)
+                .minimumScaleFactor(0.7)
+                .lineLimit(1)
+            Text(label)
+                .font(.system(size: 9, weight: .bold))
+                .foregroundColor(Color(hex: "#A0A0B0"))
+                .tracking(0.5)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 16)
+        .background(AppTheme.trainCard)
+        .cornerRadius(14)
+    }
+}
+
+// MARK: - Workout Calendar Card
+
+private struct WorkoutCalendarCard: View {
+    @Environment(AppState.self) private var appState
+    let onPlanDate: (Date) -> Void
+    let onTapSession: (WorkoutSession) -> Void
+
+    @State private var showMonth = false
+    private let cal = Calendar.current
+
+    private var monthTitle: String {
+        let fmt = DateFormatter()
+        fmt.dateFormat = "MMMM yyyy"
+        return fmt.string(from: Date())
+    }
+
+    private var weekDays: [(date: Date, shortDay: String)] {
+        let weekStart = cal.date(from: cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date())) ?? Date()
+        let labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        return (0..<7).map { offset in
+            let date = cal.date(byAdding: .day, value: offset, to: weekStart) ?? weekStart
+            return (date: date, shortDay: labels[offset])
+        }
+    }
+
+    private var monthDays: [Date?] {
+        let comps = cal.dateComponents([.year, .month], from: Date())
+        guard let firstOfMonth = cal.date(from: comps) else { return [] }
+        let daysInMonth = cal.range(of: .day, in: .month, for: firstOfMonth)?.count ?? 30
+        let firstWeekday = cal.component(.weekday, from: firstOfMonth) // 1=Sun
+        let offset = (firstWeekday + 5) % 7 // Mon-based offset 0-6
+        var days: [Date?] = Array(repeating: nil, count: offset)
+        for day in 1...daysInMonth {
+            days.append(cal.date(byAdding: .day, value: day - 1, to: firstOfMonth))
+        }
+        while days.count % 7 != 0 { days.append(nil) }
+        return days
+    }
+
+    private var sessionDayMap: [Date: [WorkoutSession]] {
+        var map: [Date: [WorkoutSession]] = [:]
+        for s in appState.sessions.filter({ $0.finishedAt != nil }) {
+            guard let fin = s.finishedAt else { continue }
+            let day = cal.startOfDay(for: fin)
+            map[day, default: []].append(s)
+        }
+        return map
+    }
+
+    private var plannedDaySet: Set<Date> {
+        Set(appState.plannedSessions
+            .filter { !$0.completed }
+            .map { cal.startOfDay(for: $0.date) })
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                Text(monthTitle.uppercased())
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(Color(hex: "#A0A0B0"))
+                Spacer()
+                Button {
+                    withAnimation(.spring(response: 0.35)) { showMonth.toggle() }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(showMonth ? "WEEK" : "MONTH")
+                            .font(.system(size: 11, weight: .bold))
+                        Image(systemName: showMonth ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 10, weight: .bold))
+                    }
+                    .foregroundColor(AppTheme.trainAccent)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 14)
+            .padding(.bottom, 10)
+
+            // Day-of-week labels
+            HStack(spacing: 0) {
+                ForEach(["M", "T", "W", "T", "F", "S", "S"].indices, id: \.self) { i in
+                    Text(["M", "T", "W", "T", "F", "S", "S"][i])
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(Color(hex: "#A0A0B0"))
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.bottom, 6)
+
+            if showMonth {
+                // Month grid
+                let rows = monthDays.chunked(into: 7)
+                VStack(spacing: 2) {
+                    ForEach(rows.indices, id: \.self) { rowIdx in
+                        HStack(spacing: 2) {
+                            ForEach(0..<7) { colIdx in
+                                if let date = rows[rowIdx][colIdx] {
+                                    calDayCell(date: date)
+                                } else {
+                                    Color.clear.frame(maxWidth: .infinity, minHeight: 38, maxHeight: 38)
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.bottom, 12)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            } else {
+                // Week strip
+                HStack(spacing: 2) {
+                    ForEach(weekDays, id: \.date) { entry in
+                        calDayCell(date: entry.date)
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.bottom, 12)
+            }
+
+            // Legend
+            HStack(spacing: 14) {
+                legendDot(color: Color(hex: "#30d158"), label: "Done")
+                legendDot(color: AppTheme.trainAccent, label: "Planned", isRing: true)
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 12)
+        }
+        .background(AppTheme.trainCard)
+        .cornerRadius(16)
+    }
+
+    @ViewBuilder
+    private func calDayCell(date: Date) -> some View {
+        let startOfDay = cal.startOfDay(for: date)
+        let isToday = cal.isDateInToday(date)
+        let isFuture = startOfDay > cal.startOfDay(for: Date())
+        let sessions = sessionDayMap[startOfDay] ?? []
+        let hasDone = !sessions.isEmpty
+        let hasPlanned = plannedDaySet.contains(startOfDay)
+        let dayNum = cal.component(.day, from: date)
+
+        Button {
+            HapticManager.selection()
+            if isFuture || isToday {
+                onPlanDate(date)
+            } else if let session = sessions.first {
+                onTapSession(session)
+            }
+        } label: {
+            ZStack {
+                // Background fill
+                if hasDone {
+                    Circle()
+                        .fill(Color(hex: "#30d158"))
+                        .frame(width: 34, height: 34)
+                } else if hasPlanned {
+                    Circle()
+                        .stroke(AppTheme.trainAccent, lineWidth: 2)
+                        .frame(width: 34, height: 34)
+                } else if isToday {
+                    Circle()
+                        .stroke(Color.white.opacity(0.35), lineWidth: 1.5)
+                        .frame(width: 34, height: 34)
+                }
+
+                Text("\(dayNum)")
+                    .font(.system(size: 13, weight: hasDone || isToday ? .bold : .regular))
+                    .foregroundColor(
+                        hasDone ? .white
+                        : isToday ? AppTheme.trainAccent
+                        : isFuture ? Color(hex: "#A0A0B0")
+                        : .white
+                    )
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 38)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func legendDot(color: Color, label: String, isRing: Bool = false) -> some View {
+        HStack(spacing: 5) {
+            ZStack {
+                if isRing {
+                    Circle().stroke(color, lineWidth: 2).frame(width: 9, height: 9)
+                } else {
+                    Circle().fill(color).frame(width: 9, height: 9)
+                }
+            }
+            Text(label)
+                .font(.caption2)
+                .foregroundColor(Color(hex: "#A0A0B0"))
+        }
+    }
+}
+
+// MARK: - Plan Session Sheet
+
+private struct PlanSessionSheet: View {
+    @Environment(AppState.self) private var appState
+    @Environment(\.dismiss) private var dismiss
+
+    let date: Date
+    let onDone: () -> Void
+
+    @State private var selectedRoutineId: String? = nil
+    @State private var notes = ""
+
+    private let dateFmt: DateFormatter = {
+        let f = DateFormatter(); f.dateStyle = .long; return f
+    }()
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Text(dateFmt.string(from: date))
+                        .foregroundColor(.secondary)
+                } header: { Text("Date") }
+
+                Section {
+                    Picker("Routine", selection: $selectedRoutineId) {
+                        Text("Free Workout").tag(String?.none)
+                        ForEach(appState.routines) { routine in
+                            Text(routine.name).tag(Optional(routine.id))
+                        }
+                    }
+                } header: { Text("Routine") }
+
+                Section {
+                    TextField("Optional notes…", text: $notes)
+                } header: { Text("Notes") }
+            }
+            .navigationTitle("Plan Workout")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss(); onDone() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        let name: String
+                        if let id = selectedRoutineId,
+                           let r = appState.routines.first(where: { $0.id == id }) {
+                            name = r.name
+                        } else {
+                            name = "Free Workout"
+                        }
+                        appState.planSession(date: date, routineId: selectedRoutineId, name: name)
+                        HapticManager.success()
+                        dismiss()
+                        onDone()
+                    }
+                }
+            }
         }
     }
 }
@@ -191,11 +566,11 @@ private struct ResumeCard: View {
             HStack(spacing: 14) {
                 ZStack {
                     Circle()
-                        .fill(Color(hex: "#30d158").opacity(pulse ? 0.25 : 0.12))
+                        .fill(AppTheme.trainAccent.opacity(pulse ? 0.25 : 0.12))
                         .frame(width: 44, height: 44)
                         .animation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true), value: pulse)
                     Image(systemName: "play.fill")
-                        .foregroundColor(Color(hex: "#30d158"))
+                        .foregroundColor(AppTheme.trainAccent)
                         .font(.system(size: 16))
                 }
                 VStack(alignment: .leading, spacing: 3) {
@@ -203,23 +578,60 @@ private struct ResumeCard: View {
                         .font(.headline)
                     Text(session.name)
                         .font(.subheadline)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(Color(hex: "#A0A0B0"))
                 }
                 Spacer()
                 Image(systemName: "chevron.right")
-                    .foregroundColor(Color(hex: "#30d158"))
+                    .foregroundColor(AppTheme.trainAccent)
                     .font(.system(size: 14, weight: .semibold))
             }
             .padding(16)
-            .background(Color(hex: "#30d158").opacity(0.1))
+            .background(AppTheme.trainAccent.opacity(0.1))
             .cornerRadius(14)
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color(hex: "#30d158").opacity(0.3), lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(AppTheme.trainAccent.opacity(0.35), lineWidth: 1))
         }
         .buttonStyle(PressableButtonStyle())
     }
 }
 
-// MARK: - Today Routine Card
+// MARK: - Today Planned Card (from PlannedSession)
+
+private struct TodayPlannedCard: View {
+    let plan: PlannedSession
+    let onStart: () -> Void
+
+    var body: some View {
+        HStack(spacing: 14) {
+            VStack(alignment: .leading, spacing: 4) {
+                Label("Planned Today", systemImage: "calendar.badge.checkmark")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(AppTheme.trainAccent)
+                Text(plan.routineName)
+                    .font(.headline)
+                if !plan.notes.isEmpty {
+                    Text(plan.notes)
+                        .font(.caption)
+                        .foregroundColor(Color(hex: "#A0A0B0"))
+                }
+            }
+            Spacer()
+            Button(action: onStart) {
+                Image(systemName: "play.fill")
+                    .foregroundColor(.black)
+                    .frame(width: 44, height: 44)
+                    .background(AppTheme.trainAccent)
+                    .clipShape(Circle())
+            }
+            .buttonStyle(PressableButtonStyle())
+        }
+        .padding(16)
+        .background(AppTheme.trainCard)
+        .cornerRadius(14)
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(AppTheme.trainAccent.opacity(0.3), lineWidth: 1))
+    }
+}
+
+// MARK: - Today Routine Card (from program)
 
 private struct TodayRoutineCard: View {
     let routine: Routine
@@ -230,25 +642,25 @@ private struct TodayRoutineCard: View {
             VStack(alignment: .leading, spacing: 4) {
                 Label("Today's Workout", systemImage: "calendar.badge.checkmark")
                     .font(.caption.weight(.semibold))
-                    .foregroundColor(Color(hex: "#30d158"))
+                    .foregroundColor(AppTheme.trainAccent)
                 Text(routine.name)
                     .font(.headline)
                 Text("\(routine.exercises.count) exercises")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(Color(hex: "#A0A0B0"))
             }
             Spacer()
             Button(action: onStart) {
                 Image(systemName: "play.fill")
-                    .foregroundColor(.white)
+                    .foregroundColor(.black)
                     .frame(width: 44, height: 44)
-                    .background(Color(hex: "#30d158"))
+                    .background(AppTheme.trainAccent)
                     .clipShape(Circle())
             }
             .buttonStyle(PressableButtonStyle())
         }
         .padding(16)
-        .background(Color(.secondarySystemGroupedBackground))
+        .background(AppTheme.trainCard)
         .cornerRadius(14)
     }
 }
@@ -263,20 +675,213 @@ private struct QuickStartCard: View {
             HStack(spacing: 12) {
                 Image(systemName: "bolt.fill")
                     .font(.system(size: 18))
-                    .foregroundColor(Color(hex: "#30d158"))
+                    .foregroundColor(AppTheme.trainAccent)
                 Text("Quick Start")
                     .font(.headline)
-                    .foregroundColor(.primary)
+                    .foregroundColor(.white)
                 Spacer()
                 Image(systemName: "arrow.right.circle.fill")
                     .font(.system(size: 22))
-                    .foregroundColor(Color(hex: "#30d158").opacity(0.7))
+                    .foregroundColor(AppTheme.trainAccent.opacity(0.7))
             }
             .padding(14)
-            .background(Color(.secondarySystemGroupedBackground))
+            .background(AppTheme.trainCard)
             .cornerRadius(12)
         }
         .buttonStyle(PressableButtonStyle())
+    }
+}
+
+// MARK: - PR Section
+
+private struct PRSection: View {
+    @Environment(AppState.self) private var appState
+
+    private var exercisesWithData: [(Exercise, AppState.PRResult)] {
+        appState.exercises
+            .compactMap { ex -> (Exercise, AppState.PRResult)? in
+                let prs = appState.computePRs(for: ex.id)
+                guard prs.bestWeight > 0 else { return nil }
+                return (ex, prs)
+            }
+            .sorted { $0.1.best1RM > $1.1.best1RM }
+    }
+
+    var body: some View {
+        if !exercisesWithData.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("PERSONAL RECORDS")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(Color(hex: "#A0A0B0"))
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(exercisesWithData.prefix(15), id: \.0.id) { ex, prs in
+                            PRCardView(exercise: ex, prs: prs)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 4)
+                }
+            }
+        }
+    }
+}
+
+private struct PRCardView: View {
+    @Environment(AppState.self) private var appState
+    let exercise: Exercise
+    let prs: AppState.PRResult
+    @State private var showDetail = false
+
+    var body: some View {
+        Button { showDetail = true } label: {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 6) {
+                    Image(systemName: "trophy.fill")
+                        .font(.caption)
+                        .foregroundColor(AppTheme.trainAccent)
+                    Text(exercise.muscle)
+                        .font(.caption2)
+                        .foregroundColor(exercise.muscle.muscleColor)
+                }
+
+                Text(exercise.name)
+                    .font(.subheadline.bold())
+                    .foregroundColor(.white)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(width: 130, alignment: .leading)
+
+                Spacer(minLength: 0)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 4) {
+                        Text("\(prs.bestWeight.formatted1)kg")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundColor(AppTheme.trainAccent)
+                        Text("×\(prs.bestReps)")
+                            .font(.caption)
+                            .foregroundColor(Color(hex: "#A0A0B0"))
+                    }
+                    Text("Est. 1RM: \(prs.best1RM.formatted1)kg")
+                        .font(.caption2)
+                        .foregroundColor(Color(hex: "#A0A0B0"))
+                }
+            }
+            .padding(14)
+            .frame(width: 150, height: 140)
+            .background(AppTheme.trainCard)
+            .cornerRadius(14)
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(AppTheme.trainAccent.opacity(0.2), lineWidth: 1)
+            )
+        }
+        .buttonStyle(PressableButtonStyle())
+        .sheet(isPresented: $showDetail) {
+            ExerciseDetailSheet(exerciseId: exercise.id)
+        }
+    }
+}
+
+// MARK: - Muscle Volume Section
+
+private struct MuscleVolumeSection: View {
+    @Environment(AppState.self) private var appState
+
+    private var volumeData: [(muscle: String, volumeKg: Double)] {
+        appState.volumeThisWeekByMuscle()
+    }
+
+    var body: some View {
+        if !volumeData.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("THIS WEEK'S VOLUME")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(Color(hex: "#A0A0B0"))
+                    .padding(.horizontal, 16)
+
+                VStack(spacing: 8) {
+                    ForEach(volumeData.prefix(7), id: \.muscle) { item in
+                        let maxVol = volumeData.first?.volumeKg ?? 1
+                        HStack(spacing: 10) {
+                            HStack(spacing: 5) {
+                                Circle()
+                                    .fill(item.muscle.muscleColor)
+                                    .frame(width: 7, height: 7)
+                                Text(item.muscle)
+                                    .font(.caption)
+                                    .foregroundColor(.white)
+                            }
+                            .frame(width: 80, alignment: .leading)
+
+                            GeometryReader { geo in
+                                let ratio = maxVol > 0 ? item.volumeKg / maxVol : 0
+                                ZStack(alignment: .leading) {
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .fill(Color.white.opacity(0.07))
+                                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .fill(item.muscle.muscleColor.opacity(0.75))
+                                        .frame(width: max(4, geo.size.width * ratio))
+                                }
+                            }
+                            .frame(height: 14)
+
+                            Text("\(Int(item.volumeKg))kg")
+                                .font(.caption2.monospacedDigit())
+                                .foregroundColor(Color(hex: "#A0A0B0"))
+                                .frame(width: 52, alignment: .trailing)
+                        }
+                    }
+                }
+                .padding(16)
+                .background(AppTheme.trainCard)
+                .cornerRadius(14)
+                .padding(.horizontal, 16)
+            }
+        }
+    }
+}
+
+// MARK: - Progress Photos Nav Card
+
+private struct ProgressPhotosNavCard: View {
+    @Environment(AppState.self) private var appState
+
+    var body: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color.purple.opacity(0.18))
+                    .frame(width: 44, height: 44)
+                Image(systemName: "camera.fill")
+                    .foregroundColor(.purple)
+                    .font(.system(size: 18))
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Progress Photos")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                Text(appState.progressPhotos.isEmpty
+                     ? "Track your transformation"
+                     : "\(appState.progressPhotos.count) photo\(appState.progressPhotos.count == 1 ? "" : "s")")
+                    .font(.caption)
+                    .foregroundColor(Color(hex: "#A0A0B0"))
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundColor(Color(hex: "#A0A0B0"))
+        }
+        .padding(16)
+        .background(AppTheme.trainCard)
+        .cornerRadius(14)
     }
 }
 
@@ -296,41 +901,28 @@ private struct RoutineCard: View {
         })).sorted()
     }
 
-    private var totalSets: Int {
-        routine.exercises.reduce(0) { $0 + $1.defaultSets }
-    }
-
-    private var estimatedMinutes: Int {
-        max(10, totalSets * 2)
-    }
+    private var totalSets: Int { routine.exercises.reduce(0) { $0 + $1.defaultSets } }
+    private var estimatedMinutes: Int { max(10, totalSets * 2) }
 
     var body: some View {
         VStack(spacing: 0) {
-            // Main row
-            HStack(spacing: 14) {
-                // Muscle colour stack
-                VStack(spacing: -4) {
-                    ForEach(muscleGroups.prefix(3), id: \.self) { muscle in
-                        Circle()
-                            .fill(muscle.muscleColor)
-                            .frame(width: 12, height: 12)
-                            .overlay(Circle().stroke(Color(.secondarySystemGroupedBackground), lineWidth: 1.5))
-                    }
-                    if muscleGroups.count > 3 {
-                        Text("+\(muscleGroups.count - 3)")
-                            .font(.system(size: 8, weight: .bold))
-                            .foregroundColor(.secondary)
-                    }
+            HStack(spacing: 12) {
+                // Muscle icon thumbnail
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill((muscleGroups.first ?? "Other").muscleColor.opacity(0.2))
+                        .frame(width: 44, height: 44)
+                    Image(systemName: "figure.strengthtraining.traditional")
+                        .font(.system(size: 18))
+                        .foregroundColor((muscleGroups.first ?? "Other").muscleColor)
                 }
-                .frame(width: 20)
 
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 5) {
                     Text(routine.name)
                         .font(.headline)
-                        .foregroundColor(.primary)
+                        .foregroundColor(.white)
                         .lineLimit(1)
 
-                    // Muscle tags
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 5) {
                             ForEach(muscleGroups, id: \.self) { muscle in
@@ -344,7 +936,7 @@ private struct RoutineCard: View {
                             }
                         }
                     }
-                    .frame(height: 22)
+                    .frame(height: 20)
 
                     HStack(spacing: 6) {
                         Image(systemName: "dumbbell").font(.caption2)
@@ -357,7 +949,7 @@ private struct RoutineCard: View {
                         Text("~\(estimatedMinutes)m")
                     }
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(Color(hex: "#A0A0B0"))
                     .lineLimit(1)
                 }
 
@@ -368,9 +960,9 @@ private struct RoutineCard: View {
                     onStart()
                 } label: {
                     Image(systemName: "play.fill")
-                        .foregroundColor(.white)
+                        .foregroundColor(.black)
                         .frame(width: 40, height: 40)
-                        .background(Color(hex: "#30d158"))
+                        .background(AppTheme.trainAccent)
                         .clipShape(Circle())
                 }
                 .buttonStyle(PressableButtonStyle())
@@ -382,9 +974,10 @@ private struct RoutineCard: View {
                 HapticManager.selection()
             }
 
-            // Expanded exercise list
             if expanded {
-                Divider().padding(.horizontal, 14)
+                Divider()
+                    .background(Color.white.opacity(0.1))
+                    .padding(.horizontal, 14)
                 VStack(spacing: 0) {
                     ForEach(Array(routine.exercises.enumerated()), id: \.element.id) { idx, re in
                         if let ex = appState.exercises.first(where: { $0.id == re.exerciseId }) {
@@ -392,21 +985,23 @@ private struct RoutineCard: View {
                                 Circle().fill(ex.muscle.muscleColor).frame(width: 7, height: 7)
                                 Text(ex.name)
                                     .font(.subheadline)
-                                    .foregroundColor(.primary)
+                                    .foregroundColor(.white)
                                 Spacer()
                                 Text("\(re.defaultSets)×\(re.defaultReps)")
                                     .font(.caption.monospacedDigit())
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(Color(hex: "#A0A0B0"))
                                 if re.defaultWeight > 0 {
                                     Text("\(re.defaultWeight.formatted1)kg")
                                         .font(.caption)
-                                        .foregroundColor(.secondary)
+                                        .foregroundColor(Color(hex: "#A0A0B0"))
                                 }
                             }
                             .padding(.horizontal, 14)
                             .padding(.vertical, 8)
                             if idx < routine.exercises.count - 1 {
-                                Divider().padding(.leading, 30)
+                                Divider()
+                                    .background(Color.white.opacity(0.06))
+                                    .padding(.leading, 30)
                             }
                         }
                     }
@@ -414,7 +1009,7 @@ private struct RoutineCard: View {
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .background(Color(.secondarySystemGroupedBackground))
+        .background(AppTheme.trainCard)
         .cornerRadius(14)
         .contextMenu {
             Button { showEdit = true } label: {
@@ -426,13 +1021,9 @@ private struct RoutineCard: View {
                 Label("Delete", systemImage: "trash")
             }
         }
-        .sheet(isPresented: $showEdit) {
-            EditRoutineSheet(routine: routine)
-        }
+        .sheet(isPresented: $showEdit) { EditRoutineSheet(routine: routine) }
         .swipeActions(edge: .trailing) {
-            Button(role: .destructive) {
-                appState.deleteRoutine(id: routine.id)
-            } label: {
+            Button(role: .destructive) { appState.deleteRoutine(id: routine.id) } label: {
                 Label("Delete", systemImage: "trash")
             }
         }
@@ -453,20 +1044,20 @@ private struct SessionHistoryCard: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            VStack(spacing: -4) {
-                ForEach(muscles.prefix(3), id: \.self) { m in
-                    Circle()
-                        .fill(m.muscleColor)
-                        .frame(width: 10, height: 10)
-                        .overlay(Circle().stroke(Color(.secondarySystemGroupedBackground), lineWidth: 1.5))
-                }
+            // Thumbnail
+            ZStack {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill((muscles.first ?? "Other").muscleColor.opacity(0.18))
+                    .frame(width: 44, height: 44)
+                Image(systemName: "figure.strengthtraining.traditional")
+                    .font(.system(size: 18))
+                    .foregroundColor((muscles.first ?? "Other").muscleColor)
             }
-            .frame(width: 16)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(session.name)
                     .font(.subheadline.bold())
-                    .foregroundColor(.primary)
+                    .foregroundColor(.white)
                 HStack(spacing: 10) {
                     if let finished = session.finishedAt {
                         Label(finished.formatted(date: .abbreviated, time: .omitted), systemImage: "calendar")
@@ -475,7 +1066,7 @@ private struct SessionHistoryCard: View {
                     Label("\(session.exercises.count) ex", systemImage: "dumbbell")
                 }
                 .font(.caption)
-                .foregroundColor(.secondary)
+                .foregroundColor(Color(hex: "#A0A0B0"))
             }
 
             Spacer()
@@ -484,18 +1075,19 @@ private struct SessionHistoryCard: View {
                 VStack(alignment: .trailing, spacing: 2) {
                     Text("\(Int(session.totalVolumeKg))")
                         .font(.subheadline.bold().monospacedDigit())
+                        .foregroundColor(AppTheme.trainAccent)
                     Text("kg vol")
                         .font(.caption2)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(Color(hex: "#A0A0B0"))
                 }
             }
 
             Image(systemName: "chevron.right")
                 .font(.caption.weight(.semibold))
-                .foregroundColor(.secondary.opacity(0.5))
+                .foregroundColor(Color(hex: "#A0A0B0").opacity(0.5))
         }
         .padding(14)
-        .background(Color(.secondarySystemGroupedBackground))
+        .background(AppTheme.trainCard)
         .cornerRadius(14)
     }
 }
@@ -531,9 +1123,7 @@ struct AddRoutineSheet: View {
                         Label("Add Exercise", systemImage: "plus")
                             .foregroundColor(Color(hex: "#30d158"))
                     }
-                } header: {
-                    Text("Exercises")
-                }
+                } header: { Text("Exercises") }
             }
             .navigationTitle("New Routine")
             .navigationBarTitleDisplayMode(.inline)
@@ -742,9 +1332,7 @@ struct ExerciseSelectSheet: View {
     }
 
     private var grouped: [(String, [Exercise])] {
-        if selectedMuscle != nil {
-            return [(selectedMuscle!, filtered)]
-        }
+        if selectedMuscle != nil { return [(selectedMuscle!, filtered)] }
         return availableMuscles.compactMap { muscle in
             let exs = filtered.filter { $0.muscle == muscle }
             return exs.isEmpty ? nil : (muscle, exs)
@@ -754,20 +1342,17 @@ struct ExerciseSelectSheet: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // Muscle filter chips
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
-                        FilterChipSmall(label: "All", isSelected: selectedMuscle == nil) {
-                            selectedMuscle = nil
-                        }
+                        FilterChipSmall(label: "All", isSelected: selectedMuscle == nil) { selectedMuscle = nil }
                         ForEach(availableMuscles, id: \.self) { muscle in
-                            FilterChipSmall(label: muscle, isSelected: selectedMuscle == muscle, color: muscle.muscleColor) {
+                            FilterChipSmall(label: muscle, isSelected: selectedMuscle == muscle,
+                                           color: muscle.muscleColor) {
                                 selectedMuscle = selectedMuscle == muscle ? nil : muscle
                             }
                         }
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
+                    .padding(.horizontal, 16).padding(.vertical, 10)
                 }
                 .background(Color(.systemGroupedBackground))
 
@@ -796,9 +1381,7 @@ struct ExerciseSelectSheet: View {
             .navigationTitle("Select Exercise")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
             }
         }
     }
@@ -850,7 +1433,9 @@ private struct SessionSummarySection: View {
     let session: WorkoutSession
     var body: some View {
         Section {
-            InfoRow(label: "Date", value: session.finishedAt.map { $0.formatted(date: .long, time: .shortened) } ?? "In progress")
+            InfoRow(label: "Date", value: session.finishedAt.map {
+                $0.formatted(date: .long, time: .shortened)
+            } ?? "In progress")
             InfoRow(label: "Duration", value: session.durationSeconds.formattedDurationShort)
             InfoRow(label: "Sets completed", value: "\(session.totalSets)")
             InfoRow(label: "Volume", value: session.totalVolumeKg > 0 ? "\(Int(session.totalVolumeKg)) kg" : "—")
@@ -890,7 +1475,9 @@ private struct SessionSetRow: View {
             }
             .frame(width: 20)
             if kind == .cardio {
-                Text(set.durationSec > 0 ? "\(set.durationSec / 60):\(String(format: "%02d", set.durationSec % 60))" : "—")
+                Text(set.durationSec > 0
+                     ? "\(set.durationSec / 60):\(String(format: "%02d", set.durationSec % 60))"
+                     : "—")
                 if set.distanceKm > 0 { Text("· \(set.distanceKm.formatted1) km").foregroundColor(.secondary) }
             } else {
                 Text(set.weight > 0 ? "\(set.weight.formatted1) kg" : "BW")
@@ -898,58 +1485,11 @@ private struct SessionSetRow: View {
                 Text(set.reps > 0 ? "\(set.reps)" : "—")
             }
             Spacer()
-            if set.done { Image(systemName: "checkmark.circle.fill").foregroundColor(.green).font(.caption) }
-        }
-        .font(.subheadline)
-    }
-}
-
-// MARK: - Weekly Calendar Strip
-
-private struct WeeklyCalendarStrip: View {
-    @Environment(AppState.self) private var appState
-
-    private var weekDays: [(date: Date, label: String, dayNum: String)] {
-        let cal = Calendar.current
-        let weekStart = cal.date(from: cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date())) ?? Date()
-        let shortDays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-        return (0..<7).map { offset in
-            let date = cal.date(byAdding: .day, value: offset, to: weekStart) ?? weekStart
-            return (date: date, label: shortDays[offset], dayNum: "\(cal.component(.day, from: date))")
-        }
-    }
-
-    private var sessionDays: Set<Date> {
-        let cal = Calendar.current
-        return Set(appState.sessionsThisWeek().keys.map { cal.startOfDay(for: $0) })
-    }
-
-    var body: some View {
-        HStack(spacing: 0) {
-            ForEach(weekDays, id: \.dayNum) { entry in
-                let isToday = Calendar.current.isDateInToday(entry.date)
-                let hasSession = sessionDays.contains(Calendar.current.startOfDay(for: entry.date))
-                VStack(spacing: 6) {
-                    Text(entry.label).font(.caption2).foregroundColor(.secondary)
-                    ZStack {
-                        Circle()
-                            .fill(hasSession ? Color(hex: "#30d158") : Color(.systemFill))
-                            .frame(width: 32, height: 32)
-                        if isToday && !hasSession {
-                            Circle().stroke(Color(hex: "#30d158"), lineWidth: 2).frame(width: 32, height: 32)
-                        }
-                        Text(entry.dayNum)
-                            .font(.caption.bold())
-                            .foregroundColor(hasSession ? .white : (isToday ? Color(hex: "#30d158") : .primary))
-                    }
-                }
-                .frame(maxWidth: .infinity)
+            if set.done {
+                Image(systemName: "checkmark.circle.fill").foregroundColor(.green).font(.caption)
             }
         }
-        .padding(.vertical, 10)
-        .padding(.horizontal, 4)
-        .background(Color(.secondarySystemGroupedBackground))
-        .cornerRadius(14)
+        .font(.subheadline)
     }
 }
 
@@ -966,7 +1506,7 @@ private struct MuscleRecoverySection: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("MUSCLE RECOVERY")
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(.secondary)
+                .foregroundColor(Color(hex: "#A0A0B0"))
                 .padding(.horizontal, 16)
 
             ScrollView(.horizontal, showsIndicators: false) {
@@ -987,7 +1527,7 @@ private struct MuscleRecoverySection: View {
                             }
                             Text(muscle)
                                 .font(.system(size: 10))
-                                .foregroundColor(.secondary)
+                                .foregroundColor(Color(hex: "#A0A0B0"))
                                 .lineLimit(1)
                         }
                         .frame(width: 56)
@@ -1001,7 +1541,7 @@ private struct MuscleRecoverySection: View {
                 ForEach([AppState.RecoveryStatus.fatigued, .recovering, .recovered, .fresh], id: \.label) { s in
                     HStack(spacing: 4) {
                         Circle().fill(s.color).frame(width: 7, height: 7)
-                        Text(s.label).font(.caption2).foregroundColor(.secondary)
+                        Text(s.label).font(.caption2).foregroundColor(Color(hex: "#A0A0B0"))
                     }
                 }
             }
@@ -1014,7 +1554,6 @@ private struct MuscleRecoverySection: View {
 
 private struct WeeklyConsistencyChart: View {
     @Environment(AppState.self) private var appState
-
     private var data: [(weekLabel: String, count: Int)] { appState.weeklyWorkoutCounts(weeks: 8) }
 
     var body: some View {
@@ -1024,7 +1563,7 @@ private struct WeeklyConsistencyChart: View {
                     x: .value("Week", data[i].weekLabel),
                     y: .value("Sessions", data[i].count)
                 )
-                .foregroundStyle(Color(hex: "#30d158").gradient)
+                .foregroundStyle(AppTheme.trainAccent.gradient)
                 .cornerRadius(4)
             }
         }
@@ -1033,16 +1572,21 @@ private struct WeeklyConsistencyChart: View {
             AxisMarks { value in
                 AxisValueLabel {
                     if let s = value.as(String.self) {
-                        Text(s.components(separatedBy: " ").last ?? s).font(.caption2)
+                        Text(s.components(separatedBy: " ").last ?? s)
+                            .font(.caption2)
+                            .foregroundColor(Color(hex: "#A0A0B0"))
                     }
                 }
             }
         }
         .chartYAxis {
             AxisMarks(values: .stride(by: 1)) { value in
-                AxisGridLine()
+                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [4]))
+                    .foregroundStyle(Color.white.opacity(0.1))
                 AxisValueLabel {
-                    if let v = value.as(Int.self) { Text("\(v)").font(.caption2) }
+                    if let v = value.as(Int.self) {
+                        Text("\(v)").font(.caption2).foregroundColor(Color(hex: "#A0A0B0"))
+                    }
                 }
             }
         }
@@ -1081,9 +1625,7 @@ struct BrowseProgramsSheet: View {
                         }
                         .font(.caption2).foregroundColor(.secondary)
 
-                        Button {
-                            confirmProgram = program
-                        } label: {
+                        Button { confirmProgram = program } label: {
                             Text("Add Program")
                                 .font(.subheadline.bold())
                                 .frame(maxWidth: .infinity)
@@ -1123,6 +1665,16 @@ struct BrowseProgramsSheet: View {
                     Text("Add \(prog.routines.count) routines from \"\(prog.name)\" to your routines list?")
                 }
             }
+        }
+    }
+}
+
+// MARK: - Array chunked helper
+
+private extension Array {
+    func chunked(into size: Int) -> [[Element]] {
+        stride(from: 0, to: count, by: size).map {
+            Array(self[$0..<Swift.min($0 + size, count)])
         }
     }
 }

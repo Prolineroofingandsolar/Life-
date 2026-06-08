@@ -1,4 +1,5 @@
 import SwiftUI
+import Charts
 
 // MARK: - ExerciseDetailSheet
 
@@ -21,7 +22,7 @@ struct ExerciseDetailSheet: View {
         appState.sessions
             .filter { $0.finishedAt != nil }
             .sorted { ($0.finishedAt ?? .distantPast) > ($1.finishedAt ?? .distantPast) }
-            .prefix(5)
+            .prefix(10)
             .compactMap { session -> (date: Date, bestSet: LoggedSet)? in
                 guard let fin = session.finishedAt,
                       let ex = session.exercises.first(where: { $0.exerciseId == exerciseId }) else { return nil }
@@ -300,55 +301,77 @@ private struct SessionHistoryCard: View {
 
 private struct StrengthChartCard: View {
     let sessions: [(date: Date, bestSet: LoggedSet)]
+    @State private var show1RM = false
 
-    private let dateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "MMM d"
-        return f
-    }()
-
-    private var maxWeight: Double {
-        sessions.map(\.bestSet.weight).max() ?? 1
+    // sessions arrive newest-first; chart needs oldest-first
+    private var chartData: [(date: Date, value: Double)] {
+        sessions.reversed().map { entry in
+            let v: Double = show1RM
+                ? entry.bestSet.weight * (1 + Double(entry.bestSet.reps) / 30.0)
+                : entry.bestSet.weight
+            return (date: entry.date, value: v)
+        }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Strength Progress")
-                .font(.subheadline.bold())
-                .foregroundColor(.secondary)
+            HStack {
+                Text("Strength Progress")
+                    .font(.subheadline.bold())
+                    .foregroundColor(.secondary)
+                Spacer()
+                Picker("", selection: $show1RM) {
+                    Text("Weight").tag(false)
+                    Text("Est. 1RM").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 150)
+            }
 
-            VStack(spacing: 8) {
-                ForEach(Array(sessions.enumerated()), id: \.offset) { idx, entry in
-                    HStack(spacing: 8) {
-                        Text(dateFormatter.string(from: entry.date))
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .frame(width: 50, alignment: .leading)
+            if chartData.count < 2 {
+                Text("Log more sessions to see progress")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 20)
+            } else {
+                Chart {
+                    ForEach(chartData.indices, id: \.self) { i in
+                        let pt = chartData[i]
+                        LineMark(
+                            x: .value("Date", pt.date),
+                            y: .value(show1RM ? "1RM" : "Weight", pt.value)
+                        )
+                        .interpolationMethod(.catmullRom)
+                        .foregroundStyle(Color(hex: "#30d158").gradient)
 
-                        GeometryReader { geo in
-                            let ratio = maxWeight > 0 ? entry.bestSet.weight / maxWeight : 0
-                            ZStack(alignment: .leading) {
-                                RoundedRectangle(cornerRadius: 4)
-                                    .fill(Color(.systemFill))
-                                    .frame(maxWidth: .infinity)
-                                    .frame(height: 22)
-                                RoundedRectangle(cornerRadius: 4)
-                                    .fill(
-                                        LinearGradient(
-                                            colors: [Color(hex: "#30d158"), Color(hex: "#30d158").opacity(0.7)],
-                                            startPoint: .leading,
-                                            endPoint: .trailing
-                                        )
-                                    )
-                                    .frame(width: max(8, geo.size.width * ratio), height: 22)
+                        PointMark(
+                            x: .value("Date", pt.date),
+                            y: .value(show1RM ? "1RM" : "Weight", pt.value)
+                        )
+                        .foregroundStyle(Color(hex: "#30d158"))
+                        .symbolSize(40)
+                    }
+                }
+                .frame(height: 150)
+                .chartXAxis {
+                    AxisMarks(values: .automatic(desiredCount: 4)) { value in
+                        AxisValueLabel {
+                            if let d = value.as(Date.self) {
+                                Text(d, format: .dateTime.day().month(.abbreviated))
+                                    .font(.caption2)
                             }
                         }
-                        .frame(height: 22)
-
-                        Text(entry.bestSet.weight > 0 ? "\(entry.bestSet.weight.formatted1)" : "BW")
-                            .font(.caption.bold())
-                            .foregroundColor(.secondary)
-                            .frame(width: 36, alignment: .trailing)
+                    }
+                }
+                .chartYAxis {
+                    AxisMarks(values: .automatic(desiredCount: 4)) { value in
+                        AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [4]))
+                        AxisValueLabel {
+                            if let v = value.as(Double.self) {
+                                Text("\(Int(v))").font(.caption2)
+                            }
+                        }
                     }
                 }
             }

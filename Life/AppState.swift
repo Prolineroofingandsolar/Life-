@@ -8,6 +8,26 @@ private enum PersistenceKey {
     static let appState = "life_app_state_v2"
 }
 
+// MARK: - Planned Session
+
+struct PlannedSession: Identifiable, Codable {
+    var id: String = UUID().uuidString
+    var date: Date
+    var routineId: String?
+    var routineName: String
+    var notes: String = ""
+    var completed: Bool = false
+}
+
+// MARK: - Progress Photo (stored separately, not in cloud snapshot)
+
+struct ProgressPhoto: Identifiable, Codable {
+    var id: String = UUID().uuidString
+    var date: Date
+    var label: String
+    var imageData: Data
+}
+
 // MARK: - Serializable State Snapshot
 
 struct StateSnapshot: Codable {
@@ -28,6 +48,7 @@ struct StateSnapshot: Codable {
     var workoutSettings: WorkoutSettings = WorkoutSettings()
     var userName: String = ""
     var visitedLocations: [VisitedLocation] = []
+    var plannedSessions: [PlannedSession] = []
 }
 
 // MARK: - AppState
@@ -56,6 +77,8 @@ final class AppState {
     var userName: String = ""
     var cloudUserId: String? = nil
     var visitedLocations: [VisitedLocation] = []
+    var plannedSessions: [PlannedSession] = []
+    var progressPhotos: [ProgressPhoto] = []
 
     // MARK: Computed Properties
 
@@ -111,7 +134,8 @@ final class AppState {
             careSettings: careSettings,
             workoutSettings: workoutSettings,
             userName: userName,
-            visitedLocations: visitedLocations
+            visitedLocations: visitedLocations,
+            plannedSessions: plannedSessions
         )
     }
 
@@ -133,6 +157,7 @@ final class AppState {
         workoutSettings = snapshot.workoutSettings
         userName = snapshot.userName
         visitedLocations = snapshot.visitedLocations
+        plannedSessions = snapshot.plannedSessions
     }
 
     // MARK: Cloud Sync
@@ -166,6 +191,7 @@ final class AppState {
             routines = WorkoutSeed.routines
             seedDefaults()
         }
+        loadPhotos()
     }
 
     static let defaultTaskLists: [TaskList] = [
@@ -597,6 +623,13 @@ final class AppState {
     func finishSession(sessionId: String) {
         guard let idx = sessions.firstIndex(where: { $0.id == sessionId }) else { return }
         sessions[idx].finishedAt = Date()
+        // Mark any planned session for today as completed
+        let todayStart = Calendar.current.startOfDay(for: Date())
+        if let pIdx = plannedSessions.firstIndex(where: {
+            Calendar.current.startOfDay(for: $0.date) == todayStart && !$0.completed
+        }) {
+            plannedSessions[pIdx].completed = true
+        }
         checkAndGrantAchievements()
         save()
     }
@@ -1051,6 +1084,51 @@ final class AppState {
         }
     }
 
+    // MARK: - Planned Sessions
+
+    func planSession(date: Date, routineId: String?, name: String) {
+        let plan = PlannedSession(
+            date: Calendar.current.startOfDay(for: date),
+            routineId: routineId,
+            routineName: name
+        )
+        plannedSessions.append(plan)
+        save()
+    }
+
+    func deletePlannedSession(id: String) {
+        plannedSessions.removeAll { $0.id == id }
+        save()
+    }
+
+    // MARK: - Progress Photos (stored separately, not cloud-synced)
+
+    private let photosKey = "life_progress_photos_v1"
+
+    func addProgressPhoto(imageData: Data, label: String) {
+        let photo = ProgressPhoto(date: Date(), label: label, imageData: imageData)
+        progressPhotos.append(photo)
+        savePhotos()
+    }
+
+    func deleteProgressPhoto(id: String) {
+        progressPhotos.removeAll { $0.id == id }
+        savePhotos()
+    }
+
+    private func savePhotos() {
+        if let data = try? JSONEncoder().encode(progressPhotos) {
+            UserDefaults.standard.set(data, forKey: photosKey)
+        }
+    }
+
+    func loadPhotos() {
+        if let data = UserDefaults.standard.data(forKey: photosKey),
+           let photos = try? JSONDecoder().decode([ProgressPhoto].self, from: data) {
+            progressPhotos = photos
+        }
+    }
+
     // MARK: - Reset
 
     func resetAllData() {
@@ -1070,6 +1148,9 @@ final class AppState {
         workoutSettings = WorkoutSettings()
         userName = ""
         visitedLocations = []
+        plannedSessions = []
+        progressPhotos = []
+        savePhotos()
         seedDefaults()
     }
 
