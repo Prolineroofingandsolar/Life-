@@ -2,13 +2,14 @@ import { useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Search, Plus } from 'lucide-react'
 import { useLife } from '../lib/store'
-import { EXERCISE_KIND_LABEL } from '../lib/types'
-import type { ExerciseKind } from '../lib/types'
+import { EXERCISE_KIND_LABEL, EQUIPMENT_LABEL } from '../lib/types'
+import type { ExerciseKind, ExerciseEquipment } from '../lib/types'
 import Sheet from './Sheet'
 import { SegmentedControl } from './ui'
 import { spring } from '../lib/motion'
 
 const KINDS: ExerciseKind[] = ['weight', 'bodyweight', 'cardio', 'hold']
+const EQUIPMENTS: ExerciseEquipment[] = ['barbell', 'dumbbell', 'cable', 'machine', 'bodyweight', 'kettlebell', 'band', 'other']
 
 export default function ExercisePicker({
   open,
@@ -25,6 +26,8 @@ export default function ExercisePicker({
   const [creating, setCreating] = useState(false)
   const [newName, setNewName] = useState('')
   const [newKind, setNewKind] = useState<ExerciseKind>('weight')
+  const [newMuscle, setNewMuscle] = useState('')
+  const [newEquipment, setNewEquipment] = useState<ExerciseEquipment | null>(null)
 
   const allMuscles = useMemo(() => {
     const seen = new Set<string>()
@@ -50,8 +53,15 @@ export default function ExercisePicker({
 
   const createAndPick = () => {
     if (!newName.trim()) return
-    const id = addCustomExercise(newName, newKind)
+    const id = addCustomExercise(
+      newName,
+      newKind,
+      newMuscle.trim() || undefined,
+      newEquipment ?? undefined,
+    )
     setNewName('')
+    setNewMuscle('')
+    setNewEquipment(null)
     setCreating(false)
     pick(id)
   }
@@ -67,12 +77,46 @@ export default function ExercisePicker({
             placeholder="Exercise name"
             className="w-full rounded-card bg-surface px-4 py-3.5 text-body text-label shadow-card placeholder:text-label3 focus:outline-none"
           />
-          <SegmentedControl<ExerciseKind>
-            layoutId="new-ex-kind"
-            value={newKind}
-            onChange={setNewKind}
-            options={KINDS.map((k) => ({ value: k, label: EXERCISE_KIND_LABEL[k].split(' ')[0] }))}
+
+          {/* Kind */}
+          <div>
+            <p className="mb-1.5 px-1 text-footnote text-label3">Type</p>
+            <SegmentedControl<ExerciseKind>
+              layoutId="new-ex-kind"
+              value={newKind}
+              onChange={setNewKind}
+              options={KINDS.map((k) => ({ value: k, label: EXERCISE_KIND_LABEL[k].split(' ')[0] }))}
+            />
+          </div>
+
+          {/* Equipment */}
+          <div>
+            <p className="mb-1.5 px-1 text-footnote text-label3">Equipment</p>
+            <div className="flex flex-wrap gap-1.5">
+              {EQUIPMENTS.map((eq) => (
+                <button
+                  key={eq}
+                  onClick={() => setNewEquipment(newEquipment === eq ? null : eq)}
+                  className={`rounded-full px-3 py-1 text-footnote font-medium transition-colors ${
+                    newEquipment === eq
+                      ? 'bg-accent text-white'
+                      : 'bg-fill text-label2'
+                  }`}
+                >
+                  {EQUIPMENT_LABEL[eq]}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Muscle group */}
+          <input
+            value={newMuscle}
+            onChange={(e) => setNewMuscle(e.target.value)}
+            placeholder="Muscle group (optional)"
+            className="w-full rounded-card bg-surface px-4 py-3.5 text-body text-label shadow-card placeholder:text-label3 focus:outline-none"
           />
+
           <div className="flex gap-2">
             <motion.button
               whileTap={{ scale: 0.97 }}
@@ -131,7 +175,9 @@ export default function ExercisePicker({
               >
                 <span className="text-body text-label">{e.name}</span>
                 <span className="ml-3 shrink-0 text-footnote text-label2">
-                  {e.muscle ?? EXERCISE_KIND_LABEL[e.kind]}
+                  {e.equipment
+                    ? `${EQUIPMENT_LABEL[e.equipment]}${e.muscle ? ` · ${e.muscle}` : ''}`
+                    : (e.muscle ?? EXERCISE_KIND_LABEL[e.kind])}
                 </span>
               </button>
             ))}

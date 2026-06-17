@@ -130,7 +130,7 @@ interface LifeContextValue {
   updateRoutine: (id: string, patch: Partial<Omit<Routine, 'id'>>) => void
   deleteRoutine: (id: string) => void
   duplicateRoutine: (id: string) => void
-  addCustomExercise: (name: string, kind: ExerciseKind, muscle?: string) => string
+  addCustomExercise: (name: string, kind: ExerciseKind, muscle?: string, equipment?: import('./types').ExerciseEquipment) => string
   // workout — sessions
   startSession: (routineId?: string) => void
   updateSet: (sessionId: string, exIdx: number, setIdx: number, patch: Partial<LoggedSet>) => void
@@ -305,11 +305,11 @@ export function LifeProvider({ children }: { children: ReactNode }) {
             ],
           }
         }),
-      addCustomExercise: (name, kind, muscle) => {
+      addCustomExercise: (name, kind, muscle, equipment) => {
         const id = uid()
         setState((s) => ({
           ...s,
-          exercises: [...s.exercises, { id, name: name.trim(), kind, muscle, isCustom: true }],
+          exercises: [...s.exercises, { id, name: name.trim(), kind, muscle, equipment, isCustom: true }],
         }))
         return id
       },

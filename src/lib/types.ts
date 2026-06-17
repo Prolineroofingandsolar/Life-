@@ -47,12 +47,34 @@ export const EXERCISE_KIND_LABEL: Record<ExerciseKind, string> = {
   hold: 'Timed hold',
 }
 
+export type ExerciseEquipment =
+  | 'barbell'
+  | 'dumbbell'
+  | 'cable'
+  | 'machine'
+  | 'bodyweight'
+  | 'kettlebell'
+  | 'band'
+  | 'other'
+
+export const EQUIPMENT_LABEL: Record<ExerciseEquipment, string> = {
+  barbell: 'Barbell',
+  dumbbell: 'Dumbbell',
+  cable: 'Cable',
+  machine: 'Machine',
+  bodyweight: 'Bodyweight',
+  kettlebell: 'Kettlebell',
+  band: 'Band',
+  other: 'Other',
+}
+
 export interface Exercise {
   id: string
   name: string
   kind: ExerciseKind
   /** Primary muscle / group, e.g. 'Chest', 'Back', 'Legs', 'Core', 'Cardio'. */
   muscle?: string
+  equipment?: ExerciseEquipment
   isCustom?: boolean
 }
 
