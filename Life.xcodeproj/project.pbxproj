@@ -372,12 +372,18 @@
 			buildActionMask = 2147483647;
 			files = (
 			);
+			fileSystemSynchronizedGroupsByFolder = (
+				BE4A02772FCEDDBE002102BD /* Life */,
+			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		BE4A027E2FCEDDC2002102BD /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+			);
+			fileSystemSynchronizedGroupsByFolder = (
+				BE4A02852FCEDDC2002102BD /* LifeTests */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -386,12 +392,18 @@
 			buildActionMask = 2147483647;
 			files = (
 			);
+			fileSystemSynchronizedGroupsByFolder = (
+				BE4A028F2FCEDDC2002102BD /* LifeUITests */,
+			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		BE4A03A62FCF90B8002102BD /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+			);
+			fileSystemSynchronizedGroupsByFolder = (
+				BE4A03B02FCF90B9002102BD /* LifeTasksWidget */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
