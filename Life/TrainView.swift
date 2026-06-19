@@ -10,9 +10,8 @@ struct TrainView: View {
     @State private var showExerciseLibrary = false
     @State private var showAddRoutine = false
     @State private var showBrowsePrograms = false
-    @State private var showAchievements = false
     @State private var showPrograms = false
-    @State private var showProgressPhotos = false
+    @State private var hubTab: TrainProgressHubView.HubTab? = nil
     @State private var pulseResume = false
     @State private var planDate: Date? = nil
     @State private var sessionForDetail: WorkoutSession? = nil
@@ -177,8 +176,8 @@ struct TrainView: View {
                         }
                     }
 
-                    // Progress photos nav card
-                    Button { showProgressPhotos = true } label: {
+                    // Progress / Body / Achievements hub nav card
+                    Button { hubTab = .progress } label: {
                         ProgressPhotosNavCard()
                     }
                     .buttonStyle(PressableButtonStyle())
@@ -193,7 +192,7 @@ struct TrainView: View {
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
-                    Button { showAchievements = true } label: {
+                    Button { hubTab = .achievements } label: {
                         Image(systemName: "trophy.fill")
                             .foregroundColor(AppTheme.trainAccent)
                     }
@@ -215,9 +214,10 @@ struct TrainView: View {
             .sheet(isPresented: $showExerciseLibrary) { ExerciseLibraryView() }
             .sheet(isPresented: $showAddRoutine) { AddRoutineSheet() }
             .sheet(isPresented: $showBrowsePrograms) { BrowseProgramsSheet() }
-            .sheet(isPresented: $showAchievements) { AchievementsView() }
             .sheet(isPresented: $showPrograms) { ProgramsView() }
-            .sheet(isPresented: $showProgressPhotos) { ProgressPhotosView() }
+            .sheet(item: $hubTab) { tab in
+                TrainProgressHubView(initialTab: tab)
+            }
             .sheet(isPresented: Binding(get: { planDate != nil }, set: { if !$0 { planDate = nil } })) {
                 if let date = planDate {
                     PlanSessionSheet(date: date) { planDate = nil }
