@@ -1026,7 +1026,7 @@ final class AppState {
             for ex in session.exercises { counts[ex.exerciseId, default: 0] += 1 }
         }
         return counts.sorted { $0.value > $1.value }
-            .compactMap { id, _ in exercises.first { $0.id == id.key } }
+            .compactMap { pair in exercises.first { $0.id == pair.key } }
             .prefix(limit)
             .map { $0 }
     }
