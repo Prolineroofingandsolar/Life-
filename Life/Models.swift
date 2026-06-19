@@ -484,6 +484,7 @@ struct WorkoutSettings: Codable {
     var restTimerEnabled: Bool = true
     var defaultRestSeconds: Int = 90
     var weightUnit: WeightUnit = .kg
+    var goalWeightKg: Double? = nil
 }
 
 // MARK: - Workout Programs / Splits

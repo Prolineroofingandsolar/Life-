@@ -176,8 +176,8 @@ struct TrainView: View {
                         }
                     }
 
-                    // Progress / Body / Achievements hub nav card
-                    Button { hubTab = .progress } label: {
+                    // Progress hub nav card (Activity / Progress / Body)
+                    Button { hubTab = .activity } label: {
                         ProgressPhotosNavCard()
                     }
                     .buttonStyle(PressableButtonStyle())
@@ -192,7 +192,7 @@ struct TrainView: View {
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
-                    Button { hubTab = .achievements } label: {
+                    Button { hubTab = .progress } label: {
                         Image(systemName: "trophy.fill")
                             .foregroundColor(AppTheme.trainAccent)
                     }

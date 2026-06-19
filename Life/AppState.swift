@@ -958,6 +958,129 @@ final class AppState {
     var xpLevel: Int  { max(1, xpPoints / 500) }
     var xpProgress: Double { Double(xpPoints % 500) / 500.0 }
 
+    // MARK: - Progress Screen Helpers
+
+    struct DatedValue: Identifiable {
+        let id = UUID()
+        let date: Date
+        let value: Double
+    }
+
+    struct MuscleCount: Identifiable {
+        let id = UUID()
+        let muscle: String
+        let count: Int
+    }
+
+    private var weekStartDate: Date {
+        let cal = Calendar.current
+        return cal.date(from: cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date())) ?? Date()
+    }
+
+    private var finishedSessionsSorted: [WorkoutSession] {
+        sessions.filter { $0.finishedAt != nil }
+            .sorted { ($0.finishedAt ?? .distantPast) > ($1.finishedAt ?? .distantPast) }
+    }
+
+    var workoutsThisWeekCount: Int {
+        let start = weekStartDate
+        return sessions.filter { ($0.finishedAt ?? .distantPast) >= start }.count
+    }
+
+    var trainingSecondsThisWeek: Int {
+        let start = weekStartDate
+        return sessions
+            .filter { ($0.finishedAt ?? .distantPast) >= start }
+            .reduce(0) { $0 + $1.durationSeconds }
+    }
+
+    var volumeThisWeekKg: Double {
+        let start = weekStartDate
+        return sessions
+            .filter { ($0.finishedAt ?? .distantPast) >= start }
+            .reduce(0.0) { $0 + $1.totalVolumeKg }
+    }
+
+    func recentFinishedSessions(limit: Int = 5) -> [WorkoutSession] {
+        Array(finishedSessionsSorted.prefix(limit))
+    }
+
+    /// Muscle → number of sets logged this week, sorted by volume.
+    func muscleCountsThisWeek() -> [MuscleCount] {
+        let start = weekStartDate
+        var counts: [String: Int] = [:]
+        for session in sessions where (session.finishedAt ?? .distantPast) >= start {
+            for ex in session.exercises {
+                guard let muscle = exercises.first(where: { $0.id == ex.exerciseId })?.muscle else { continue }
+                counts[muscle, default: 0] += ex.sets.filter(\.done).count
+            }
+        }
+        return counts.map { MuscleCount(muscle: $0.key, count: $0.value) }
+            .sorted { $0.count > $1.count }
+    }
+
+    /// Exercises performed most often across all finished sessions.
+    func topExercises(limit: Int = 6) -> [Exercise] {
+        var counts: [String: Int] = [:]
+        for session in sessions where session.finishedAt != nil {
+            for ex in session.exercises { counts[ex.exerciseId, default: 0] += 1 }
+        }
+        return counts.sorted { $0.value > $1.value }
+            .compactMap { id, _ in exercises.first { $0.id == id.key } }
+            .prefix(limit)
+            .map { $0 }
+    }
+
+    /// Estimated 1RM per session over time for an exercise (oldest first).
+    func oneRMHistory(for exerciseId: String) -> [DatedValue] {
+        var points: [DatedValue] = []
+        for session in finishedSessionsSorted.reversed() {
+            guard let fin = session.finishedAt else { continue }
+            var best1RM = 0.0
+            for ex in session.exercises where ex.exerciseId == exerciseId {
+                for set in ex.sets where set.done && !set.isWarmup {
+                    best1RM = max(best1RM, set.weight * (1 + Double(set.reps) / 30.0))
+                }
+            }
+            if best1RM > 0 { points.append(DatedValue(date: fin, value: best1RM)) }
+        }
+        return points
+    }
+
+    /// Improvement in all-time best 1RM contributed by the most recent session.
+    func prDelta(for exerciseId: String) -> Double {
+        let history = oneRMHistory(for: exerciseId)
+        guard history.count >= 2 else { return 0 }
+        let allTime = history.map(\.value).max() ?? 0
+        let priorBest = history.dropLast().map(\.value).max() ?? 0
+        return max(0, allTime - priorBest)
+    }
+
+    // Body helpers
+    var latestWeightKg: Double? { weightEntries.sorted { $0.date > $1.date }.first?.valueKg }
+
+    var weightChangeKg: Double? {
+        let sorted = weightEntries.sorted { $0.date > $1.date }
+        guard sorted.count >= 2 else { return nil }
+        return sorted[0].valueKg - sorted[1].valueKg
+    }
+
+    var latestBodyFatPct: Double? {
+        bodyCompEntries.sorted { $0.date > $1.date }.first { $0.bodyFatPct != nil }?.bodyFatPct
+    }
+
+    var latestLeanMassKg: Double? {
+        bodyCompEntries.sorted { $0.date > $1.date }.first { $0.leanMassKg != nil }?.leanMassKg
+    }
+
+    func weightTrend(days: Int) -> [DatedValue] {
+        let cutoff = Calendar.current.date(byAdding: .day, value: -days, to: Date()) ?? .distantPast
+        return weightEntries
+            .filter { $0.date >= cutoff }
+            .sorted { $0.date < $1.date }
+            .map { DatedValue(date: $0.date, value: $0.valueKg) }
+    }
+
     // MARK: - Body Measurements
 
     func addBodyMeasurement(_ measurement: BodyMeasurement) {
