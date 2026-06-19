@@ -513,6 +513,16 @@ struct VisitedLocation: Codable, Identifiable {
     var revealRadiusKm: Double = 2.0
 }
 
+// MARK: - Progress Photos
+
+struct ProgressPhoto: Codable, Identifiable {
+    var id: String = UUID().uuidString
+    var date: Date = Date()
+    var imageData: Data
+    var note: String = ""
+    var bodyWeight: Double? = nil
+}
+
 // MARK: - Weight Unit
 
 enum WeightUnit: String, Codable, CaseIterable, Identifiable {
