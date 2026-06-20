@@ -76,6 +76,7 @@ struct ContentView: View {
     @State private var selectedTab: AppTab = .today
     @State private var isCompact = false
     @State private var expandWorkItem: DispatchWorkItem?
+    @State private var showActiveWorkout = false
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -95,6 +96,20 @@ struct ContentView: View {
             // Reserve space so screen content scrolls above the pill
             .safeAreaInset(edge: .bottom) {
                 Color.clear.frame(height: 84)
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if let session = appState.activeSession, !showActiveWorkout {
+                    ActiveSessionBanner(session: session) {
+                        showActiveWorkout = true
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 90)
+                }
+            }
+            .sheet(isPresented: $showActiveWorkout) {
+                if let session = appState.activeSession {
+                    ActiveWorkoutView(isPresented: $showActiveWorkout, sessionId: session.id)
+                }
             }
             .simultaneousGesture(
                 DragGesture(minimumDistance: 10, coordinateSpace: .global)
@@ -166,6 +181,60 @@ struct FloatingTabBar: View {
         .overlay(Capsule().strokeBorder(Color.white.opacity(0.1), lineWidth: 0.5))
         .shadow(color: .black.opacity(0.22), radius: 18, x: 0, y: 6)
         .padding(.horizontal, 18)
+    }
+}
+
+// MARK: - Active Session Banner
+
+private struct ActiveSessionBanner: View {
+    let session: WorkoutSession
+    let onTap: () -> Void
+    @State private var elapsed: Int = 0
+    @State private var bannerTimer: Timer? = nil
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(Color(hex: "#FFD700").opacity(0.2))
+                        .frame(width: 40, height: 40)
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 14))
+                        .foregroundColor(Color(hex: "#FFD700"))
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(session.name)
+                        .font(.subheadline.bold())
+                        .foregroundColor(.primary)
+                    Text(elapsed.formattedDuration)
+                        .font(.caption.monospacedDigit())
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+                Text("Resume")
+                    .font(.subheadline.bold())
+                    .foregroundColor(Color(hex: "#FFD700"))
+                Image(systemName: "chevron.up")
+                    .font(.caption.bold())
+                    .foregroundColor(Color(hex: "#FFD700"))
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(.ultraThinMaterial)
+            .cornerRadius(16)
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(Color(hex: "#FFD700").opacity(0.4), lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 2)
+        }
+        .buttonStyle(.plain)
+        .onAppear {
+            elapsed = Int(Date().timeIntervalSince(session.startedAt))
+            bannerTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in elapsed += 1 }
+        }
+        .onDisappear { bannerTimer?.invalidate(); bannerTimer = nil }
     }
 }
 

@@ -59,6 +59,7 @@ final class AppState {
     // MARK: Stored Properties
 
     var latestPR: (exerciseName: String, value: String)? = nil
+    var showWorkoutSheet: Bool = false
     var tasks: [AppTask] = []
     var taskLists: [TaskList] = []
     var bills: [Bill] = []
@@ -654,6 +655,30 @@ final class AppState {
     func renameSession(sessionId: String, name: String) {
         guard let idx = sessions.firstIndex(where: { $0.id == sessionId }) else { return }
         sessions[idx].name = name
+        save()
+    }
+
+    func reorderExercises(sessionId: String, from: IndexSet, to: Int) {
+        guard let idx = sessions.firstIndex(where: { $0.id == sessionId }) else { return }
+        sessions[idx].exercises.move(fromOffsets: from, toOffset: to)
+        save()
+    }
+
+    func addWarmupSets(sessionId: String, exerciseId: String) {
+        guard let sIdx = sessions.firstIndex(where: { $0.id == sessionId }),
+              let eIdx = sessions[sIdx].exercises.firstIndex(where: { $0.id == exerciseId }) else { return }
+        let workingWeight = sessions[sIdx].exercises[eIdx].sets.first(where: { !$0.isWarmup })?.weight
+                            ?? suggestedWeight(for: exerciseId)
+        guard workingWeight > 0 else { return }
+        let warmupSpecs: [(pct: Double, reps: Int)] = [(0.4, 5), (0.6, 3), (0.8, 2)]
+        let newSets = warmupSpecs.map { w -> LoggedSet in
+            var s = LoggedSet()
+            s.weight = (workingWeight * w.pct / 2.5).rounded() * 2.5
+            s.reps = w.reps
+            s.isWarmup = true
+            return s
+        }
+        sessions[sIdx].exercises[eIdx].sets.insert(contentsOf: newSets, at: 0)
         save()
     }
 

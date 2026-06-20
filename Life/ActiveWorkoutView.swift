@@ -23,6 +23,7 @@ struct ActiveWorkoutView: View {
     @State private var isEditingName = false
     @State private var sessionName: String = ""
     @State private var notesText: String = ""
+    @State private var isReorderMode = false
 
     private var session: WorkoutSession? {
         appState.sessions.first { $0.id == sessionId }
@@ -68,107 +69,169 @@ struct ActiveWorkoutView: View {
 
     @ViewBuilder
     private func workoutContent(session: WorkoutSession) -> some View {
-        ScrollView {
-            VStack(spacing: 0) {
-                if showRestBanner {
-                    RestTimerBanner(secondsRemaining: restSecondsRemaining, totalSeconds: restTotalSeconds) {
-                        stopRestTimer()
-                    }
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                }
-
-                if showPRBanner {
-                    PRBanner(text: prBannerText)
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                        .padding(.horizontal, 16)
-                }
-
-                LazyVStack(spacing: 16) {
-                    ForEach(exerciseGroups(session: session), id: \.first?.id) { group in
-                        if group.count > 1 {
-                            SupersetCard(
-                                sessionId: sessionId,
-                                exercises: group,
-                                onSetDone: { handleSetDone($0) }
-                            )
-                            .padding(.horizontal, 16)
-                        } else if let ex = group.first {
-                            ExerciseCard(
-                                sessionId: sessionId,
-                                sessionExercise: ex,
-                                onSetDone: { handleSetDone($0) },
-                                onPairSuperset: { pairWithNext(ex, in: session) }
-                            )
-                            .padding(.horizontal, 16)
+        Group {
+            if isReorderMode {
+                List {
+                    ForEach(session.exercises, id: \.id) { ex in
+                        let exercise = appState.exercises.first { $0.id == ex.exerciseId }
+                        HStack(spacing: 12) {
+                            Circle()
+                                .fill(exercise?.muscle.muscleColor ?? Color.secondary)
+                                .frame(width: 10, height: 10)
+                            Text(exercise?.name ?? "Exercise")
+                                .font(.headline)
+                            Spacer()
+                            Image(systemName: "line.3.horizontal")
+                                .foregroundColor(.secondary)
                         }
+                        .padding(.vertical, 4)
                     }
-
-                    Button {
-                        showExercisePicker = true
-                    } label: {
-                        Label("Add Exercise", systemImage: "plus.circle.fill")
-                            .font(.headline)
-                            .foregroundColor(Color(hex: "#30d158"))
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(Color(.secondarySystemGroupedBackground))
-                            .cornerRadius(12)
-                            .padding(.horizontal, 16)
-                    }
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Session Notes")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .padding(.horizontal, 16)
-                        TextField("Add notes about this workout...", text: $notesText, axis: .vertical)
-                            .font(.subheadline)
-                            .padding(12)
-                            .background(Color(.secondarySystemGroupedBackground))
-                            .cornerRadius(12)
-                            .padding(.horizontal, 16)
-                            .lineLimit(3...6)
-                            .onChange(of: notesText) { _, new in
-                                appState.updateSessionNotes(sessionId: sessionId, notes: new)
-                            }
+                    .onMove { from, to in
+                        appState.reorderExercises(sessionId: sessionId, from: from, to: to)
                     }
                 }
-                .padding(.vertical, 16)
+                .listStyle(.insetGrouped)
+                .environment(\.editMode, .constant(.active))
+            } else {
+                ScrollView {
+                    VStack(spacing: 0) {
+                        if showPRBanner {
+                            PRBanner(text: prBannerText)
+                                .transition(.move(edge: .top).combined(with: .opacity))
+                                .padding(.horizontal, 16)
+                                .padding(.top, 8)
+                        }
+
+                        LazyVStack(spacing: 16) {
+                            ForEach(exerciseGroups(session: session), id: \.first?.id) { group in
+                                if group.count > 1 {
+                                    SupersetCard(
+                                        sessionId: sessionId,
+                                        exercises: group,
+                                        onSetDone: { handleSetDone($0) }
+                                    )
+                                    .padding(.horizontal, 16)
+                                } else if let ex = group.first {
+                                    ExerciseCard(
+                                        sessionId: sessionId,
+                                        sessionExercise: ex,
+                                        onSetDone: { handleSetDone($0) },
+                                        onPairSuperset: { pairWithNext(ex, in: session) }
+                                    )
+                                    .padding(.horizontal, 16)
+                                }
+                            }
+
+                            Button {
+                                showExercisePicker = true
+                            } label: {
+                                Label("Add Exercise", systemImage: "plus.circle.fill")
+                                    .font(.headline)
+                                    .foregroundColor(Color(hex: "#30d158"))
+                                    .frame(maxWidth: .infinity)
+                                    .padding()
+                                    .background(Color(.secondarySystemGroupedBackground))
+                                    .cornerRadius(12)
+                                    .padding(.horizontal, 16)
+                            }
+
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Session Notes")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .padding(.horizontal, 16)
+                                TextField("Add notes about this workout...", text: $notesText, axis: .vertical)
+                                    .font(.subheadline)
+                                    .padding(12)
+                                    .background(Color(.secondarySystemGroupedBackground))
+                                    .cornerRadius(12)
+                                    .padding(.horizontal, 16)
+                                    .lineLimit(3...6)
+                                    .onChange(of: notesText) { _, new in
+                                        appState.updateSessionNotes(sessionId: sessionId, notes: new)
+                                    }
+                            }
+                        }
+                        .padding(.vertical, 16)
+                    }
+                }
+                .overlay(alignment: .bottom) {
+                    if showRestBanner {
+                        RestTimerPill(secondsRemaining: restSecondsRemaining, totalSeconds: restTotalSeconds) {
+                            stopRestTimer()
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 12)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+                }
             }
         }
         .background(Color(.systemGroupedBackground))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            // LEFT: minimise button
             ToolbarItem(placement: .navigationBarLeading) {
-                if isEditingName {
-                    TextField("Session name", text: $sessionName)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 180)
-                        .onSubmit {
-                            appState.renameSession(sessionId: sessionId, name: sessionName)
-                            isEditingName = false
-                        }
-                } else {
-                    Button { isEditingName = true } label: {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(session.name).font(.headline).foregroundColor(.primary)
-                            Text(elapsedSeconds.formattedDuration)
-                                .font(.caption.monospacedDigit()).foregroundColor(.secondary)
-                        }
-                    }
-                    .buttonStyle(.plain)
+                Button { isPresented = false } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.primary)
                 }
             }
+            // CENTER: session name + timer
+            ToolbarItem(placement: .principal) {
+                VStack(spacing: 1) {
+                    if isEditingName {
+                        TextField("Session name", text: $sessionName)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 160)
+                            .font(.headline)
+                            .onSubmit {
+                                appState.renameSession(sessionId: sessionId, name: sessionName)
+                                isEditingName = false
+                            }
+                    } else {
+                        Button { isEditingName = true } label: {
+                            Text(session.name)
+                                .font(.headline)
+                                .foregroundColor(.primary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    Text(elapsedSeconds.formattedDuration)
+                        .font(.caption.monospacedDigit())
+                        .foregroundColor(.secondary)
+                }
+            }
+            // RIGHT: reorder toggle + finish
             ToolbarItemGroup(placement: .navigationBarTrailing) {
-                Button { showDiscardAlert = true } label: {
-                    Text("Discard").foregroundColor(.red)
+                Button {
+                    withAnimation(.spring(response: 0.3)) { isReorderMode.toggle() }
+                } label: {
+                    Image(systemName: isReorderMode ? "checkmark" : "arrow.up.arrow.down")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(isReorderMode ? Color(hex: "#30d158") : .secondary)
+                }
+                Menu {
+                    Button(role: .destructive) { showDiscardAlert = true } label: {
+                        Label("Discard Workout", systemImage: "trash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .foregroundColor(.secondary)
                 }
                 Button {
                     stopTimers()
                     appState.finishSession(sessionId: sessionId)
                     showSummary = true
                 } label: {
-                    Text("Finish").bold().foregroundColor(Color(hex: "#30d158"))
+                    Text("Finish")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 6)
+                        .background(Color(hex: "#30d158"))
+                        .cornerRadius(8)
                 }
             }
         }
@@ -191,6 +254,7 @@ struct ActiveWorkoutView: View {
             }
         }
         .animation(.spring(response: 0.3), value: showRestBanner)
+        .animation(.spring(response: 0.3), value: showPRBanner)
     }
 
     // MARK: - Superset pairing
@@ -358,42 +422,13 @@ private struct ExerciseCard: View {
 
             Divider()
 
-            // Footer actions
-            HStack(spacing: 0) {
-                Button {
-                    appState.addSet(sessionId: sessionId, exerciseId: sessionExercise.id)
-                    HapticManager.impact(.light)
-                } label: {
-                    Label("Add Set", systemImage: "plus")
-                        .font(.subheadline)
-                        .foregroundColor(Color(hex: "#30d158"))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 11)
-                }
-
-                Divider().frame(height: 20)
-
-                Button {
-                    onPairSuperset()
-                } label: {
-                    Label("Superset", systemImage: "arrow.triangle.2.circlepath")
-                        .font(.subheadline)
-                        .foregroundColor(Color(hex: "#5E9BF0"))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 11)
-                }
-
-                Divider().frame(height: 20)
-
-                Button {
-                    appState.removeExerciseFromSession(sessionId: sessionId, exerciseId: sessionExercise.id)
-                } label: {
-                    Image(systemName: "trash")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .frame(width: 48)
-                        .padding(.vertical, 11)
-                }
+            // Footer: only superset
+            Button { onPairSuperset() } label: {
+                Label("Superset", systemImage: "arrow.triangle.2.circlepath")
+                    .font(.subheadline)
+                    .foregroundColor(Color(hex: "#5E9BF0"))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 11)
             }
         }
         .background(Color(.secondarySystemGroupedBackground))
@@ -431,47 +466,71 @@ private struct ExerciseCardContent: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Header
-            HStack(spacing: 10) {
-                // Superset letter badge or muscle dot
-                if let label = supersetLabel {
-                    Text(label)
-                        .font(.caption.bold())
-                        .foregroundColor(.white)
-                        .frame(width: 22, height: 22)
-                        .background(accentColor)
-                        .clipShape(Circle())
-                } else {
-                    Circle()
-                        .fill(accentColor)
-                        .frame(width: 10, height: 10)
-                }
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .top) {
+                    if let label = supersetLabel {
+                        Text(label)
+                            .font(.caption.bold())
+                            .foregroundColor(.white)
+                            .frame(width: 24, height: 24)
+                            .background(accentColor)
+                            .clipShape(Circle())
+                    }
+                    VStack(alignment: .leading, spacing: 3) {
+                        Button { showExerciseDetail = true } label: {
+                            Text(exercise?.name ?? "Exercise")
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundColor(.primary)
+                                .multilineTextAlignment(.leading)
+                        }
+                        .buttonStyle(.plain)
 
-                Button {
-                    showExerciseDetail = true
-                } label: {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(exercise?.name ?? "Exercise")
-                            .font(.headline)
-                            .foregroundColor(.primary)
-                        Text("Target: \(sessionExercise.targetRepMin)–\(sessionExercise.targetRepMax) reps")
-                            .font(.caption)
+                        HStack(spacing: 8) {
+                            if let muscle = exercise?.muscle {
+                                Text(muscle)
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundColor(accentColor)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(accentColor.opacity(0.12))
+                                    .clipShape(Capsule())
+                            }
+                            if overload != .maintain {
+                                HStack(spacing: 3) {
+                                    Image(systemName: overload.icon).font(.caption2)
+                                    Text(overload.label).font(.caption2.bold())
+                                }
+                                .foregroundColor(overload.color)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 3)
+                                .background(overload.color.opacity(0.12))
+                                .cornerRadius(6)
+                            }
+                        }
+                    }
+                    Spacer()
+                    // Exercise actions menu
+                    Menu {
+                        Button { appState.addSet(sessionId: sessionId, exerciseId: sessionExercise.id) } label: {
+                            Label("Add Set", systemImage: "plus")
+                        }
+                        Button { appState.addWarmupSets(sessionId: sessionId, exerciseId: sessionExercise.id) } label: {
+                            Label("Add Warmup Sets", systemImage: "flame")
+                        }
+                        Divider()
+                        Button(role: .destructive) {
+                            appState.removeExerciseFromSession(sessionId: sessionId, exerciseId: sessionExercise.id)
+                        } label: {
+                            Label("Remove Exercise", systemImage: "trash")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 16))
                             .foregroundColor(.secondary)
+                            .frame(width: 36, height: 36)
+                            .background(Color(.tertiarySystemFill))
+                            .clipShape(Circle())
                     }
-                }
-                .buttonStyle(.plain)
-
-                Spacer()
-
-                if overload != .maintain {
-                    HStack(spacing: 3) {
-                        Image(systemName: overload.icon).font(.caption2)
-                        Text(overload.label).font(.caption2.bold())
-                    }
-                    .foregroundColor(overload.color)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 4)
-                    .background(overload.color.opacity(0.12))
-                    .cornerRadius(8)
                 }
             }
             .padding(.horizontal, 14)
@@ -482,22 +541,6 @@ private struct ExerciseCardContent: View {
             }
 
             Divider()
-
-            // Column headers
-            if exercise?.kind != .cardio {
-                HStack {
-                    Text("Set").frame(width: 44, alignment: .leading)
-                    Text("Prev").frame(width: 70, alignment: .center)
-                    Text("Weight").frame(width: 104, alignment: .center)
-                    Text("Reps").frame(width: 50, alignment: .center)
-                    Text("✓").frame(width: 44, alignment: .center)
-                }
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 6)
-                .background(Color(.tertiarySystemFill))
-            }
 
             // Sets — working and drop sets rendered together
             let sets = sessionExercise.sets
@@ -524,7 +567,6 @@ private struct ExerciseCardContent: View {
                 let drops = dropSetsAfter(index: workingIdx, in: sets)
                 ForEach(Array(drops.enumerated()), id: \.element.id) { dropIdx, drop in
                     HStack(spacing: 0) {
-                        // Drop indent line
                         VStack(spacing: 0) {
                             Rectangle().fill(Color.purple.opacity(0.4)).frame(width: 2)
                         }
@@ -555,7 +597,7 @@ private struct ExerciseCardContent: View {
                 }
             }
 
-            // Add Set button (only in solo card — superset uses footer)
+            // Add Set button inside superset card
             if supersetLabel != nil {
                 Divider()
                 Button {
@@ -618,6 +660,7 @@ private struct SetRow: View {
 
     @State private var weightText: String = ""
     @State private var repsText: String = ""
+    @State private var showPlates: Bool = false
     @FocusState private var weightFocused: Bool
     @FocusState private var repsFocused: Bool
 
@@ -628,34 +671,34 @@ private struct SetRow: View {
         appState.updateSet(sessionId: sessionId, exerciseId: exerciseId, setId: set.id, weight: newWeight)
     }
 
-    private var prevLabel: String {
-        guard let prev = prevSet, prev.weight > 0 || prev.reps > 0 else { return "—" }
-        if prev.weight > 0 && prev.reps > 0 { return "\(prev.weight.formatted1)×\(prev.reps)" }
-        if prev.reps > 0 { return "\(prev.reps)r" }
-        return "\(prev.weight.formatted1)"
+    private var prevLabel: String? {
+        guard let prev = prevSet, (prev.weight > 0 || prev.reps > 0) else { return nil }
+        if prev.weight > 0 && prev.reps > 0 { return "\(prev.weight.formatted1) × \(prev.reps)" }
+        if prev.reps > 0 { return "\(prev.reps) reps" }
+        return "\(prev.weight.formatted1) kg"
+    }
+
+    private var parsedWeight: Double {
+        Double(weightText.replacingOccurrences(of: ",", with: ".")) ?? 0
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                // Set label
+            HStack(spacing: 0) {
+                // Set label (44pt wide)
                 Text(setLabel)
-                    .font(setLabel.count == 1 && !setLabel.first!.isNumber ? .caption.bold() : .caption)
+                    .font(setLabel.first?.isNumber == true ? .body.bold() : .callout.bold())
                     .foregroundColor(labelColor)
-                    .frame(width: 44, alignment: .leading)
-                    .padding(.leading, isDropSet ? 0 : 14)
-
-                // Previous
-                Text(isDropSet ? "" : prevLabel)
-                    .font(.caption.monospacedDigit())
-                    .foregroundColor(.secondary)
-                    .frame(width: 70, alignment: .center)
+                    .frame(width: 44, alignment: .center)
+                    .padding(.leading, isDropSet ? 0 : 4)
 
                 if exerciseKind == .cardio {
+                    // Cardio: duration field
                     TextField("min", text: $weightText)
                         .keyboardType(.numberPad)
                         .multilineTextAlignment(.center)
-                        .frame(width: 104)
+                        .font(.system(size: 20, weight: .semibold, design: .monospaced))
+                        .frame(maxWidth: .infinity)
                         .focused($weightFocused)
                         .onChange(of: weightText) { _, new in
                             if let val = Int(new) {
@@ -663,65 +706,99 @@ private struct SetRow: View {
                             }
                         }
                 } else {
-                    // Weight stepper
-                    HStack(spacing: 2) {
+                    // Weight: − field +
+                    HStack(spacing: 4) {
                         Button { adjustWeight(-2.5) } label: {
-                            Text("−").font(.body.bold())
-                                .frame(width: 26, height: 30)
+                            Image(systemName: "minus")
+                                .font(.system(size: 14, weight: .bold))
+                                .frame(width: 44, height: 44)
                                 .background(Color(.tertiarySystemFill))
-                                .cornerRadius(6)
+                                .cornerRadius(8)
                         }
                         .buttonStyle(.plain)
-                        TextField("kg", text: $weightText)
-                            .keyboardType(.decimalPad)
-                            .multilineTextAlignment(.center)
-                            .frame(width: 48)
-                            .focused($weightFocused)
-                            .onChange(of: weightText) { _, new in
-                                if let val = Double(new.replacingOccurrences(of: ",", with: ".")) {
-                                    appState.updateSet(sessionId: sessionId, exerciseId: exerciseId, setId: set.id, weight: val)
+
+                        VStack(spacing: 2) {
+                            TextField("0", text: $weightText)
+                                .keyboardType(.decimalPad)
+                                .multilineTextAlignment(.center)
+                                .font(.system(size: 20, weight: .semibold, design: .monospaced))
+                                .frame(width: 68)
+                                .focused($weightFocused)
+                                .onChange(of: weightText) { _, new in
+                                    if let val = Double(new.replacingOccurrences(of: ",", with: ".")) {
+                                        appState.updateSet(sessionId: sessionId, exerciseId: exerciseId, setId: set.id, weight: val)
+                                    }
                                 }
-                            }
+                                .onChange(of: weightFocused) { _, focused in
+                                    if !focused { showPlates = false }
+                                    else if parsedWeight > 20 { showPlates = true }
+                                }
+                            Text("kg").font(.caption2).foregroundColor(.secondary)
+                        }
+
                         Button { adjustWeight(2.5) } label: {
-                            Text("+").font(.body.bold())
-                                .frame(width: 26, height: 30)
+                            Image(systemName: "plus")
+                                .font(.system(size: 14, weight: .bold))
+                                .frame(width: 44, height: 44)
                                 .background(Color(.tertiarySystemFill))
-                                .cornerRadius(6)
+                                .cornerRadius(8)
                         }
                         .buttonStyle(.plain)
                     }
-                    .frame(width: 104)
 
-                    TextField("reps", text: $repsText)
-                        .keyboardType(.numberPad)
-                        .multilineTextAlignment(.center)
-                        .frame(width: 50)
-                        .focused($repsFocused)
-                        .onChange(of: repsText) { _, new in
-                            if let val = Int(new) {
-                                appState.updateSet(sessionId: sessionId, exerciseId: exerciseId, setId: set.id, reps: val)
+                    // × separator
+                    Text("×")
+                        .font(.body)
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 4)
+
+                    // Reps field
+                    VStack(spacing: 2) {
+                        TextField("0", text: $repsText)
+                            .keyboardType(.numberPad)
+                            .multilineTextAlignment(.center)
+                            .font(.system(size: 20, weight: .semibold, design: .monospaced))
+                            .frame(width: 52)
+                            .focused($repsFocused)
+                            .onChange(of: repsText) { _, new in
+                                if let val = Int(new) {
+                                    appState.updateSet(sessionId: sessionId, exerciseId: exerciseId, setId: set.id, reps: val)
+                                }
                             }
-                        }
+                        Text("reps").font(.caption2).foregroundColor(.secondary)
+                    }
                 }
 
-                // Done button
+                Spacer(minLength: 8)
+
+                // Done button — large
                 Button {
                     HapticManager.impact(set.done ? .light : .medium)
                     onDone()
                 } label: {
-                    Image(systemName: set.done ? "checkmark.circle.fill" : "circle")
-                        .foregroundColor(set.done ? Color(hex: "#30d158") : .secondary)
-                        .font(.title3)
-                        .scaleEffect(set.done ? 1.1 : 1.0)
-                        .animation(.spring(response: 0.3, dampingFraction: 0.5), value: set.done)
+                    ZStack {
+                        Circle()
+                            .fill(set.done ? Color(hex: "#30d158") : Color(.tertiarySystemFill))
+                            .frame(width: 44, height: 44)
+                        Image(systemName: set.done ? "checkmark" : "")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundColor(.white)
+                    }
+                    .scaleEffect(set.done ? 1.05 : 1.0)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.5), value: set.done)
                 }
                 .buttonStyle(.plain)
-                .frame(width: 44)
+                .frame(width: 52)
             }
-            .padding(.vertical, 8)
-            .padding(.trailing, 8)
-            .background(set.done ? Color(hex: "#30d158").opacity(0.07) : Color.clear)
+            .frame(minHeight: 56)
+            .padding(.horizontal, 8)
+            .background(set.done ? Color(hex: "#30d158").opacity(0.08) : Color.clear)
             .animation(.easeInOut(duration: 0.2), value: set.done)
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                Button(role: .destructive) {
+                    appState.removeSet(sessionId: sessionId, exerciseId: exerciseId, setId: set.id)
+                } label: { Label("Delete", systemImage: "trash") }
+            }
             .contextMenu {
                 if !set.isDropSet {
                     Button {
@@ -734,17 +811,34 @@ private struct SetRow: View {
                     } label: {
                         Label(set.isFailure ? "Clear Failure" : "Mark as Failure", systemImage: "xmark.circle")
                     }
-                    Button {
-                        onAddDropSet()
-                    } label: {
+                    Button { onAddDropSet() } label: {
                         Label("Add Drop Set", systemImage: "arrow.down.circle")
                     }
                 }
                 Button(role: .destructive) {
                     appState.removeSet(sessionId: sessionId, exerciseId: exerciseId, setId: set.id)
-                } label: {
-                    Label("Delete Set", systemImage: "trash")
+                } label: { Label("Delete Set", systemImage: "trash") }
+            }
+
+            // Previous session row (only if data exists)
+            if let prev = prevLabel, !isDropSet {
+                HStack {
+                    Spacer().frame(width: 44)
+                    Text("prev: \(prev)")
+                        .font(.caption.monospacedDigit())
+                        .foregroundColor(.secondary)
+                    Spacer()
                 }
+                .padding(.horizontal, 8)
+                .padding(.bottom, 4)
+            }
+
+            // Plate calculator (shown when weight field focused and weight > 20kg)
+            if showPlates && parsedWeight > 20 && exerciseKind != .cardio && !isDropSet {
+                PlateBreakdownView(totalKg: parsedWeight)
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 8)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
 
             // RPE after done
@@ -764,9 +858,79 @@ private struct SetRow: View {
     }
 }
 
-// MARK: - Rest Timer Banner
+// MARK: - Plate Breakdown View
 
-private struct RestTimerBanner: View {
+private struct PlateBreakdownView: View {
+    let totalKg: Double
+    var barbellKg: Double = 20
+
+    private struct PlateLoad: Identifiable {
+        let id = UUID()
+        let kg: Double
+        let count: Int
+        var color: Color {
+            switch kg {
+            case 25: return Color(hex: "#FF3B30")
+            case 20: return Color(hex: "#007AFF")
+            case 15: return Color(hex: "#FFD60A")
+            case 10: return Color(hex: "#30D158")
+            case 5:  return Color(hex: "#F2F2F7").opacity(0.9)
+            case 2.5: return Color(hex: "#636366")
+            default: return Color(hex: "#8E8E93")
+            }
+        }
+        var textColor: Color { kg == 5 ? .black : .white }
+    }
+
+    private var plates: [PlateLoad] {
+        let available = [25.0, 20.0, 15.0, 10.0, 5.0, 2.5, 1.25]
+        var remaining = max(0, (totalKg - barbellKg)) / 2
+        var result: [PlateLoad] = []
+        for plate in available {
+            let count = Int(remaining / plate)
+            if count > 0 {
+                result.append(PlateLoad(kg: plate, count: count))
+                remaining -= Double(count) * plate
+                remaining = round(remaining * 100) / 100
+            }
+        }
+        return result
+    }
+
+    var body: some View {
+        if !plates.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Each side of \(Int(barbellKg))kg bar:")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(plates) { plate in
+                            HStack(spacing: 3) {
+                                ForEach(0..<plate.count, id: \.self) { _ in
+                                    Text(plate.kg == plate.kg.rounded() ? "\(Int(plate.kg))" : "\(plate.kg)")
+                                        .font(.system(size: 11, weight: .bold))
+                                        .foregroundColor(plate.textColor)
+                                        .frame(width: 32, height: 32)
+                                        .background(plate.color)
+                                        .clipShape(Circle())
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(10)
+            .background(Color(.tertiarySystemFill))
+            .cornerRadius(10)
+            .animation(.spring(response: 0.3), value: plates.count)
+        }
+    }
+}
+
+// MARK: - Rest Timer Pill
+
+private struct RestTimerPill: View {
     let secondsRemaining: Int
     let totalSeconds: Int
     let onSkip: () -> Void
@@ -777,38 +941,34 @@ private struct RestTimerBanner: View {
     }
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 12) {
             ZStack {
                 Circle()
-                    .stroke(Color.orange.opacity(0.2), lineWidth: 3.5)
-                    .frame(width: 42, height: 42)
+                    .stroke(Color.orange.opacity(0.25), lineWidth: 3)
+                    .frame(width: 36, height: 36)
                 Circle()
                     .trim(from: 0, to: progress)
-                    .stroke(Color.orange, style: StrokeStyle(lineWidth: 3.5, lineCap: .round))
-                    .frame(width: 42, height: 42)
+                    .stroke(Color.orange, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                    .frame(width: 36, height: 36)
                     .rotationEffect(.degrees(-90))
                     .animation(.linear(duration: 1), value: progress)
                 Text("\(secondsRemaining)")
-                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
                     .foregroundColor(.orange)
             }
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Rest").font(.caption.weight(.semibold)).foregroundColor(.secondary)
-                Text(secondsRemaining.formattedDuration).font(.headline.monospacedDigit()).foregroundColor(.primary)
-            }
+            Text(secondsRemaining.formattedDuration)
+                .font(.headline.monospacedDigit())
+                .foregroundColor(.primary)
             Spacer()
             Button("Skip", action: onSkip)
                 .font(.subheadline.weight(.semibold))
                 .foregroundColor(.orange)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 7)
-                .background(Color.orange.opacity(0.12))
-                .cornerRadius(8)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(Color(.secondarySystemGroupedBackground))
-        .overlay(Rectangle().frame(height: 1).foregroundColor(Color.orange.opacity(0.25)), alignment: .bottom)
+        .background(.ultraThinMaterial)
+        .cornerRadius(20)
+        .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 4)
     }
 }
 
@@ -873,6 +1033,7 @@ struct ExercisePickerSheet: View {
     let sessionId: String
     @State private var searchText = ""
     @State private var equipmentFilter: ExerciseEquipment? = nil
+    @State private var showCreateExercise = false
 
     private var muscles: [String] {
         Array(Set(appState.exercises.map(\.muscle))).sorted()
@@ -927,6 +1088,14 @@ struct ExercisePickerSheet: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button { showCreateExercise = true } label: {
+                        Image(systemName: "plus")
+                    }
+                }
+            }
+            .sheet(isPresented: $showCreateExercise) {
+                AddExerciseSheet()
             }
         }
     }

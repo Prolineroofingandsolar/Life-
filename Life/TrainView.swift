@@ -199,7 +199,7 @@ struct TrainView: View {
                     NavigationStack { SessionDetailView(session: session) }
                 }
             }
-            .fullScreenCover(isPresented: $showActiveWorkout) {
+            .sheet(isPresented: $showActiveWorkout) {
                 if let session = appState.activeSession {
                     ActiveWorkoutView(isPresented: $showActiveWorkout, sessionId: session.id)
                 }
