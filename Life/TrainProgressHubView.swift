@@ -186,6 +186,25 @@ private struct ActivityTab: View {
             }
 
             VStack(spacing: 12) {
+                SectionHeader(title: "Calendar")
+                WorkoutCalendarCard(onPlanDate: { _ in }, onTapSession: { _ in })
+            }
+
+            VStack(spacing: 12) {
+                SectionHeader(title: "Muscle Recovery")
+                MuscleRecoverySection()
+            }
+
+            if !appState.sessions.filter({ $0.finishedAt != nil }).isEmpty {
+                VStack(spacing: 12) {
+                    SectionHeader(title: "Last 8 Weeks")
+                    CardContainer {
+                        WeeklyConsistencyChart()
+                    }
+                }
+            }
+
+            VStack(spacing: 12) {
                 SectionHeader(title: "Recent Workouts")
                 let recent = appState.recentFinishedSessions(limit: 5)
                 if recent.isEmpty {

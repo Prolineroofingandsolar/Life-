@@ -28,23 +28,16 @@ struct TrainView: View {
             ScrollView {
                 VStack(spacing: 20) {
 
-                    // Stats row
-                    StatsRow()
-                        .padding(.horizontal, 16)
-                        .padding(.top, 4)
-
-                    // Calendar card
-                    WorkoutCalendarCard(
+                    // Compact week strip
+                    WeekStripView(
                         onPlanDate: { date in planDate = date },
                         onTapSession: { session in
-                        sessionForDetail = session
-                        showSessionDetail = true
-                    }
+                            sessionForDetail = session
+                            showSessionDetail = true
+                        }
                     )
                     .padding(.horizontal, 16)
-
-                    // Muscle recovery
-                    MuscleRecoverySection()
+                    .padding(.top, 4)
 
                     // Resume active workout
                     if let active = appState.activeSession {
@@ -139,42 +132,6 @@ struct TrainView: View {
 
                     // Volume by muscle
                     MuscleVolumeSection()
-
-                    // Weekly consistency
-                    if !appState.sessions.filter({ $0.finishedAt != nil }).isEmpty {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("LAST 8 WEEKS")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundColor(Color(hex: "#A0A0B0"))
-                                .padding(.horizontal, 16)
-                            WeeklyConsistencyChart()
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 12)
-                                .background(AppTheme.trainCard)
-                                .cornerRadius(14)
-                                .padding(.horizontal, 16)
-                        }
-                    }
-
-                    // Session history
-                    if !finishedSessions.isEmpty {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("HISTORY")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundColor(Color(hex: "#A0A0B0"))
-                                .padding(.horizontal, 16)
-
-                            ForEach(finishedSessions.prefix(10)) { session in
-                                NavigationLink {
-                                    SessionDetailView(session: session)
-                                } label: {
-                                    SessionHistoryCard(session: session)
-                                }
-                                .buttonStyle(.plain)
-                                .padding(.horizontal, 16)
-                            }
-                        }
-                    }
 
                     Color.clear.frame(height: 80)
                 }
@@ -287,7 +244,7 @@ private struct StatChip: View {
 
 // MARK: - Workout Calendar Card
 
-private struct WorkoutCalendarCard: View {
+struct WorkoutCalendarCard: View {
     @Environment(AppState.self) private var appState
     let onPlanDate: (Date) -> Void
     let onTapSession: (WorkoutSession) -> Void
@@ -480,6 +437,124 @@ private struct WorkoutCalendarCard: View {
                 .font(.caption2)
                 .foregroundColor(Color(hex: "#A0A0B0"))
         }
+    }
+}
+
+// MARK: - Week Strip View (compact main-page calendar)
+
+private struct WeekStripView: View {
+    @Environment(AppState.self) private var appState
+    @State private var weekOffset: Int = 0
+    let onPlanDate: (Date) -> Void
+    let onTapSession: (WorkoutSession) -> Void
+
+    private var finishedSessions: [WorkoutSession] {
+        appState.sessions.filter { $0.finishedAt != nil }
+    }
+
+    private var weekDates: [Date] {
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        let weekday = cal.component(.weekday, from: today)
+        let daysToMonday = (weekday == 1 ? -6 : 2 - weekday)
+        let monday = cal.date(byAdding: .day, value: daysToMonday + weekOffset * 7, to: today)!
+        return (0..<7).map { cal.date(byAdding: .day, value: $0, to: monday)! }
+    }
+
+    private var monthLabel: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMMM yyyy"
+        return formatter.string(from: weekDates[3])
+    }
+
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Button { weekOffset -= 1 } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.primary)
+                        .frame(width: 32, height: 32)
+                }
+                Spacer()
+                Text(monthLabel)
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Button { weekOffset += 1 } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.primary)
+                        .frame(width: 32, height: 32)
+                }
+            }
+            .padding(.horizontal, 4)
+
+            HStack(spacing: 4) {
+                ForEach(weekDates, id: \.self) { date in
+                    WeekDayCell(
+                        date: date,
+                        isToday: Calendar.current.isDateInToday(date),
+                        isCompleted: finishedSessions.contains { Calendar.current.isDate($0.startedAt, inSameDayAs: date) },
+                        isPlanned: appState.plannedSessions.contains { !$0.completed && Calendar.current.isDate($0.date, inSameDayAs: date) }
+                    ) {
+                        let today = Calendar.current.startOfDay(for: Date())
+                        if date >= today {
+                            onPlanDate(date)
+                        } else {
+                            if let s = finishedSessions.first(where: { Calendar.current.isDate($0.startedAt, inSameDayAs: date) }) {
+                                onTapSession(s)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .background(AppTheme.cardBg)
+        .cornerRadius(AppTheme.cardRadius)
+    }
+}
+
+private struct WeekDayCell: View {
+    let date: Date
+    let isToday: Bool
+    let isCompleted: Bool
+    let isPlanned: Bool
+    let onTap: () -> Void
+
+    private var dayLetter: String {
+        let f = DateFormatter(); f.dateFormat = "E"
+        return String(f.string(from: date).prefix(1))
+    }
+    private var dayNumber: String {
+        let f = DateFormatter(); f.dateFormat = "d"
+        return f.string(from: date)
+    }
+    private var isFuture: Bool { date > Calendar.current.startOfDay(for: Date()) }
+
+    var body: some View {
+        Button(action: onTap) {
+            VStack(spacing: 4) {
+                Text(dayLetter)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.secondary)
+                ZStack {
+                    if isCompleted {
+                        Circle().fill(AppTheme.primary)
+                    } else if isToday {
+                        Circle().stroke(Color.primary.opacity(0.3), lineWidth: 1.5)
+                    } else if isPlanned {
+                        Circle().stroke(AppTheme.trainAccent, lineWidth: 1.5)
+                    }
+                    Text(dayNumber)
+                        .font(.system(size: 14, weight: isToday ? .bold : .regular))
+                        .foregroundColor(isCompleted ? .white : isFuture ? .secondary : .primary)
+                }
+                .frame(width: 32, height: 32)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .buttonStyle(.plain)
     }
 }
 
@@ -863,66 +938,73 @@ private struct RoutineCard: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                // Muscle icon thumbnail
-                ZStack {
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill((muscleGroups.first ?? "Other").muscleColor.opacity(0.2))
-                        .frame(width: 44, height: 44)
-                    Image(systemName: "figure.strengthtraining.traditional")
-                        .font(.system(size: 18))
-                        .foregroundColor((muscleGroups.first ?? "Other").muscleColor)
-                }
+            // Coloured top accent stripe
+            Rectangle()
+                .fill((muscleGroups.first ?? "Other").muscleColor)
+                .frame(height: 5)
 
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(routine.name)
-                        .font(.headline)
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
+            // Main content
+            VStack(spacing: 10) {
+                HStack(alignment: .center, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(routine.name)
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
 
-                    ScrollView(.horizontal, showsIndicators: false) {
+                        // Muscle chips — max 3, then "+N more"
                         HStack(spacing: 5) {
-                            ForEach(muscleGroups, id: \.self) { muscle in
+                            ForEach(Array(muscleGroups.prefix(3)), id: \.self) { muscle in
                                 Text(muscle)
                                     .font(.system(size: 10, weight: .semibold))
                                     .foregroundColor(muscle.muscleColor)
                                     .padding(.horizontal, 7)
                                     .padding(.vertical, 3)
-                                    .background(muscle.muscleColor.opacity(0.12))
+                                    .background(muscle.muscleColor.opacity(0.15))
+                                    .clipShape(Capsule())
+                            }
+                            if muscleGroups.count > 3 {
+                                Text("+\(muscleGroups.count - 3)")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundColor(.secondary)
+                                    .padding(.horizontal, 7)
+                                    .padding(.vertical, 3)
+                                    .background(Color.secondary.opacity(0.12))
                                     .clipShape(Capsule())
                             }
                         }
                     }
-                    .frame(height: 20)
 
-                    HStack(spacing: 6) {
-                        Image(systemName: "dumbbell").font(.caption2)
-                        Text("\(routine.exercises.count) ex")
-                        Text("·")
-                        Image(systemName: "square.stack").font(.caption2)
-                        Text("\(totalSets) sets")
-                        Text("·")
-                        Image(systemName: "clock").font(.caption2)
-                        Text("~\(estimatedMinutes)m")
+                    Spacer()
+
+                    Button {
+                        HapticManager.impact(.medium)
+                        onStart()
+                    } label: {
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 18))
+                            .foregroundColor(.black)
+                            .frame(width: 48, height: 48)
+                            .background(AppTheme.trainAccent)
+                            .clipShape(Circle())
                     }
-                    .font(.caption)
-                    .foregroundColor(Color(hex: "#A0A0B0"))
-                    .lineLimit(1)
+                    .buttonStyle(PressableButtonStyle())
                 }
 
-                Spacer(minLength: 8)
-
-                Button {
-                    HapticManager.impact(.medium)
-                    onStart()
-                } label: {
-                    Image(systemName: "play.fill")
-                        .foregroundColor(.black)
-                        .frame(width: 40, height: 40)
-                        .background(AppTheme.trainAccent)
-                        .clipShape(Circle())
+                // Stats row
+                HStack(spacing: 6) {
+                    Image(systemName: "dumbbell").font(.caption2).foregroundColor(.secondary)
+                    Text("\(routine.exercises.count) exercises")
+                    Text("·").foregroundColor(.secondary)
+                    Image(systemName: "square.stack").font(.caption2).foregroundColor(.secondary)
+                    Text("\(totalSets) sets")
+                    Text("·").foregroundColor(.secondary)
+                    Image(systemName: "clock").font(.caption2).foregroundColor(.secondary)
+                    Text("~\(estimatedMinutes)m")
+                    Spacer()
                 }
-                .buttonStyle(PressableButtonStyle())
+                .font(.caption)
+                .foregroundColor(.secondary)
             }
             .padding(14)
             .contentShape(Rectangle())
@@ -931,9 +1013,10 @@ private struct RoutineCard: View {
                 HapticManager.selection()
             }
 
+            // Expanded exercise list
             if expanded {
                 Divider()
-                    .background(Color.primary.opacity(0.1))
+                    .background(Color.primary.opacity(0.08))
                     .padding(.horizontal, 14)
                 VStack(spacing: 0) {
                     ForEach(Array(routine.exercises.enumerated()), id: \.element.id) { idx, re in
@@ -946,11 +1029,11 @@ private struct RoutineCard: View {
                                 Spacer()
                                 Text("\(re.defaultSets)×\(re.defaultReps)")
                                     .font(.caption.monospacedDigit())
-                                    .foregroundColor(Color(hex: "#A0A0B0"))
+                                    .foregroundColor(.secondary)
                                 if re.defaultWeight > 0 {
                                     Text("\(re.defaultWeight.formatted1)kg")
                                         .font(.caption)
-                                        .foregroundColor(Color(hex: "#A0A0B0"))
+                                        .foregroundColor(.secondary)
                                 }
                             }
                             .padding(.horizontal, 14)
@@ -966,8 +1049,9 @@ private struct RoutineCard: View {
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .background(AppTheme.trainCard)
-        .cornerRadius(14)
+        .background(AppTheme.cardBg)
+        .cornerRadius(16)
+        .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 3)
         .contextMenu {
             Button { showEdit = true } label: {
                 Label("Edit Routine", systemImage: "pencil")
@@ -1452,7 +1536,7 @@ private struct SessionSetRow: View {
 
 // MARK: - Muscle Recovery Section
 
-private struct MuscleRecoverySection: View {
+struct MuscleRecoverySection: View {
     @Environment(AppState.self) private var appState
 
     private var muscles: [String] {
@@ -1509,7 +1593,7 @@ private struct MuscleRecoverySection: View {
 
 // MARK: - Weekly Consistency Chart
 
-private struct WeeklyConsistencyChart: View {
+struct WeeklyConsistencyChart: View {
     @Environment(AppState.self) private var appState
     private var data: [(weekLabel: String, count: Int)] { appState.weeklyWorkoutCounts(weeks: 8) }
 
