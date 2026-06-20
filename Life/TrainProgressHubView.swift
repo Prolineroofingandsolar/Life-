@@ -490,6 +490,7 @@ private struct AchievementsStrip: View {
 private struct BodyTab: View {
     @Environment(AppState.self) private var appState
     @State private var showPhotos = false
+    private let hk = HealthKitManager()
 
     private var columns: [GridItem] { [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)] }
     private var unit: String { appState.workoutSettings.weightUnit.label }
@@ -551,6 +552,34 @@ private struct BodyTab: View {
         }
         .padding(.horizontal, 20)
         .sheet(isPresented: $showPhotos) { ProgressPhotosView() }
+        .task { await syncHealthKit() }
+    }
+
+    private func syncHealthKit() async {
+        let granted = await hk.requestPermissions()
+        guard granted else { return }
+        let data = await hk.importBodyData(daysBack: 365)
+        for (date, kg) in data.weight {
+            await MainActor.run { appState.logBodyWeight(valueKg: kg, date: date) }
+        }
+        var entryMap: [String: BodyCompEntry] = [:]
+        for (date, pct) in data.bodyFat {
+            let key = date.dayKey
+            var e = entryMap[key] ?? BodyCompEntry(date: date)
+            e.bodyFatPct = pct; entryMap[key] = e
+        }
+        for (date, kg) in data.leanMass {
+            let key = date.dayKey
+            var e = entryMap[key] ?? BodyCompEntry(date: date)
+            e.leanMassKg = kg; entryMap[key] = e
+        }
+        for (date, val) in data.bmi {
+            let key = date.dayKey
+            var e = entryMap[key] ?? BodyCompEntry(date: date)
+            e.bmi = val; entryMap[key] = e
+        }
+        let newEntries = entryMap.values.filter { $0.bodyFatPct != nil || $0.leanMassKg != nil || $0.bmi != nil }
+        await MainActor.run { appState.mergeBodyCompEntries(Array(newEntries)) }
     }
 
     private var weightSub: String {

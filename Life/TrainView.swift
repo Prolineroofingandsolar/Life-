@@ -176,13 +176,6 @@ struct TrainView: View {
                         }
                     }
 
-                    // Progress hub nav card (Activity / Progress / Body)
-                    Button { hubTab = .activity } label: {
-                        ProgressPhotosNavCard()
-                    }
-                    .buttonStyle(PressableButtonStyle())
-                    .padding(.horizontal, 16)
-
                     Color.clear.frame(height: 80)
                 }
                 .padding(.top, 8)
@@ -192,8 +185,8 @@ struct TrainView: View {
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
-                    Button { hubTab = .progress } label: {
-                        Image(systemName: "trophy.fill")
+                    Button { hubTab = .activity } label: {
+                        Image(systemName: "chart.xyaxis.line")
                             .foregroundColor(AppTheme.trainAccent)
                     }
                     Button { showExerciseLibrary = true } label: {
@@ -224,7 +217,6 @@ struct TrainView: View {
                 }
             }
         }
-        .preferredColorScheme(.dark)
     }
 }
 
@@ -278,7 +270,7 @@ private struct StatChip: View {
                 .foregroundColor(accent)
             Text(value)
                 .font(.system(size: 22, weight: .bold))
-                .foregroundColor(.white)
+                .foregroundColor(.primary)
                 .minimumScaleFactor(0.7)
                 .lineLimit(1)
             Text(label)
@@ -456,7 +448,7 @@ private struct WorkoutCalendarCard: View {
                         .frame(width: 34, height: 34)
                 } else if isToday {
                     Circle()
-                        .stroke(Color.white.opacity(0.35), lineWidth: 1.5)
+                        .stroke(Color.primary.opacity(0.25), lineWidth: 1.5)
                         .frame(width: 34, height: 34)
                 }
 
@@ -466,7 +458,7 @@ private struct WorkoutCalendarCard: View {
                         hasDone ? .white
                         : isToday ? AppTheme.trainAccent
                         : isFuture ? Color(hex: "#A0A0B0")
-                        : .white
+                        : .primary
                     )
             }
             .frame(maxWidth: .infinity)
@@ -576,6 +568,7 @@ private struct ResumeCard: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Resume Workout")
                         .font(.headline)
+                        .foregroundColor(.primary)
                     Text(session.name)
                         .font(.subheadline)
                         .foregroundColor(Color(hex: "#A0A0B0"))
@@ -678,7 +671,7 @@ private struct QuickStartCard: View {
                     .foregroundColor(AppTheme.trainAccent)
                 Text("Quick Start")
                     .font(.headline)
-                    .foregroundColor(.white)
+                    .foregroundColor(.primary)
                 Spacer()
                 Image(systemName: "arrow.right.circle.fill")
                     .font(.system(size: 22))
@@ -752,7 +745,7 @@ private struct PRCardView: View {
 
                 Text(exercise.name)
                     .font(.subheadline.bold())
-                    .foregroundColor(.white)
+                    .foregroundColor(.primary)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(width: 130, alignment: .leading)
@@ -816,7 +809,7 @@ private struct MuscleVolumeSection: View {
                                     .frame(width: 7, height: 7)
                                 Text(item.muscle)
                                     .font(.caption)
-                                    .foregroundColor(.white)
+                                    .foregroundColor(.primary)
                             }
                             .frame(width: 80, alignment: .leading)
 
@@ -824,7 +817,7 @@ private struct MuscleVolumeSection: View {
                                 let ratio = maxVol > 0 ? item.volumeKg / maxVol : 0
                                 ZStack(alignment: .leading) {
                                     RoundedRectangle(cornerRadius: 4)
-                                        .fill(Color.white.opacity(0.07))
+                                        .fill(Color.primary.opacity(0.07))
                                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                                     RoundedRectangle(cornerRadius: 4)
                                         .fill(item.muscle.muscleColor.opacity(0.75))
@@ -846,42 +839,6 @@ private struct MuscleVolumeSection: View {
                 .padding(.horizontal, 16)
             }
         }
-    }
-}
-
-// MARK: - Progress Photos Nav Card
-
-private struct ProgressPhotosNavCard: View {
-    @Environment(AppState.self) private var appState
-
-    var body: some View {
-        HStack(spacing: 14) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(Color.purple.opacity(0.18))
-                    .frame(width: 44, height: 44)
-                Image(systemName: "camera.fill")
-                    .foregroundColor(.purple)
-                    .font(.system(size: 18))
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Progress Photos")
-                    .font(.headline)
-                    .foregroundColor(.white)
-                Text(appState.progressPhotos.isEmpty
-                     ? "Track your transformation"
-                     : "\(appState.progressPhotos.count) photo\(appState.progressPhotos.count == 1 ? "" : "s")")
-                    .font(.caption)
-                    .foregroundColor(Color(hex: "#A0A0B0"))
-            }
-            Spacer()
-            Image(systemName: "chevron.right")
-                .font(.caption.weight(.semibold))
-                .foregroundColor(Color(hex: "#A0A0B0"))
-        }
-        .padding(16)
-        .background(AppTheme.trainCard)
-        .cornerRadius(14)
     }
 }
 
@@ -920,7 +877,7 @@ private struct RoutineCard: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(routine.name)
                         .font(.headline)
-                        .foregroundColor(.white)
+                        .foregroundColor(.primary)
                         .lineLimit(1)
 
                     ScrollView(.horizontal, showsIndicators: false) {
@@ -976,7 +933,7 @@ private struct RoutineCard: View {
 
             if expanded {
                 Divider()
-                    .background(Color.white.opacity(0.1))
+                    .background(Color.primary.opacity(0.1))
                     .padding(.horizontal, 14)
                 VStack(spacing: 0) {
                     ForEach(Array(routine.exercises.enumerated()), id: \.element.id) { idx, re in
@@ -985,7 +942,7 @@ private struct RoutineCard: View {
                                 Circle().fill(ex.muscle.muscleColor).frame(width: 7, height: 7)
                                 Text(ex.name)
                                     .font(.subheadline)
-                                    .foregroundColor(.white)
+                                    .foregroundColor(.primary)
                                 Spacer()
                                 Text("\(re.defaultSets)×\(re.defaultReps)")
                                     .font(.caption.monospacedDigit())
@@ -1000,7 +957,7 @@ private struct RoutineCard: View {
                             .padding(.vertical, 8)
                             if idx < routine.exercises.count - 1 {
                                 Divider()
-                                    .background(Color.white.opacity(0.06))
+                                    .background(Color.primary.opacity(0.06))
                                     .padding(.leading, 30)
                             }
                         }
@@ -1057,7 +1014,7 @@ private struct SessionHistoryCard: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(session.name)
                     .font(.subheadline.bold())
-                    .foregroundColor(.white)
+                    .foregroundColor(.primary)
                 HStack(spacing: 10) {
                     if let finished = session.finishedAt {
                         Label(finished.formatted(date: .abbreviated, time: .omitted), systemImage: "calendar")
@@ -1582,7 +1539,7 @@ private struct WeeklyConsistencyChart: View {
         .chartYAxis {
             AxisMarks(values: .stride(by: 1)) { value in
                 AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [4]))
-                    .foregroundStyle(Color.white.opacity(0.1))
+                    .foregroundStyle(Color.primary.opacity(0.1))
                 AxisValueLabel {
                     if let v = value.as(Int.self) {
                         Text("\(v)").font(.caption2).foregroundColor(Color(hex: "#A0A0B0"))
