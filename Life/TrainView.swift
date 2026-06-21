@@ -16,6 +16,7 @@ struct TrainView: View {
     @State private var planDate: Date? = nil
     @State private var sessionForDetail: WorkoutSession? = nil
     @State private var showSessionDetail = false
+    @State private var detailRoutine: Routine? = nil
 
     private var finishedSessions: [WorkoutSession] {
         appState.sessions
@@ -120,12 +121,24 @@ struct TrainView: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 30)
                         } else {
-                            ForEach(appState.routines) { routine in
-                                RoutineCard(routine: routine) {
-                                    appState.startSession(name: routine.name, routineId: routine.id)
-                                    showActiveWorkout = true
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                LazyHGrid(rows: [GridItem(.fixed(120), spacing: 12),
+                                                 GridItem(.fixed(120), spacing: 12)],
+                                          spacing: 12) {
+                                    ForEach(appState.routines) { routine in
+                                        RoutineTile(
+                                            routine: routine,
+                                            onStart: {
+                                                appState.startSession(name: routine.name, routineId: routine.id)
+                                                showActiveWorkout = true
+                                            },
+                                            onTap: { detailRoutine = routine }
+                                        )
+                                        .frame(width: 165)
+                                    }
                                 }
                                 .padding(.horizontal, 16)
+                                .padding(.vertical, 4)
                             }
                         }
                     }
@@ -163,6 +176,13 @@ struct TrainView: View {
             }
             .sheet(isPresented: $showExerciseLibrary) { ExerciseLibraryView() }
             .sheet(isPresented: $showAddRoutine) { AddRoutineSheet() }
+            .sheet(item: $detailRoutine) { routine in
+                RoutineDetailSheet(routine: routine) {
+                    appState.startSession(name: routine.name, routineId: routine.id)
+                    detailRoutine = nil
+                    showActiveWorkout = true
+                }
+            }
             .sheet(isPresented: $showBrowsePrograms) { BrowseProgramsSheet() }
             .sheet(isPresented: $showPrograms) { ProgramsView() }
             .sheet(item: $hubTab) { tab in
@@ -919,12 +939,12 @@ private struct MuscleVolumeSection: View {
 
 // MARK: - Routine Card
 
-private struct RoutineCard: View {
+private struct RoutineTile: View {
     @Environment(AppState.self) private var appState
     let routine: Routine
     let onStart: () -> Void
+    let onTap: () -> Void
 
-    @State private var expanded = false
     @State private var showEdit = false
 
     private var muscleGroups: [String] {
@@ -937,43 +957,50 @@ private struct RoutineCard: View {
     private var estimatedMinutes: Int { max(10, totalSets * 2) }
 
     var body: some View {
-        VStack(spacing: 0) {
+        VStack(alignment: .leading, spacing: 0) {
             // Coloured top accent stripe
             Rectangle()
                 .fill((muscleGroups.first ?? "Other").muscleColor)
                 .frame(height: 5)
 
-            // Main content
-            VStack(spacing: 10) {
-                HStack(alignment: .center, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(routine.name)
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundColor(.primary)
-                            .lineLimit(1)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(routine.name)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.primary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
 
-                        // Muscle chips — max 3, then "+N more"
-                        HStack(spacing: 5) {
-                            ForEach(Array(muscleGroups.prefix(3)), id: \.self) { muscle in
-                                Text(muscle)
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .foregroundColor(muscle.muscleColor)
-                                    .padding(.horizontal, 7)
-                                    .padding(.vertical, 3)
-                                    .background(muscle.muscleColor.opacity(0.15))
-                                    .clipShape(Capsule())
-                            }
-                            if muscleGroups.count > 3 {
-                                Text("+\(muscleGroups.count - 3)")
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .foregroundColor(.secondary)
-                                    .padding(.horizontal, 7)
-                                    .padding(.vertical, 3)
-                                    .background(Color.secondary.opacity(0.12))
-                                    .clipShape(Capsule())
-                            }
-                        }
+                // Muscle chips — max 2, then "+N"
+                HStack(spacing: 4) {
+                    ForEach(Array(muscleGroups.prefix(2)), id: \.self) { muscle in
+                        Text(muscle)
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundColor(muscle.muscleColor)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(muscle.muscleColor.opacity(0.15))
+                            .clipShape(Capsule())
                     }
+                    if muscleGroups.count > 2 {
+                        Text("+\(muscleGroups.count - 2)")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.secondary.opacity(0.12))
+                            .clipShape(Capsule())
+                    }
+                }
+
+                Spacer(minLength: 0)
+
+                HStack(alignment: .bottom) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(routine.exercises.count) ex · \(totalSets) sets")
+                        Text("~\(estimatedMinutes)m")
+                    }
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
 
                     Spacer()
 
@@ -982,76 +1009,26 @@ private struct RoutineCard: View {
                         onStart()
                     } label: {
                         Image(systemName: "play.fill")
-                            .font(.system(size: 18))
+                            .font(.system(size: 14))
                             .foregroundColor(.black)
-                            .frame(width: 48, height: 48)
+                            .frame(width: 36, height: 36)
                             .background(AppTheme.trainAccent)
                             .clipShape(Circle())
                     }
                     .buttonStyle(PressableButtonStyle())
                 }
-
-                // Stats row
-                HStack(spacing: 6) {
-                    Image(systemName: "dumbbell").font(.caption2).foregroundColor(.secondary)
-                    Text("\(routine.exercises.count) exercises")
-                    Text("·").foregroundColor(.secondary)
-                    Image(systemName: "square.stack").font(.caption2).foregroundColor(.secondary)
-                    Text("\(totalSets) sets")
-                    Text("·").foregroundColor(.secondary)
-                    Image(systemName: "clock").font(.caption2).foregroundColor(.secondary)
-                    Text("~\(estimatedMinutes)m")
-                    Spacer()
-                }
-                .font(.caption)
-                .foregroundColor(.secondary)
             }
-            .padding(14)
-            .contentShape(Rectangle())
-            .onTapGesture {
-                withAnimation(.spring(response: 0.35)) { expanded.toggle() }
-                HapticManager.selection()
-            }
-
-            // Expanded exercise list
-            if expanded {
-                Divider()
-                    .background(Color.primary.opacity(0.08))
-                    .padding(.horizontal, 14)
-                VStack(spacing: 0) {
-                    ForEach(Array(routine.exercises.enumerated()), id: \.element.id) { idx, re in
-                        if let ex = appState.exercises.first(where: { $0.id == re.exerciseId }) {
-                            HStack(spacing: 10) {
-                                Circle().fill(ex.muscle.muscleColor).frame(width: 7, height: 7)
-                                Text(ex.name)
-                                    .font(.subheadline)
-                                    .foregroundColor(.primary)
-                                Spacer()
-                                Text("\(re.defaultSets)×\(re.defaultReps)")
-                                    .font(.caption.monospacedDigit())
-                                    .foregroundColor(.secondary)
-                                if re.defaultWeight > 0 {
-                                    Text("\(re.defaultWeight.formatted1)kg")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
-                            if idx < routine.exercises.count - 1 {
-                                Divider()
-                                    .background(Color.primary.opacity(0.06))
-                                    .padding(.leading, 30)
-                            }
-                        }
-                    }
-                }
-                .transition(.opacity.combined(with: .move(edge: .top)))
-            }
+            .padding(12)
         }
+        .frame(maxHeight: .infinity)
         .background(AppTheme.cardBg)
         .cornerRadius(16)
         .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 3)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            HapticManager.selection()
+            onTap()
+        }
         .contextMenu {
             Button { showEdit = true } label: {
                 Label("Edit Routine", systemImage: "pencil")
@@ -1063,10 +1040,127 @@ private struct RoutineCard: View {
             }
         }
         .sheet(isPresented: $showEdit) { EditRoutineSheet(routine: routine) }
-        .swipeActions(edge: .trailing) {
-            Button(role: .destructive) { appState.deleteRoutine(id: routine.id) } label: {
-                Label("Delete", systemImage: "trash")
+    }
+}
+
+// MARK: - Routine Detail Sheet
+
+private struct RoutineDetailSheet: View {
+    @Environment(AppState.self) private var appState
+    @Environment(\.dismiss) private var dismiss
+    let routine: Routine
+    let onStart: () -> Void
+
+    @State private var showEdit = false
+
+    private var muscleGroups: [String] {
+        Array(Set(routine.exercises.compactMap { re in
+            appState.exercises.first(where: { $0.id == re.exerciseId })?.muscle
+        })).sorted()
+    }
+
+    private var totalSets: Int { routine.exercises.reduce(0) { $0 + $1.defaultSets } }
+    private var estimatedMinutes: Int { max(10, totalSets * 2) }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        // Summary header
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack(spacing: 5) {
+                                ForEach(muscleGroups, id: \.self) { muscle in
+                                    Text(muscle)
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .foregroundColor(muscle.muscleColor)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 3)
+                                        .background(muscle.muscleColor.opacity(0.15))
+                                        .clipShape(Capsule())
+                                }
+                            }
+                            HStack(spacing: 6) {
+                                Image(systemName: "dumbbell").font(.caption2)
+                                Text("\(routine.exercises.count) exercises")
+                                Text("·")
+                                Image(systemName: "square.stack").font(.caption2)
+                                Text("\(totalSets) sets")
+                                Text("·")
+                                Image(systemName: "clock").font(.caption2)
+                                Text("~\(estimatedMinutes)m")
+                            }
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.top, 8)
+
+                        // Exercise list
+                        VStack(spacing: 0) {
+                            ForEach(Array(routine.exercises.enumerated()), id: \.element.id) { idx, re in
+                                if let ex = appState.exercises.first(where: { $0.id == re.exerciseId }) {
+                                    HStack(spacing: 10) {
+                                        Circle().fill(ex.muscle.muscleColor).frame(width: 8, height: 8)
+                                        Text(ex.name)
+                                            .font(.subheadline)
+                                            .foregroundColor(.primary)
+                                        Spacer()
+                                        Text("\(re.defaultSets)×\(re.defaultReps)")
+                                            .font(.caption.monospacedDigit())
+                                            .foregroundColor(.secondary)
+                                        if re.defaultWeight > 0 {
+                                            Text("\(re.defaultWeight.formatted1)kg")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                        }
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 12)
+                                    if idx < routine.exercises.count - 1 {
+                                        Divider().padding(.leading, 34)
+                                    }
+                                }
+                            }
+                        }
+                        .background(AppTheme.cardBg)
+                        .cornerRadius(16)
+                        .padding(.horizontal, 16)
+                    }
+                    .padding(.bottom, 16)
+                }
+
+                // Start button
+                Button {
+                    HapticManager.impact(.medium)
+                    onStart()
+                } label: {
+                    HStack {
+                        Image(systemName: "play.fill")
+                        Text("Start Workout")
+                    }
+                    .font(.headline)
+                    .foregroundColor(.black)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(AppTheme.trainAccent)
+                    .cornerRadius(AppTheme.buttonRadius)
+                }
+                .buttonStyle(PressableButtonStyle())
+                .padding(16)
             }
+            .background(AppTheme.trainBg)
+            .navigationTitle(routine.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Close") { dismiss() }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Edit") { showEdit = true }
+                }
+            }
+            .sheet(isPresented: $showEdit) { EditRoutineSheet(routine: routine) }
         }
     }
 }
