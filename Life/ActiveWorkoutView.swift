@@ -797,7 +797,7 @@ private struct SetRow: View {
                 } label: {
                     Image(systemName: "trash")
                         .font(.system(size: 13))
-                        .foregroundColor(.secondary.opacity(0.45))
+                        .foregroundColor(.secondary.opacity(0.7))
                         .frame(width: 28, height: 44)
                 }
                 .buttonStyle(.plain)

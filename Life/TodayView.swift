@@ -143,7 +143,7 @@ private struct CareSection: View {
                     count: "\(today.steps.formatted())/\(settings.stepGoal.formatted())",
                     done: today.steps >= settings.stepGoal
                 ) {
-                    appState.syncSteps(today.steps + 1000)
+                    // Steps come from HealthKit — no manual increment
                 }
             }
             .padding(.trailing, 4)
