@@ -185,9 +185,10 @@ final class WorldFogOverlay: NSObject, MKOverlay {
 // MARK: - Fog Renderer
 
 final class WorldFogRenderer: MKOverlayRenderer {
-    private var fog: WorldFogOverlay { overlay as! WorldFogOverlay }
+    private var fog: WorldFogOverlay? { overlay as? WorldFogOverlay }
 
     override func draw(_ mapRect: MKMapRect, zoomScale: MKZoomScale, in context: CGContext) {
+        guard let fog else { return }
         // Fill entire world with dark fog
         let fogColor = UIColor.black.withAlphaComponent(0.72)
         context.setFillColor(fogColor.cgColor)

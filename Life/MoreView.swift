@@ -14,6 +14,14 @@ struct MoreView: View {
                 // MARK: - Tracking
                 Section("Tracking") {
                     MoreRow(
+                        icon: "scalemass.fill",
+                        color: .green,
+                        title: "Body",
+                        subtitle: "Weight & body composition"
+                    ) {
+                        BodyView()
+                    }
+                    MoreRow(
                         icon: "dollarsign.circle.fill",
                         color: .orange,
                         title: "Money",

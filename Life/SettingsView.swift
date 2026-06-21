@@ -17,6 +17,7 @@ struct SettingsView: View {
     @State private var exportURL: URL? = nil
     @State private var showImportPicker = false
     @State private var importErrorMessage: String? = nil
+    @State private var exportErrorMessage: String? = nil
     @FocusState private var isNameFocused: Bool
 
     // App version from bundle
@@ -117,6 +118,11 @@ struct SettingsView: View {
                     }
 
                     if let error = importErrorMessage {
+                        Text(error)
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
+                    if let error = exportErrorMessage {
                         Text(error)
                             .font(.caption)
                             .foregroundColor(.red)
@@ -239,7 +245,7 @@ struct SettingsView: View {
             exportURL = fileURL
             showShareSheet = true
         } catch {
-            // Export failed silently
+            exportErrorMessage = "Export failed: \(error.localizedDescription)"
         }
     }
 
