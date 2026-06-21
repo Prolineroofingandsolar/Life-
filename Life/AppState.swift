@@ -721,6 +721,17 @@ final class AppState {
         save()
     }
 
+    func renameSession(sessionId: String, name: String) {
+        guard let idx = sessions.firstIndex(where: { $0.id == sessionId }) else { return }
+        sessions[idx].name = name
+        save()
+    }
+
+    func deleteFinishedSession(sessionId: String) {
+        sessions.removeAll { $0.id == sessionId }
+        save()
+    }
+
     func rateSession(sessionId: String, rating: Int) {
         guard let idx = sessions.firstIndex(where: { $0.id == sessionId }) else { return }
         sessions[idx].rating = rating
