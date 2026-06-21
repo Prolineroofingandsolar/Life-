@@ -49,6 +49,7 @@ struct StateSnapshot: Codable {
     var userName: String = ""
     var visitedLocations: [VisitedLocation] = []
     var plannedSessions: [PlannedSession] = []
+    var supplements: [Supplement] = []
 }
 
 // MARK: - AppState
@@ -76,6 +77,7 @@ final class AppState {
     var careSettings: CareSettings = CareSettings()
     var workoutSettings: WorkoutSettings = WorkoutSettings()
     var userName: String = ""
+    var supplements: [Supplement] = []
     var cloudUserId: String? = nil
     var visitedLocations: [VisitedLocation] = []
     var plannedSessions: [PlannedSession] = []
@@ -123,6 +125,7 @@ final class AppState {
             taskLists: taskLists,
             bills: bills,
             habits: habits,
+            supplements: supplements,
             exercises: exercises,
             routines: routines,
             sessions: sessions,
@@ -145,6 +148,7 @@ final class AppState {
         taskLists = snapshot.taskLists.isEmpty ? Self.defaultTaskLists : snapshot.taskLists
         bills = snapshot.bills
         habits = snapshot.habits
+        supplements = snapshot.supplements
         exercises = WorkoutSeed.mergeExercises(into: snapshot.exercises)
         routines = snapshot.routines.isEmpty ? WorkoutSeed.routines : snapshot.routines
         sessions = snapshot.sessions
@@ -470,6 +474,41 @@ final class AppState {
             habits[idx].logs.append(HabitLogEntry(dayKey: key, count: 1, slipped: true))
         }
         save()
+    }
+
+    // MARK: - Supplement Mutations
+
+    func addSupplement(_ supplement: Supplement) {
+        supplements.append(supplement)
+        save()
+    }
+
+    func deleteSupplement(id: String) {
+        supplements.removeAll { $0.id == id }
+        save()
+    }
+
+    func logDose(supplementId: String) {
+        guard let idx = supplements.firstIndex(where: { $0.id == supplementId }) else { return }
+        let key = Date().dayKey
+        if let logIdx = supplements[idx].logs.firstIndex(where: { $0.dayKey == key }) {
+            supplements[idx].logs[logIdx].dosesTaken += 1
+        } else {
+            supplements[idx].logs.append(DoseLog(dayKey: key, dosesTaken: 1))
+        }
+        save()
+    }
+
+    func dosesToday(for supplement: Supplement) -> Int {
+        supplement.logs.first(where: { $0.dayKey == Date().dayKey })?.dosesTaken ?? 0
+    }
+
+    func isDueToday(_ supplement: Supplement) -> Bool {
+        guard !supplement.isArchived else { return false }
+        if supplement.scheduleDays.isEmpty { return true }
+        let weekday = Calendar.current.component(.weekday, from: Date())
+        let mon1 = ((weekday + 5) % 7) + 1
+        return supplement.scheduleDays.contains(mon1)
     }
 
     // MARK: - Routine Mutations

@@ -246,6 +246,26 @@ struct Habit: Codable, Identifiable {
     var createdAt: Date = Date()
 }
 
+// MARK: - Supplement Models
+
+struct Supplement: Identifiable, Codable {
+    var id: String = UUID().uuidString
+    var name: String
+    var emoji: String = "💊"
+    var dosesPerDay: Int = 1
+    var scheduleDays: [Int] = []  // empty = every day; 1=Mon…7=Sun
+    var doseUnit: String = "dose"
+    var notes: String = ""
+    var logs: [DoseLog] = []
+    var isArchived: Bool = false
+}
+
+struct DoseLog: Identifiable, Codable {
+    var id: String = UUID().uuidString
+    var dayKey: String = Date().dayKey
+    var dosesTaken: Int = 0
+}
+
 // MARK: - Exercise / Workout Models
 
 enum ExerciseKind: String, Codable, CaseIterable, Identifiable {

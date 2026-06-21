@@ -789,16 +789,23 @@ private struct SetRow: View {
                 }
                 .buttonStyle(.plain)
                 .frame(width: 52)
+
+                // Trash — always visible, subtle
+                Button {
+                    HapticManager.impact(.light)
+                    appState.removeSet(sessionId: sessionId, exerciseId: exerciseId, setId: set.id)
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 13))
+                        .foregroundColor(.secondary.opacity(0.45))
+                        .frame(width: 28, height: 44)
+                }
+                .buttonStyle(.plain)
             }
             .frame(minHeight: 56)
             .padding(.horizontal, 8)
             .background(set.done ? Color(hex: "#30d158").opacity(0.08) : Color.clear)
             .animation(.easeInOut(duration: 0.2), value: set.done)
-            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                Button(role: .destructive) {
-                    appState.removeSet(sessionId: sessionId, exerciseId: exerciseId, setId: set.id)
-                } label: { Label("Delete", systemImage: "trash") }
-            }
             .contextMenu {
                 if !set.isDropSet {
                     Button {

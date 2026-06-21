@@ -52,6 +52,7 @@ struct HabitsView: View {
                     VStack(spacing: 16) {
                         headerCard
                         statsRow
+                        SupplementsSection()
                         filterPicker
                         habitsList
                         if !archivedHabits.isEmpty { archivedSection }
@@ -587,3 +588,210 @@ struct EditHabitSheet: View {
         }
     }
 }
+
+// MARK: - Supplements Section
+
+private struct SupplementsSection: View {
+    @Environment(AppState.self) private var appState
+    @State private var showAdd = false
+
+    private var activeSupplements: [Supplement] {
+        appState.supplements.filter { !$0.isArchived }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Supplements")
+                    .font(.headline)
+                Spacer()
+                Button { showAdd = true } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(AppTheme.primary)
+                }
+            }
+
+            if activeSupplements.isEmpty {
+                Button { showAdd = true } label: {
+                    HStack {
+                        Image(systemName: "pills")
+                            .foregroundColor(.secondary)
+                        Text("Add supplements, vitamins & more")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(14)
+                    .background(Color(.secondarySystemGroupedBackground))
+                    .cornerRadius(12)
+                }
+                .buttonStyle(.plain)
+            } else {
+                ForEach(activeSupplements) { supplement in
+                    SupplementCard(supplement: supplement)
+                }
+            }
+        }
+        .sheet(isPresented: $showAdd) { AddSupplementSheet() }
+    }
+}
+
+private struct SupplementCard: View {
+    @Environment(AppState.self) private var appState
+    let supplement: Supplement
+
+    private var taken: Int { appState.dosesToday(for: supplement) }
+    private var total: Int { supplement.dosesPerDay }
+    private var isDone: Bool { taken >= total }
+    private var isDue: Bool { appState.isDueToday(supplement) }
+
+    private var scheduleLabel: String {
+        if supplement.scheduleDays.isEmpty { return "Every day" }
+        let names = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
+        return supplement.scheduleDays.sorted().compactMap { ($0 >= 1 && $0 <= 7) ? names[$0-1] : nil }.joined(separator: " & ")
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(isDone ? AppTheme.primary.opacity(0.15) : Color(.tertiarySystemFill))
+                    .frame(width: 40, height: 40)
+                Text(supplement.emoji)
+                    .font(.system(size: 20))
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(supplement.name)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(isDue ? .primary : .secondary)
+                Text(isDue ? "\(scheduleLabel) · \(supplement.doseUnit)" : "Not due today")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            HStack(spacing: 4) {
+                ForEach(0..<total, id: \.self) { i in
+                    Circle()
+                        .fill(i < taken ? AppTheme.primary : Color(.tertiarySystemFill))
+                        .frame(width: 8, height: 8)
+                }
+            }
+
+            Button {
+                if isDue && !isDone {
+                    HapticManager.impact(.light)
+                    appState.logDose(supplementId: supplement.id)
+                }
+            } label: {
+                Image(systemName: isDone ? "checkmark.circle.fill" : "plus.circle.fill")
+                    .font(.system(size: 26))
+                    .foregroundColor(isDone ? AppTheme.primary : (isDue ? .secondary : Color(.tertiarySystemFill)))
+            }
+            .buttonStyle(.plain)
+            .disabled(!isDue || isDone)
+        }
+        .padding(14)
+        .background(Color(.secondarySystemGroupedBackground))
+        .cornerRadius(14)
+        .opacity(isDue ? 1 : 0.5)
+        .contextMenu {
+            Button(role: .destructive) {
+                appState.deleteSupplement(id: supplement.id)
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
+    }
+}
+
+private struct AddSupplementSheet: View {
+    @Environment(AppState.self) private var appState
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var name = ""
+    @State private var emoji = "💊"
+    @State private var dosesPerDay = 1
+    @State private var doseUnit = "capsule"
+    @State private var everyDay = true
+    @State private var selectedDays: Set<Int> = []
+
+    private let emojiOptions = ["💊","🧴","🫙","🧪","🍋","🫐","🥛","🌿","⚡️","🔥"]
+    private let unitOptions = ["capsule","tablet","scoop","ml","drop","serving"]
+    private let dayNames = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Name") {
+                    TextField("e.g. Creatine, Vitamin D", text: $name)
+                }
+
+                Section("Icon") {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 5), spacing: 10) {
+                        ForEach(emojiOptions, id: \.self) { e in
+                            Text(e)
+                                .font(.system(size: 28))
+                                .frame(width: 48, height: 48)
+                                .background(emoji == e ? AppTheme.primary.opacity(0.15) : Color(.tertiarySystemFill))
+                                .cornerRadius(10)
+                                .onTapGesture { emoji = e }
+                        }
+                    }
+                    .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8))
+                }
+
+                Section("Doses per day") {
+                    Stepper("\(dosesPerDay) \(dosesPerDay == 1 ? doseUnit : doseUnit + "s")", value: $dosesPerDay, in: 1...6)
+                    Picker("Unit", selection: $doseUnit) {
+                        ForEach(unitOptions, id: \.self) { Text($0).tag($0) }
+                    }
+                }
+
+                Section("Schedule") {
+                    Toggle("Every day", isOn: $everyDay)
+                    if !everyDay {
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 8) {
+                            ForEach(Array(dayNames.enumerated()), id: \.offset) { idx, day in
+                                let dayNum = idx + 1
+                                Text(String(day.prefix(1)))
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .frame(width: 36, height: 36)
+                                    .background(selectedDays.contains(dayNum) ? AppTheme.primary : Color(.tertiarySystemFill))
+                                    .foregroundColor(selectedDays.contains(dayNum) ? .white : .primary)
+                                    .cornerRadius(8)
+                                    .onTapGesture {
+                                        if selectedDays.contains(dayNum) { selectedDays.remove(dayNum) }
+                                        else { selectedDays.insert(dayNum) }
+                                    }
+                            }
+                        }
+                        .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8))
+                    }
+                }
+            }
+            .navigationTitle("Add Supplement")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Add") {
+                        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+                        var s = Supplement(name: name.trimmingCharacters(in: .whitespaces))
+                        s.emoji = emoji
+                        s.dosesPerDay = dosesPerDay
+                        s.doseUnit = doseUnit
+                        s.scheduleDays = everyDay ? [] : Array(selectedDays).sorted()
+                        appState.addSupplement(s)
+                        dismiss()
+                    }
+                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+        }
+    }
+}
+
