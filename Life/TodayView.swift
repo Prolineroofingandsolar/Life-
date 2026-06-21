@@ -294,6 +294,9 @@ private struct TodaySupplementRow: View {
     @Environment(AppState.self) private var appState
     let supplement: Supplement
 
+    @State private var showUndo = false
+    @State private var undoTask: Task<Void, Never>? = nil
+
     private var taken: Int { appState.dosesToday(for: supplement) }
     private var done: Bool { taken >= supplement.dosesPerDay }
 
@@ -316,20 +319,45 @@ private struct TodaySupplementRow: View {
 
             Spacer()
 
-            Button {
-                guard !done else { return }
-                HapticManager.impact(.medium)
-                appState.logDose(supplementId: supplement.id)
-            } label: {
-                Image(systemName: done ? "checkmark" : "plus")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundColor(.white)
-                    .frame(width: 36, height: 36)
-                    .background(done ? Color.purple : Color.purple.opacity(0.85))
-                    .clipShape(Circle())
+            if showUndo {
+                Button {
+                    undoTask?.cancel()
+                    withAnimation { showUndo = false }
+                    HapticManager.impact(.light)
+                    appState.undoDose(supplementId: supplement.id)
+                } label: {
+                    Text("Undo")
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color.orange)
+                        .cornerRadius(8)
+                }
+                .buttonStyle(.plain)
+                .transition(.opacity.combined(with: .scale))
+            } else {
+                Button {
+                    guard !done else { return }
+                    HapticManager.impact(.medium)
+                    appState.logDose(supplementId: supplement.id)
+                    withAnimation { showUndo = true }
+                    undoTask?.cancel()
+                    undoTask = Task {
+                        try? await Task.sleep(nanoseconds: 3_000_000_000)
+                        await MainActor.run { withAnimation { showUndo = false } }
+                    }
+                } label: {
+                    Image(systemName: done ? "checkmark" : "plus")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(.white)
+                        .frame(width: 36, height: 36)
+                        .background(done ? Color.purple : Color.purple.opacity(0.85))
+                        .clipShape(Circle())
+                }
+                .buttonStyle(PressableButtonStyle())
+                .disabled(done)
             }
-            .buttonStyle(PressableButtonStyle())
-            .disabled(done)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -465,6 +493,9 @@ private struct TodayHabitRow: View {
     @Environment(AppState.self) private var appState
     let habit: Habit
 
+    @State private var showUndo = false
+    @State private var undoTask: Task<Void, Never>? = nil
+
     private var todayLog: HabitLogEntry? {
         habit.logs.first { $0.dayKey == Date().dayKey }
     }
@@ -475,53 +506,85 @@ private struct TodayHabitRow: View {
     }
 
     var body: some View {
-        Button {
-            HapticManager.impact(.medium)
-            if habit.kind == .build {
-                appState.incHabitToday(id: habit.id)
-            } else {
-                appState.slipHabitToday(id: habit.id)
-            }
-        } label: {
-            HStack(spacing: 12) {
-                Text(habit.emoji)
-                    .font(.title2)
+        HStack(spacing: 12) {
+            Text(habit.emoji)
+                .font(.title2)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(habit.name)
-                        .foregroundColor(.primary)
-                        .font(.subheadline)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(habit.name)
+                    .foregroundColor(.primary)
+                    .font(.subheadline)
 
-                    if habit.kind == .build {
-                        Text("\(todayLog?.count ?? 0) / \(habit.targetCount)")
+                if habit.kind == .build {
+                    Text("\(todayLog?.count ?? 0) / \(habit.targetCount)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                } else {
+                    if todayLog?.slipped == true {
+                        Text("Slipped today")
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(.red)
                     } else {
-                        if todayLog?.slipped == true {
-                            Text("Slipped today")
-                                .font(.caption)
-                                .foregroundColor(.red)
-                        } else {
-                            Text("Maintained today")
-                                .font(.caption)
-                                .foregroundColor(.green)
-                        }
+                        Text("Maintained today")
+                            .font(.caption)
+                            .foregroundColor(.green)
                     }
                 }
-
-                Spacer()
-
-                if isComplete {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.green)
-                } else if todayLog?.slipped == true {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundColor(.red)
-                }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+
+            Spacer()
+
+            if showUndo {
+                Button {
+                    undoTask?.cancel()
+                    withAnimation { showUndo = false }
+                    HapticManager.impact(.light)
+                    if habit.kind == .build {
+                        appState.decHabitToday(id: habit.id)
+                    } else {
+                        appState.unslipHabitToday(id: habit.id)
+                    }
+                } label: {
+                    Text("Undo")
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color.orange)
+                        .cornerRadius(8)
+                }
+                .buttonStyle(.plain)
+                .transition(.opacity.combined(with: .scale))
+            } else {
+                Button {
+                    HapticManager.impact(.medium)
+                    if habit.kind == .build {
+                        appState.incHabitToday(id: habit.id)
+                    } else {
+                        appState.slipHabitToday(id: habit.id)
+                    }
+                    withAnimation { showUndo = true }
+                    undoTask?.cancel()
+                    undoTask = Task {
+                        try? await Task.sleep(nanoseconds: 3_000_000_000)
+                        await MainActor.run { withAnimation { showUndo = false } }
+                    }
+                } label: {
+                    if isComplete {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                    } else if todayLog?.slipped == true {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.red)
+                    } else {
+                        Image(systemName: "circle")
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
     }
 }

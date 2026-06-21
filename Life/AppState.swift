@@ -481,6 +481,30 @@ final class AppState {
         save()
     }
 
+    func decHabitToday(id: String) {
+        guard let idx = habits.firstIndex(where: { $0.id == id }) else { return }
+        let key = todayKey
+        guard let logIdx = habits[idx].logs.firstIndex(where: { $0.dayKey == key }) else { return }
+        if habits[idx].logs[logIdx].count > 1 {
+            habits[idx].logs[logIdx].count -= 1
+        } else {
+            habits[idx].logs.remove(at: logIdx)
+        }
+        // Also undo water ring if applicable
+        if habits[idx].name.lowercased().contains("water") {
+            removeWater()
+        } else {
+            save()
+        }
+    }
+
+    func unslipHabitToday(id: String) {
+        guard let idx = habits.firstIndex(where: { $0.id == id }) else { return }
+        let key = todayKey
+        habits[idx].logs.removeAll { $0.dayKey == key }
+        save()
+    }
+
     // MARK: - Supplement Mutations
 
     func addSupplement(_ supplement: Supplement) {
@@ -500,6 +524,18 @@ final class AppState {
             supplements[idx].logs[logIdx].dosesTaken += 1
         } else {
             supplements[idx].logs.append(DoseLog(dayKey: key, dosesTaken: 1))
+        }
+        save()
+    }
+
+    func undoDose(supplementId: String) {
+        guard let idx = supplements.firstIndex(where: { $0.id == supplementId }) else { return }
+        let key = Date().dayKey
+        guard let logIdx = supplements[idx].logs.firstIndex(where: { $0.dayKey == key }) else { return }
+        if supplements[idx].logs[logIdx].dosesTaken > 1 {
+            supplements[idx].logs[logIdx].dosesTaken -= 1
+        } else {
+            supplements[idx].logs.remove(at: logIdx)
         }
         save()
     }
