@@ -14,15 +14,6 @@ struct MoreView: View {
                 // MARK: - Tracking
                 Section("Tracking") {
                     MoreRow(
-                        icon: "figure.stand",
-                        color: Color(hex: "#30d158"),
-                        title: "Body",
-                        subtitle: "Weight, measurements & lifts"
-                    ) {
-                        BodyView()
-                    }
-
-                    MoreRow(
                         icon: "dollarsign.circle.fill",
                         color: .orange,
                         title: "Money",
