@@ -427,6 +427,11 @@ final class AppState {
         } else {
             habits[idx].logs.append(HabitLogEntry(dayKey: key, count: 1))
         }
+        // If this is a water-tracking habit, also increment the hydration ring
+        if habits[idx].name.lowercased().contains("water") {
+            addWater()
+            return // save() already called inside addWater()
+        }
         save()
     }
 

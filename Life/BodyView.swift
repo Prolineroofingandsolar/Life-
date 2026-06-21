@@ -92,7 +92,7 @@ private struct WeightTab: View {
             if displayEntries.count > 1 {
                 Section {
                     Chart {
-                        ForEach(displayEntries, id: \.date) { entry in
+                        ForEach(Array(displayEntries.enumerated()), id: \.offset) { _, entry in
                             LineMark(
                                 x: .value("Date", entry.date),
                                 y: .value("Weight", entry.value)
@@ -252,7 +252,7 @@ private struct CompositionTab: View {
                     .pickerStyle(.segmented)
 
                     Chart {
-                        ForEach(chartData, id: \.date) { point in
+                        ForEach(Array(chartData.enumerated()), id: \.offset) { _, point in
                             LineMark(
                                 x: .value("Date", point.date),
                                 y: .value(selectedMetric.rawValue, point.value)

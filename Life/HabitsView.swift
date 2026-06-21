@@ -282,7 +282,7 @@ private struct HabitCard: View {
                     if habit.kind == .build {
                         appState.incHabitToday(id: habit.id)
                     } else {
-                        appState.toggleHabitToday(id: habit.id)
+                        appState.slipHabitToday(id: habit.id)
                     }
                 } label: {
                     ZStack {
