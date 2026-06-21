@@ -125,7 +125,6 @@ final class AppState {
             taskLists: taskLists,
             bills: bills,
             habits: habits,
-            supplements: supplements,
             exercises: exercises,
             routines: routines,
             sessions: sessions,
@@ -139,7 +138,8 @@ final class AppState {
             workoutSettings: workoutSettings,
             userName: userName,
             visitedLocations: visitedLocations,
-            plannedSessions: plannedSessions
+            plannedSessions: plannedSessions,
+            supplements: supplements
         )
     }
 
