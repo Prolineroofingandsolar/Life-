@@ -585,7 +585,7 @@ private struct BodyTab: View {
         for (date, pct) in data.bodyFat {
             let key = date.dayKey
             var e = entryMap[key] ?? BodyCompEntry(date: date)
-            e.bodyFatPct = pct; entryMap[key] = e
+            e.bodyFatPct = pct * 100; entryMap[key] = e
         }
         for (date, kg) in data.leanMass {
             let key = date.dayKey
