@@ -330,7 +330,15 @@ private struct HabitCard: View {
             }
             .padding(.horizontal, 16)
             .padding(.top, 8)
-            .padding(.bottom, 14)
+            .padding(.bottom, filter == .today ? 14 : 10)
+
+            if filter == .week {
+                WeekMiniGrid(habit: habit)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 14)
+            } else if filter == .month {
+                HabitHeatmapView(habit: habit)
+            }
         }
         .background(Color(.secondarySystemGroupedBackground))
         .cornerRadius(16)
@@ -360,6 +368,57 @@ private struct HabitCard: View {
             .padding(.horizontal, 8).padding(.vertical, 3)
             .background(color.opacity(0.12))
             .cornerRadius(6)
+    }
+}
+
+// MARK: - Week Mini Grid
+
+private struct WeekMiniGrid: View {
+    let habit: Habit
+
+    private var days: [(label: String, key: String, intensity: Double)] {
+        let cal = Calendar.current
+        let today = Date()
+        let dayLabels = ["S","M","T","W","T","F","S"]
+        return (0..<7).reversed().map { offset in
+            guard let date = cal.date(byAdding: .day, value: -offset, to: today) else {
+                return ("", "", 0)
+            }
+            let key = date.dayKey
+            let weekday = cal.component(.weekday, from: date) - 1
+            let label = dayLabels[weekday]
+            let log = habit.logs.first { $0.dayKey == key }
+            let intensity: Double
+            if let log {
+                if log.slipped { intensity = -1 }
+                else { intensity = min(Double(log.count) / Double(max(habit.targetCount, 1)), 1.0) }
+            } else {
+                intensity = 0
+            }
+            return (label, key, intensity)
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(Array(days.enumerated()), id: \.offset) { _, day in
+                VStack(spacing: 4) {
+                    RoundedRectangle(cornerRadius: 5)
+                        .fill(cellColor(day.intensity))
+                        .frame(height: 28)
+                    Text(day.label)
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+            }
+        }
+    }
+
+    private func cellColor(_ intensity: Double) -> Color {
+        if intensity < 0 { return .red.opacity(0.6) }
+        if intensity == 0 { return Color(.systemFill) }
+        return AppTheme.primary.opacity(0.3 + intensity * 0.7)
     }
 }
 
