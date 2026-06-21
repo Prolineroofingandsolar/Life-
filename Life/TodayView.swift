@@ -27,11 +27,26 @@ struct TodayView: View {
         appState.habits.filter { !$0.isArchived }
     }
 
+    private var todaySupplements: [Supplement] {
+        appState.supplements.filter { appState.isDueToday($0) }
+    }
+
+    private var workedOutToday: Bool {
+        let key = Date().dayKey
+        return appState.sessions.contains { $0.finishedAt != nil && $0.startedAt.dayKey == key }
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
                     CareSection()
+                    if workedOutToday {
+                        WorkedOutBanner()
+                    }
+                    if !todaySupplements.isEmpty {
+                        TodaySupplementsSection(supplements: todaySupplements)
+                    }
                     TodayTasksSection(tasks: todayTasks)
                     TodayHabitsSection(habits: todayHabits)
                 }
@@ -218,6 +233,106 @@ private struct CareRow: View {
             }
             .buttonStyle(PressableButtonStyle())
         }
+    }
+}
+
+// MARK: - Worked Out Banner
+
+private struct WorkedOutBanner: View {
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "flame.fill")
+                .font(.title2)
+                .foregroundColor(.orange)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Workout complete!")
+                    .font(.subheadline.weight(.semibold))
+                Text("Great work today.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            Spacer()
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundColor(.green)
+                .font(.title2)
+        }
+        .padding(14)
+        .background(Color(.secondarySystemGroupedBackground))
+        .cornerRadius(12)
+        .padding(.horizontal, 16)
+    }
+}
+
+// MARK: - Today Supplements Section
+
+private struct TodaySupplementsSection: View {
+    @Environment(AppState.self) private var appState
+    let supplements: [Supplement]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Supplements")
+                .font(.headline)
+                .padding(.horizontal, 20)
+
+            VStack(spacing: 0) {
+                ForEach(supplements) { supplement in
+                    TodaySupplementRow(supplement: supplement)
+                    if supplement.id != supplements.last?.id {
+                        Divider().padding(.leading, 16)
+                    }
+                }
+            }
+            .background(Color(.secondarySystemGroupedBackground))
+            .cornerRadius(12)
+            .padding(.horizontal, 16)
+        }
+    }
+}
+
+private struct TodaySupplementRow: View {
+    @Environment(AppState.self) private var appState
+    let supplement: Supplement
+
+    private var taken: Int { appState.dosesToday(for: supplement) }
+    private var done: Bool { taken >= supplement.dosesPerDay }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(supplement.emoji)
+                .font(.title2)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(supplement.name)
+                    .font(.subheadline.weight(.semibold))
+                HStack(spacing: 4) {
+                    ForEach(0..<supplement.dosesPerDay, id: \.self) { i in
+                        Image(systemName: i < taken ? "circle.fill" : "circle")
+                            .font(.system(size: 8))
+                            .foregroundColor(i < taken ? .purple : .secondary)
+                    }
+                }
+            }
+
+            Spacer()
+
+            Button {
+                guard !done else { return }
+                HapticManager.impact(.medium)
+                appState.logDose(supplementId: supplement.id)
+            } label: {
+                Image(systemName: done ? "checkmark" : "plus")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundColor(.white)
+                    .frame(width: 36, height: 36)
+                    .background(done ? Color.purple : Color.purple.opacity(0.85))
+                    .clipShape(Circle())
+            }
+            .buttonStyle(PressableButtonStyle())
+            .disabled(done)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
     }
 }
 
