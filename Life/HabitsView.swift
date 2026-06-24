@@ -47,36 +47,31 @@ struct HabitsView: View {
 
     var body: some View {
         NavigationStack {
-            ZStack(alignment: .bottomTrailing) {
-                ScrollView {
-                    VStack(spacing: 16) {
-                        headerCard
-                        statsRow
-                        SupplementsSection()
-                        filterPicker
-                        habitsList
-                        if !archivedHabits.isEmpty { archivedSection }
-                        Spacer(minLength: 90)
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
+            ScrollView {
+                VStack(spacing: 16) {
+                    headerCard
+                    statsRow
+                    SupplementsSection()
+                    filterPicker
+                    habitsList
+                    if !archivedHabits.isEmpty { archivedSection }
+                    Spacer(minLength: 20)
                 }
-                .background(Color(.systemGroupedBackground))
-
-                Button { showAddHabit = true } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 22, weight: .bold))
-                        .foregroundColor(.white)
-                        .frame(width: 58, height: 58)
-                        .background(AppTheme.primary)
-                        .clipShape(Circle())
-                        .shadow(color: AppTheme.primary.opacity(0.45), radius: 12, x: 0, y: 6)
-                }
-                .padding(.trailing, 20)
-                .padding(.bottom, 100)
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
             }
+            .background(Color(.systemGroupedBackground))
             .navigationTitle("Habits")
             .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button { showAddHabit = true } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundColor(AppTheme.primary)
+                    }
+                }
+            }
             .sheet(isPresented: $showAddHabit) { AddHabitSheet() }
             .sheet(item: $editHabit) { EditHabitSheet(habit: $0) }
         }
