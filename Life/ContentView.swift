@@ -174,28 +174,55 @@ struct FloatingTabBar: View {
             }
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 10)
+        .padding(.vertical, 11)
         .background {
-            Capsule()
-                .fill(.regularMaterial)
-                .overlay {
-                    // Top-edge glass sheen
-                    Capsule()
-                        .strokeBorder(
-                            LinearGradient(
-                                colors: [
-                                    Color.white.opacity(0.45),
-                                    Color.white.opacity(0.05)
-                                ],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            ),
-                            lineWidth: 1
+            ZStack {
+                // Base blur layer
+                Capsule().fill(.ultraThinMaterial)
+
+                // White glass body — gives the "filled glass" appearance
+                Capsule()
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(colorScheme == .dark ? 0.10 : 0.55),
+                                Color.white.opacity(colorScheme == .dark ? 0.04 : 0.20)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
                         )
-                }
+                    )
+
+                // Bright specular top highlight — the "glass catching light" look
+                Capsule()
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(colorScheme == .dark ? 0.35 : 0.85),
+                                Color.white.opacity(0.0)
+                            ],
+                            startPoint: .top,
+                            endPoint: UnitPoint(x: 0.5, y: 0.4)
+                        )
+                    )
+
+                // Outer border — thin bright edge like real glass
+                Capsule()
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(colorScheme == .dark ? 0.5 : 0.9),
+                                Color.white.opacity(colorScheme == .dark ? 0.1 : 0.3)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 1
+                    )
+            }
         }
-        .shadow(color: .black.opacity(0.18), radius: 30, x: 0, y: 10)
-        .shadow(color: .black.opacity(0.07), radius: 6, x: 0, y: 2)
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.55 : 0.13), radius: 32, x: 0, y: 12)
+        .shadow(color: .black.opacity(0.08), radius: 4, x: 0, y: 1)
         .padding(.horizontal, 20)
     }
 }
