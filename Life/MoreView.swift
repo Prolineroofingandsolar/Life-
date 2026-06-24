@@ -29,6 +29,22 @@ struct MoreView: View {
                     ) {
                         MoneyView()
                     }
+                    MoreRow(
+                        icon: "trophy.fill",
+                        color: Color(hex: "#FFD700"),
+                        title: "Achievements",
+                        subtitle: "Milestones & badges"
+                    ) {
+                        AchievementsView()
+                    }
+                    MoreRow(
+                        icon: "chart.line.uptrend.xyaxis",
+                        color: AppTheme.primary,
+                        title: "Habit Analytics",
+                        subtitle: "Trends & streaks deep dive"
+                    ) {
+                        HabitAnalyticsView()
+                    }
                 }
 
                 // MARK: - Explore

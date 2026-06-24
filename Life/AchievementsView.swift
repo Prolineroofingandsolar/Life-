@@ -17,44 +17,37 @@ struct AchievementsView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 16) {
-                    LevelCard(
-                        xpLevel: appState.xpLevel,
-                        xpPoints: appState.xpPoints,
-                        xpProgress: appState.xpProgress
-                    )
+        ScrollView {
+            VStack(spacing: 16) {
+                LevelCard(
+                    xpLevel: appState.xpLevel,
+                    xpPoints: appState.xpPoints,
+                    xpProgress: appState.xpProgress
+                )
 
-                    StreakCard(streak: appState.workoutStreak)
+                StreakCard(streak: appState.workoutStreak)
 
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Achievements")
-                            .font(.headline)
-                            .padding(.horizontal, 4)
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Achievements")
+                        .font(.headline)
+                        .padding(.horizontal, 4)
 
-                        LazyVGrid(columns: columns, spacing: 12) {
-                            ForEach(AchievementKind.allCases, id: \.self) { kind in
-                                AchievementCell(
-                                    kind: kind,
-                                    unlocked: unlockedKinds.contains(kind),
-                                    unlockedAt: unlockedDate(for: kind)
-                                )
-                            }
+                    LazyVGrid(columns: columns, spacing: 12) {
+                        ForEach(AchievementKind.allCases, id: \.self) { kind in
+                            AchievementCell(
+                                kind: kind,
+                                unlocked: unlockedKinds.contains(kind),
+                                unlockedAt: unlockedDate(for: kind)
+                            )
                         }
                     }
                 }
-                .padding()
             }
-            .background(Color(.systemGroupedBackground))
-            .navigationTitle("Achievements")
-            .navigationBarTitleDisplayMode(.large)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
+            .padding()
         }
+        .background(Color(.systemGroupedBackground))
+        .navigationTitle("Achievements")
+        .navigationBarTitleDisplayMode(.large)
     }
 }
 
