@@ -149,6 +149,25 @@ struct ContentView: View {
 
 // MARK: - Floating Tab Bar
 
+private struct GlassTabBarModifier: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.glassEffect(.regular, in: Capsule())
+        } else {
+            content
+                .background {
+                    ZStack {
+                        Capsule().fill(.ultraThinMaterial)
+                        Capsule().fill(Color.white.opacity(colorScheme == .dark ? 0.08 : 0.45))
+                        Capsule().strokeBorder(Color.white.opacity(colorScheme == .dark ? 0.3 : 0.7), lineWidth: 1)
+                    }
+                }
+        }
+    }
+}
+
 struct FloatingTabBar: View {
     @Binding var selectedTab: AppTab
     let isCompact: Bool
@@ -174,7 +193,7 @@ struct FloatingTabBar: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 11)
-        .glassEffect(.regular, in: Capsule())
+        .modifier(GlassTabBarModifier())
         .shadow(color: .black.opacity(0.18), radius: 28, x: 0, y: 10)
         .padding(.horizontal, 20)
     }
