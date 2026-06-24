@@ -173,35 +173,29 @@ struct FloatingTabBar: View {
                 }
             }
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 10)
         .padding(.vertical, 10)
         .background {
-            ZStack {
-                // Deep frosted glass
-                Capsule()
-                    .fill(.ultraThinMaterial)
-                // Subtle tint so it reads as a distinct surface
-                Capsule()
-                    .fill(colorScheme == .dark
-                          ? Color.white.opacity(0.05)
-                          : Color.white.opacity(0.55))
-                // Inner highlight at the top edge (classic glass sheen)
-                Capsule()
-                    .strokeBorder(
-                        LinearGradient(
-                            colors: [
-                                Color.white.opacity(colorScheme == .dark ? 0.25 : 0.7),
-                                Color.white.opacity(0.0)
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        ),
-                        lineWidth: 1
-                    )
-            }
+            Capsule()
+                .fill(.regularMaterial)
+                .overlay {
+                    // Top-edge glass sheen
+                    Capsule()
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(0.45),
+                                    Color.white.opacity(0.05)
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ),
+                            lineWidth: 1
+                        )
+                }
         }
-        .shadow(color: .black.opacity(colorScheme == .dark ? 0.5 : 0.14), radius: 24, x: 0, y: 8)
-        .shadow(color: .black.opacity(0.06), radius: 4, x: 0, y: 2)
+        .shadow(color: .black.opacity(0.18), radius: 30, x: 0, y: 10)
+        .shadow(color: .black.opacity(0.07), radius: 6, x: 0, y: 2)
         .padding(.horizontal, 20)
     }
 }
@@ -280,17 +274,16 @@ private struct TabButton: View {
                 ZStack(alignment: .topTrailing) {
                     ZStack {
                         if isSelected {
-                            // Frosted selection pill
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(green.opacity(0.15))
-                                .frame(width: showLabel ? nil : 48, height: 32)
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(.white.opacity(0.15))
+                                .frame(width: 44, height: 30)
                                 .matchedGeometryEffect(id: "selectionPill", in: namespace)
                         }
                         Image(systemName: tab.icon)
                             .font(.system(size: 17, weight: isSelected ? .semibold : .regular))
-                            .foregroundStyle(isSelected ? green : Color(UIColor.tertiaryLabel))
-                            .frame(width: 48, height: 32)
-                            .scaleEffect(isSelected ? 1.08 : 1.0)
+                            .foregroundStyle(isSelected ? green : Color(UIColor.secondaryLabel))
+                            .frame(width: 44, height: 30)
+                            .scaleEffect(isSelected ? 1.05 : 1.0)
                     }
                     if badge {
                         Circle()
