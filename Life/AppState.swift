@@ -694,6 +694,12 @@ final class AppState {
             if set.weight > prevPR.bestWeight || new1RM > prevPR.best1RM {
                 let name = exercises.first(where: { $0.id == exId })?.name ?? "Exercise"
                 latestPR = (exerciseName: name, value: "\(set.weight.formatted1)kg × \(set.reps)")
+                if !achievements.contains(where: { $0.kind == .weightPR }) || set.weight > prevPR.bestWeight {
+                    let unlocked = Set(achievements.map(\.kind))
+                    if !unlocked.contains(.weightPR) {
+                        achievements.append(Achievement(kind: .weightPR, title: AchievementKind.weightPR.title, detail: "\(name): \(set.weight.formatted1)kg"))
+                    }
+                }
             }
         }
         save()
