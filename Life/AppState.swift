@@ -1238,6 +1238,30 @@ final class AppState {
         if finishedSessions.count >= 10 { grant(.totalSessions10) }
         if finishedSessions.count >= 50 { grant(.totalSessions50) }
         if finishedSessions.count >= 100 { grant(.totalSessions100) }
+
+        // 4-week consistency: worked out in at least 3 of the past 4 calendar weeks
+        let cal = Calendar.current
+        let now = Date()
+        let weeksWithWorkout = (0..<4).filter { weekOffset in
+            guard let weekStart = cal.date(byAdding: .weekOfYear, value: -weekOffset, to: now),
+                  let weekEnd = cal.date(byAdding: .day, value: 7, to: weekStart) else { return false }
+            return finishedSessions.contains { s in
+                guard let fin = s.finishedAt else { return false }
+                return fin >= weekStart && fin < weekEnd
+            }
+        }.count
+        if weeksWithWorkout >= 3 { grant(.consistency4Weeks) }
+
+        // Volume PR: check if most recent session has a higher total volume than any previous session
+        if let latest = finishedSessions.max(by: { ($0.finishedAt ?? .distantPast) < ($1.finishedAt ?? .distantPast) }) {
+            let previousMax = finishedSessions
+                .filter { $0.id != latest.id }
+                .map(\.totalVolumeKg)
+                .max() ?? 0
+            if latest.totalVolumeKg > previousMax && latest.totalVolumeKg > 0 {
+                grant(.volumePR, detail: "\(Int(latest.totalVolumeKg))kg total volume")
+            }
+        }
     }
 
     // MARK: - PR Computation
