@@ -74,7 +74,13 @@ enum WidgetSync {
 
     static func syncHabits(habits: [Habit], todayKey: String) {
         let widgetHabits = habits.filter { !$0.isArchived }.map { habit in
-            let completedToday = habit.logs.contains { $0.dayKey == todayKey && !$0.slipped }
+            let todayLog = habit.logs.first { $0.dayKey == todayKey }
+            let completedToday: Bool
+            if habit.kind == .break {
+                completedToday = todayLog?.slipped != true
+            } else {
+                completedToday = todayLog.map { !$0.slipped && $0.count >= habit.targetCount } ?? false
+            }
             return WidgetHabit(id: habit.id, name: habit.name, emoji: habit.emoji, completedToday: completedToday)
         }
 

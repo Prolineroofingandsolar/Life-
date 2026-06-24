@@ -509,7 +509,7 @@ private struct AchievementsStrip: View {
 private struct BodyTab: View {
     @Environment(AppState.self) private var appState
     @State private var showPhotos = false
-    private let hk = HealthKitManager()
+    @State private var hk = HealthKitManager()
 
     private var columns: [GridItem] { [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)] }
     private var unit: String { appState.workoutSettings.weightUnit.label }
