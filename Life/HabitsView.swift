@@ -8,7 +8,6 @@ struct HabitsView: View {
     @State private var showAddHabit = false
     @State private var editHabit: Habit? = nil
     @State private var filter: HabitFilter = .today
-    @State private var streakExpanded = false
 
     enum HabitFilter: String, CaseIterable {
         case today = "Today"
@@ -52,7 +51,6 @@ struct HabitsView: View {
                 VStack(spacing: 16) {
                     headerCard
                     statsRow
-                    streakTracker
                     SupplementsSection()
                     filterPicker
                     habitsList
@@ -119,90 +117,10 @@ struct HabitsView: View {
 
     private var statsRow: some View {
         HStack(spacing: 10) {
+            HabitStatCard(icon: "flame.fill",         iconColor: .orange,        value: "\(bestStreak)d",           label: "Best Streak")
             HabitStatCard(icon: "checkmark.circle.fill", iconColor: AppTheme.primary, value: "\(completedToday)/\(totalToday)", label: "Today")
             HabitStatCard(icon: "chart.bar.fill",      iconColor: .blue,          value: "\(Int(weeklyRate * 100))%", label: "This Week")
         }
-    }
-
-    // MARK: Streak Tracker
-
-    private var streakTracker: some View {
-        VStack(spacing: 0) {
-            // Header row — always visible
-            Button {
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                    streakExpanded.toggle()
-                }
-            } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: "flame.fill")
-                        .foregroundColor(.orange)
-                        .font(.system(size: 15, weight: .semibold))
-                    Text("Streak Tracker")
-                        .font(.subheadline.weight(.semibold))
-                    Spacer()
-                    // Show top streak as a teaser when collapsed
-                    if !streakExpanded {
-                        Text("Best \(bestStreak)d 🔥")
-                            .font(.caption.weight(.medium))
-                            .foregroundColor(.orange)
-                    }
-                    Image(systemName: streakExpanded ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(.secondary)
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 14)
-            }
-            .buttonStyle(.plain)
-
-            // Expanded content
-            if streakExpanded {
-                Divider().padding(.horizontal, 16)
-
-                let sorted = activeHabits
-                    .map { ($0, appState.streakFor($0)) }
-                    .sorted { $0.1 > $1.1 }
-
-                VStack(spacing: 0) {
-                    ForEach(Array(sorted.enumerated()), id: \.offset) { idx, pair in
-                        let (habit, streak) = pair
-                        HStack(spacing: 12) {
-                            Text(habit.emoji)
-                                .font(.system(size: 22))
-                                .frame(width: 36)
-                            Text(habit.name)
-                                .font(.subheadline)
-                                .lineLimit(1)
-                            Spacer()
-                            // Mini flame bar
-                            HStack(spacing: 3) {
-                                ForEach(0..<min(streak, 7), id: \.self) { i in
-                                    RoundedRectangle(cornerRadius: 2)
-                                        .fill(Color.orange.opacity(0.4 + Double(i) / Double(max(streak, 7)) * 0.6))
-                                        .frame(width: 6, height: 18)
-                                }
-                            }
-                            Text(streak == 0 ? "—" : "\(streak)d")
-                                .font(.system(size: 15, weight: .bold, design: .rounded))
-                                .foregroundColor(streak > 0 ? .orange : .secondary)
-                                .frame(width: 36, alignment: .trailing)
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 11)
-
-                        if idx < sorted.count - 1 {
-                            Divider().padding(.leading, 64)
-                        }
-                    }
-                }
-                .transition(.opacity.combined(with: .move(edge: .top)))
-            }
-        }
-        .background(Color(.secondarySystemGroupedBackground))
-        .cornerRadius(16)
-        .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
-        .clipped()
     }
 
     // MARK: Filter
