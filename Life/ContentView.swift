@@ -103,15 +103,6 @@ struct ContentView: View {
             .safeAreaInset(edge: .bottom) {
                 Color.clear.frame(height: 84)
             }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                if let session = appState.activeSession, !showActiveWorkout {
-                    ActiveSessionBanner(session: session) {
-                        showActiveWorkout = true
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 90)
-                }
-            }
             .sheet(isPresented: $showActiveWorkout) {
                 if let session = appState.activeSession {
                     ActiveWorkoutView(isPresented: $showActiveWorkout, sessionId: session.id)
@@ -134,7 +125,7 @@ struct ContentView: View {
                     .onEnded { _ in scheduleExpand() }
             )
 
-            FloatingTabBar(selectedTab: $selectedTab, isCompact: isCompact)
+            FloatingTabBar(selectedTab: $selectedTab, isCompact: isCompact, hasActiveWorkout: appState.activeSession != nil)
                 .padding(.bottom, 10)
         }
         .onOpenURL { url in
@@ -162,6 +153,7 @@ struct ContentView: View {
 struct FloatingTabBar: View {
     @Binding var selectedTab: AppTab
     let isCompact: Bool
+    var hasActiveWorkout: Bool = false
     @Namespace private var pillAnimation
 
     var body: some View {
@@ -171,6 +163,7 @@ struct FloatingTabBar: View {
                     tab: tab,
                     isSelected: selectedTab == tab,
                     isCompact: isCompact,
+                    badge: tab == .train && hasActiveWorkout,
                     namespace: pillAnimation
                 ) {
                     HapticManager.selection()
@@ -250,26 +243,39 @@ private struct TabButton: View {
     let tab: AppTab
     let isSelected: Bool
     let isCompact: Bool
+    var badge: Bool = false
     let namespace: Namespace.ID
     let action: () -> Void
 
+    @State private var pulseBadge = false
     private var showLabel: Bool { isSelected && !isCompact }
 
     var body: some View {
         Button(action: action) {
             VStack(spacing: 2) {
-                ZStack {
-                    if isSelected {
-                        Capsule()
-                            .fill(Color(hex: "#30d158").opacity(0.18))
-                            .frame(height: 30)
-                            .matchedGeometryEffect(id: "pill", in: namespace)
+                ZStack(alignment: .topTrailing) {
+                    ZStack {
+                        if isSelected {
+                            Capsule()
+                                .fill(Color(hex: "#30d158").opacity(0.18))
+                                .frame(height: 30)
+                                .matchedGeometryEffect(id: "pill", in: namespace)
+                        }
+                        Image(systemName: tab.icon)
+                            .font(.system(size: 15, weight: isSelected ? .semibold : .regular))
+                            .foregroundStyle(isSelected ? Color(hex: "#30d158") : Color.secondary)
+                            .frame(minWidth: 32, minHeight: 30)
+                            .padding(.horizontal, showLabel ? 5 : 0)
                     }
-                    Image(systemName: tab.icon)
-                        .font(.system(size: 15, weight: isSelected ? .semibold : .regular))
-                        .foregroundStyle(isSelected ? Color(hex: "#30d158") : Color.secondary)
-                        .frame(minWidth: 32, minHeight: 30)
-                        .padding(.horizontal, showLabel ? 5 : 0)
+                    if badge {
+                        Circle()
+                            .fill(Color(hex: "#30d158"))
+                            .frame(width: 8, height: 8)
+                            .scaleEffect(pulseBadge ? 1.3 : 1.0)
+                            .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: pulseBadge)
+                            .offset(x: -2, y: 2)
+                            .onAppear { pulseBadge = true }
+                    }
                 }
                 if showLabel {
                     Text(tab.label)
