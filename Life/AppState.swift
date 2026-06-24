@@ -339,8 +339,15 @@ final class AppState {
         var date = Date()
         while true {
             let key = date.dayKey
-            if let log = habit.logs.first(where: { $0.dayKey == key }),
-               log.count >= habit.targetCount, !log.slipped {
+            let log = habit.logs.first(where: { $0.dayKey == key })
+            let success: Bool
+            if habit.kind == .break {
+                // No log or non-slipped log = success (didn't slip)
+                success = log?.slipped != true
+            } else {
+                success = log != nil && (log?.count ?? 0) >= habit.targetCount && log?.slipped != true
+            }
+            if success {
                 count += 1
                 date = cal.date(byAdding: .day, value: -1, to: date) ?? date
             } else {
@@ -351,16 +358,35 @@ final class AppState {
     }
 
     func bestStreakFor(_ habit: Habit) -> Int {
-        guard !habit.logs.isEmpty else { return 0 }
         let cal = Calendar.current
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        fmt.locale = Locale(identifier: "en_US_POSIX")
+
+        if habit.kind == .break {
+            // For break habits, find the longest run of days without a slip
+            // Walk from the earliest log date to today
+            guard let earliest = habit.logs.compactMap({ fmt.date(from: $0.dayKey) }).min() else { return 0 }
+            let slippedKeys = Set(habit.logs.filter { $0.slipped }.map { $0.dayKey })
+            var best = 0, current = 0
+            var date = earliest
+            let today = cal.startOfDay(for: Date())
+            while date <= today {
+                if !slippedKeys.contains(date.dayKey) {
+                    current += 1
+                    best = max(best, current)
+                } else {
+                    current = 0
+                }
+                date = cal.date(byAdding: .day, value: 1, to: date) ?? date
+            }
+            return best
+        }
+
+        guard !habit.logs.isEmpty else { return 0 }
         let sortedDays = habit.logs
             .filter { $0.count >= habit.targetCount && !$0.slipped }
-            .compactMap { entry -> Date? in
-                let fmt = DateFormatter()
-                fmt.dateFormat = "yyyy-MM-dd"
-                fmt.locale = Locale(identifier: "en_US_POSIX")
-                return fmt.date(from: entry.dayKey)
-            }
+            .compactMap { fmt.date(from: $0.dayKey) }
             .sorted()
         guard !sortedDays.isEmpty else { return 0 }
         var best = 1, current = 1
@@ -372,7 +398,11 @@ final class AppState {
     }
 
     func totalCompletionsFor(_ habit: Habit) -> Int {
-        habit.logs.filter { $0.count >= habit.targetCount && !$0.slipped }.count
+        if habit.kind == .break {
+            // Count days with a log that didn't slip (maintained days)
+            return habit.logs.filter { !$0.slipped }.count
+        }
+        return habit.logs.filter { $0.count >= habit.targetCount && !$0.slipped }.count
     }
 
     func weeklyCompletionFor(_ habit: Habit) -> Double {
@@ -512,11 +542,10 @@ final class AppState {
         } else {
             habits[idx].logs.remove(at: logIdx)
         }
+        save()
         // Also undo water ring if applicable
         if habits[idx].name.lowercased().contains("water") {
             removeWater()
-        } else {
-            save()
         }
     }
 
