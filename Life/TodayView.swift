@@ -156,7 +156,8 @@ private struct CareSection: View {
                     color: .green,
                     label: "Move",
                     count: "\(today.steps.formatted())/\(settings.stepGoal.formatted())",
-                    done: today.steps >= settings.stepGoal
+                    done: today.steps >= settings.stepGoal,
+                    buttonDisabled: true
                 ) {
                     // Steps come from HealthKit — no manual increment
                 }
@@ -197,6 +198,7 @@ private struct CareRow: View {
     let label: String
     let count: String
     let done: Bool
+    var buttonDisabled: Bool = false
     let action: () -> Void
 
     var body: some View {
@@ -221,17 +223,18 @@ private struct CareRow: View {
                 HapticManager.impact(done ? .light : .medium)
                 action()
             } label: {
-                Image(systemName: done ? "checkmark" : "plus")
+                Image(systemName: done ? "checkmark" : (buttonDisabled ? "arrow.clockwise" : "plus"))
                     .font(.system(size: 16, weight: .bold))
                     .foregroundColor(.white)
                     .frame(width: 44, height: 44)
-                    .background(done ? color : color.opacity(0.85))
+                    .background(done ? color : color.opacity(buttonDisabled ? 0.4 : 0.85))
                     .clipShape(Circle())
                     .shadow(color: color.opacity(done ? 0.5 : 0.3), radius: done ? 6 : 4, x: 0, y: 2)
                     .scaleEffect(done ? 1.05 : 1.0)
                     .animation(.spring(response: 0.3, dampingFraction: 0.5), value: done)
             }
             .buttonStyle(PressableButtonStyle())
+            .disabled(buttonDisabled && !done)
         }
     }
 }
