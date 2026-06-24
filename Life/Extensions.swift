@@ -109,6 +109,88 @@ extension String {
     }
 }
 
+// MARK: - Codable Enum Fallback Decoders
+// Prevents a single unrecognized persisted value from wiping the entire app state.
+
+extension TaskPriority {
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = TaskPriority(rawValue: raw) ?? .none
+    }
+}
+extension RecurrenceType {
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = RecurrenceType(rawValue: raw) ?? .weekly
+    }
+}
+extension TaskCategory {
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = TaskCategory(rawValue: raw) ?? .personal
+    }
+}
+extension DueDate {
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = DueDate(rawValue: raw) ?? .today
+    }
+}
+extension HabitKind {
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = HabitKind(rawValue: raw) ?? .build
+    }
+}
+extension HabitCadence {
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = HabitCadence(rawValue: raw) ?? .daily
+    }
+}
+extension HabitCategory {
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = HabitCategory(rawValue: raw) ?? .health
+    }
+}
+extension HabitTargetType {
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = HabitTargetType(rawValue: raw) ?? .yesNo
+    }
+}
+extension ExerciseKind {
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = ExerciseKind(rawValue: raw) ?? .weight
+    }
+}
+extension ExerciseEquipment {
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = ExerciseEquipment(rawValue: raw) ?? .other
+    }
+}
+extension AchievementKind {
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = AchievementKind(rawValue: raw) ?? .firstWorkout
+    }
+}
+extension MovementType {
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = MovementType(rawValue: raw) ?? .compound
+    }
+}
+extension WeightUnit {
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = WeightUnit(rawValue: raw) ?? .kg
+    }
+}
+
 // MARK: - View Helpers
 
 extension View {
