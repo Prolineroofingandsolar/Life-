@@ -181,7 +181,7 @@ struct HabitsView: View {
 
     private var archivedSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Archived")
+            Text("Archived (\(archivedHabits.count))")
                 .font(.footnote.weight(.semibold))
                 .foregroundColor(.secondary)
                 .padding(.leading, 4)
@@ -315,7 +315,7 @@ private struct HabitCard: View {
                     } label: {
                         ZStack {
                             Circle()
-                                .fill(isComplete ? AppTheme.primary : Color(.systemFill))
+                                .fill(isComplete ? AppTheme.primary : (habit.kind == .break && todayLog?.slipped == true ? Color.red.opacity(0.15) : Color(.systemFill)))
                                 .frame(width: 36, height: 36)
                             if isComplete {
                                 Image(systemName: "checkmark")
@@ -325,6 +325,14 @@ private struct HabitCard: View {
                                 Image(systemName: "xmark")
                                     .font(.system(size: 14, weight: .bold))
                                     .foregroundColor(.red)
+                            } else if habit.kind == .break {
+                                Image(systemName: "shield.fill")
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundColor(.secondary.opacity(0.5))
+                            } else if habit.targetCount > 1 {
+                                Text("\(todayLog?.count ?? 0)/\(habit.targetCount)")
+                                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                    .foregroundColor(.secondary)
                             }
                         }
                     }
