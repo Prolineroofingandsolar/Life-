@@ -690,6 +690,7 @@ struct EditHabitSheet: View {
 private struct SupplementsSection: View {
     @Environment(AppState.self) private var appState
     @State private var showAdd = false
+    @State private var editSupplement: Supplement? = nil
 
     private var activeSupplements: [Supplement] {
         appState.supplements.filter { !$0.isArchived }
@@ -725,17 +726,19 @@ private struct SupplementsSection: View {
                 .buttonStyle(.plain)
             } else {
                 ForEach(activeSupplements) { supplement in
-                    SupplementCard(supplement: supplement)
+                    SupplementCard(supplement: supplement, onEdit: { editSupplement = supplement })
                 }
             }
         }
         .sheet(isPresented: $showAdd) { AddSupplementSheet() }
+        .sheet(item: $editSupplement) { EditSupplementSheet(supplement: $0) }
     }
 }
 
 private struct SupplementCard: View {
     @Environment(AppState.self) private var appState
     let supplement: Supplement
+    let onEdit: () -> Void
 
     @State private var showUndo = false
     @State private var undoTask: Task<Void, Never>? = nil
@@ -824,6 +827,9 @@ private struct SupplementCard: View {
         .cornerRadius(14)
         .opacity(isDue ? 1 : 0.5)
         .contextMenu {
+            Button { onEdit() } label: {
+                Label("Edit", systemImage: "pencil")
+            }
             Button(role: .destructive) {
                 appState.deleteSupplement(id: supplement.id)
             } label: {
@@ -911,6 +917,108 @@ private struct AddSupplementSheet: View {
                         s.doseUnit = doseUnit
                         s.scheduleDays = everyDay ? [] : Array(selectedDays).sorted()
                         appState.addSupplement(s)
+                        dismiss()
+                    }
+                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Edit Supplement Sheet
+
+private struct EditSupplementSheet: View {
+    @Environment(AppState.self) private var appState
+    @Environment(\.dismiss) private var dismiss
+
+    let supplement: Supplement
+
+    @State private var name: String
+    @State private var emoji: String
+    @State private var dosesPerDay: Int
+    @State private var doseUnit: String
+    @State private var everyDay: Bool
+    @State private var selectedDays: Set<Int>
+
+    private let emojiOptions = ["💊","🧴","🫙","🧪","🍋","🫐","🥛","🌿","⚡️","🔥"]
+    private let unitOptions = ["capsule","tablet","scoop","ml","drop","serving"]
+    private let dayNames = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
+
+    init(supplement: Supplement) {
+        self.supplement = supplement
+        _name = State(initialValue: supplement.name)
+        _emoji = State(initialValue: supplement.emoji)
+        _dosesPerDay = State(initialValue: supplement.dosesPerDay)
+        _doseUnit = State(initialValue: supplement.doseUnit)
+        _everyDay = State(initialValue: supplement.scheduleDays.isEmpty)
+        _selectedDays = State(initialValue: Set(supplement.scheduleDays))
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Name") {
+                    TextField("e.g. Creatine, Vitamin D", text: $name)
+                }
+
+                Section("Icon") {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 5), spacing: 10) {
+                        ForEach(emojiOptions, id: \.self) { e in
+                            Text(e)
+                                .font(.system(size: 28))
+                                .frame(width: 48, height: 48)
+                                .background(emoji == e ? AppTheme.primary.opacity(0.15) : Color(.tertiarySystemFill))
+                                .cornerRadius(10)
+                                .onTapGesture { emoji = e }
+                        }
+                    }
+                    .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8))
+                }
+
+                Section("Doses per day") {
+                    Stepper("\(dosesPerDay) \(dosesPerDay == 1 ? doseUnit : doseUnit + "s")", value: $dosesPerDay, in: 1...6)
+                    Picker("Unit", selection: $doseUnit) {
+                        ForEach(unitOptions, id: \.self) { Text($0).tag($0) }
+                    }
+                }
+
+                Section("Schedule") {
+                    Toggle("Every day", isOn: $everyDay)
+                    if !everyDay {
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 8) {
+                            ForEach(Array(dayNames.enumerated()), id: \.offset) { idx, day in
+                                let dayNum = idx + 1
+                                Text(String(day.prefix(1)))
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .frame(width: 36, height: 36)
+                                    .background(selectedDays.contains(dayNum) ? AppTheme.primary : Color(.tertiarySystemFill))
+                                    .foregroundColor(selectedDays.contains(dayNum) ? .white : .primary)
+                                    .cornerRadius(8)
+                                    .onTapGesture {
+                                        if selectedDays.contains(dayNum) { selectedDays.remove(dayNum) }
+                                        else { selectedDays.insert(dayNum) }
+                                    }
+                            }
+                        }
+                        .listRowInsets(EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8))
+                    }
+                }
+            }
+            .navigationTitle("Edit Supplement")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        guard !name.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+                        var s = supplement
+                        s.name = name.trimmingCharacters(in: .whitespaces)
+                        s.emoji = emoji
+                        s.dosesPerDay = dosesPerDay
+                        s.doseUnit = doseUnit
+                        s.scheduleDays = everyDay ? [] : Array(selectedDays).sorted()
+                        appState.updateSupplement(s)
                         dismiss()
                     }
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)

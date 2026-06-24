@@ -512,6 +512,14 @@ final class AppState {
         save()
     }
 
+    func updateSupplement(_ supplement: Supplement) {
+        guard let idx = supplements.firstIndex(where: { $0.id == supplement.id }) else { return }
+        var updated = supplement
+        updated.logs = supplements[idx].logs // preserve existing dose logs
+        supplements[idx] = updated
+        save()
+    }
+
     func deleteSupplement(id: String) {
         supplements.removeAll { $0.id == id }
         save()
