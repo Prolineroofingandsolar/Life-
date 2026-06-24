@@ -239,8 +239,30 @@ final class AppState {
 
     func toggleTask(id: String) {
         guard let idx = tasks.firstIndex(where: { $0.id == id }) else { return }
+        let wasRecurring = tasks[idx].isRecurring
+        let recurrenceType = tasks[idx].recurrenceType
         tasks[idx].done.toggle()
         tasks[idx].completedAt = tasks[idx].done ? Date() : nil
+
+        // Advance recurring task to next period when checked off
+        if tasks[idx].done, wasRecurring, let rt = recurrenceType {
+            let base = tasks[idx].dueDateOverride ?? tasks[idx].dueDate?.date ?? Date()
+            let cal = Calendar.current
+            let nextDate: Date?
+            switch rt {
+            case .daily:    nextDate = cal.date(byAdding: .day, value: 1, to: base)
+            case .weekly:   nextDate = cal.date(byAdding: .weekOfYear, value: 1, to: base)
+            case .biweekly: nextDate = cal.date(byAdding: .weekOfYear, value: 2, to: base)
+            case .monthly:  nextDate = cal.date(byAdding: .month, value: 1, to: base)
+            case .yearly:   nextDate = cal.date(byAdding: .year, value: 1, to: base)
+            }
+            if let next = nextDate {
+                tasks[idx].done = false
+                tasks[idx].completedAt = nil
+                tasks[idx].dueDateOverride = cal.startOfDay(for: next)
+                tasks[idx].dueDate = nil
+            }
+        }
         save()
     }
 
