@@ -1,5 +1,6 @@
 import SwiftUI
 import Charts
+import PhotosUI
 
 // MARK: - TrainView
 
@@ -121,25 +122,19 @@ struct TrainView: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 30)
                         } else {
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                LazyHGrid(rows: [GridItem(.fixed(120), spacing: 12),
-                                                 GridItem(.fixed(120), spacing: 12)],
-                                          spacing: 12) {
-                                    ForEach(appState.routines) { routine in
-                                        RoutineTile(
-                                            routine: routine,
-                                            onStart: {
-                                                appState.startSession(name: routine.name, routineId: routine.id)
-                                                showActiveWorkout = true
-                                            },
-                                            onTap: { detailRoutine = routine }
-                                        )
-                                        .frame(width: 165)
-                                    }
+                            LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+                                ForEach(appState.routines) { routine in
+                                    RoutineTile(
+                                        routine: routine,
+                                        onStart: {
+                                            appState.startSession(name: routine.name, routineId: routine.id)
+                                            showActiveWorkout = true
+                                        },
+                                        onTap: { detailRoutine = routine }
+                                    )
                                 }
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 4)
                             }
+                            .padding(.horizontal, 16)
                         }
                     }
 
@@ -511,19 +506,19 @@ private struct WeekStripView: View {
 
             HStack(spacing: 4) {
                 ForEach(weekDates, id: \.self) { date in
+                    let session = finishedSessions.first { Calendar.current.isDate($0.startedAt, inSameDayAs: date) }
                     WeekDayCell(
                         date: date,
                         isToday: Calendar.current.isDateInToday(date),
-                        isCompleted: finishedSessions.contains { Calendar.current.isDate($0.startedAt, inSameDayAs: date) },
-                        isPlanned: appState.plannedSessions.contains { !$0.completed && Calendar.current.isDate($0.date, inSameDayAs: date) }
+                        isCompleted: session != nil,
+                        isPlanned: appState.plannedSessions.contains { !$0.completed && Calendar.current.isDate($0.date, inSameDayAs: date) },
+                        sessionName: session?.name
                     ) {
                         let today = Calendar.current.startOfDay(for: Date())
                         if date >= today {
                             onPlanDate(date)
-                        } else {
-                            if let s = finishedSessions.first(where: { Calendar.current.isDate($0.startedAt, inSameDayAs: date) }) {
-                                onTapSession(s)
-                            }
+                        } else if let s = session {
+                            onTapSession(s)
                         }
                     }
                 }
@@ -540,11 +535,12 @@ private struct WeekDayCell: View {
     let isToday: Bool
     let isCompleted: Bool
     let isPlanned: Bool
+    let sessionName: String?
     let onTap: () -> Void
 
     private var dayLetter: String {
-        let f = DateFormatter(); f.dateFormat = "E"
-        return String(f.string(from: date).prefix(1))
+        let f = DateFormatter(); f.dateFormat = "EEE"
+        return f.string(from: date).uppercased()
     }
     private var dayNumber: String {
         let f = DateFormatter(); f.dateFormat = "d"
@@ -554,23 +550,37 @@ private struct WeekDayCell: View {
 
     var body: some View {
         Button(action: onTap) {
-            VStack(spacing: 4) {
+            VStack(spacing: 5) {
                 Text(dayLetter)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.secondary)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(isToday ? AppTheme.trainAccent : Color(hex: "#A0A0B0"))
+
                 ZStack {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(isCompleted ? AppTheme.trainAccent :
+                              isToday ? AppTheme.trainAccent.opacity(0.15) :
+                              Color.white.opacity(0.06))
+                        .frame(width: 36, height: 36)
                     if isCompleted {
-                        Circle().fill(AppTheme.primary)
-                    } else if isToday {
-                        Circle().stroke(Color.primary.opacity(0.3), lineWidth: 1.5)
-                    } else if isPlanned {
-                        Circle().stroke(AppTheme.trainAccent, lineWidth: 1.5)
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(.black)
+                    } else {
+                        Text(dayNumber)
+                            .font(.system(size: 15, weight: isToday ? .bold : .medium))
+                            .foregroundColor(isToday ? AppTheme.trainAccent : isFuture ? Color(hex: "#606070") : .primary)
                     }
-                    Text(dayNumber)
-                        .font(.system(size: 14, weight: isToday ? .bold : .regular))
-                        .foregroundColor(isCompleted ? .white : isFuture ? .secondary : .primary)
                 }
-                .frame(width: 32, height: 32)
+
+                if isPlanned && !isCompleted {
+                    Circle()
+                        .fill(AppTheme.trainAccent)
+                        .frame(width: 4, height: 4)
+                } else {
+                    Circle()
+                        .fill(Color.clear)
+                        .frame(width: 4, height: 4)
+                }
             }
         }
         .frame(maxWidth: .infinity)
@@ -952,92 +962,84 @@ private struct RoutineTile: View {
             appState.exercises.first(where: { $0.id == re.exerciseId })?.muscle
         })).sorted()
     }
-
     private var totalSets: Int { routine.exercises.reduce(0) { $0 + $1.defaultSets } }
     private var estimatedMinutes: Int { max(10, totalSets * 2) }
+    private var accentColor: Color { Color(hex: routine.colorHex) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Coloured top accent stripe
-            Rectangle()
-                .fill((muscleGroups.first ?? "Other").muscleColor)
-                .frame(height: 5)
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text(routine.name)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(.primary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                // Muscle chips — max 2, then "+N"
-                HStack(spacing: 4) {
-                    ForEach(Array(muscleGroups.prefix(2)), id: \.self) { muscle in
-                        Text(muscle)
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundColor(muscle.muscleColor)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(muscle.muscleColor.opacity(0.15))
-                            .clipShape(Capsule())
-                    }
-                    if muscleGroups.count > 2 {
-                        Text("+\(muscleGroups.count - 2)")
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundColor(.secondary)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color.secondary.opacity(0.12))
-                            .clipShape(Capsule())
+        Button {
+            HapticManager.selection()
+            onTap()
+        } label: {
+            ZStack(alignment: .bottomLeading) {
+                // Background: photo or gradient
+                Group {
+                    if let data = routine.photoData, let ui = UIImage(data: data) {
+                        Image(uiImage: ui)
+                            .resizable()
+                            .scaledToFill()
+                    } else {
+                        LinearGradient(
+                            colors: [accentColor.opacity(0.85), accentColor.opacity(0.4), Color.black.opacity(0.6)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
                     }
                 }
+                .clipped()
 
-                Spacer(minLength: 0)
+                // Dark scrim so text is always readable
+                LinearGradient(
+                    colors: [Color.black.opacity(0.0), Color.black.opacity(0.72)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
 
-                HStack(alignment: .bottom) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("\(routine.exercises.count) ex · \(totalSets) sets")
-                        Text("~\(estimatedMinutes)m")
+                // Big emoji top-right
+                Text(routine.emoji)
+                    .font(.system(size: 52))
+                    .opacity(routine.photoData == nil ? 0.35 : 0)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                    .padding(16)
+
+                // Content
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(routine.name)
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundColor(.white)
+                        .lineLimit(2)
+
+                    HStack(spacing: 8) {
+                        Label("~\(estimatedMinutes)m", systemImage: "clock")
+                        Label("\(routine.exercises.count) ex", systemImage: "dumbbell")
                     }
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary)
-
-                    Spacer()
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.white.opacity(0.8))
 
                     Button {
                         HapticManager.impact(.medium)
                         onStart()
                     } label: {
-                        Image(systemName: "play.fill")
-                            .font(.system(size: 14))
+                        Text("START")
+                            .font(.system(size: 14, weight: .bold))
                             .foregroundColor(.black)
-                            .frame(width: 36, height: 36)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
                             .background(AppTheme.trainAccent)
-                            .clipShape(Circle())
+                            .cornerRadius(10)
                     }
                     .buttonStyle(PressableButtonStyle())
                 }
+                .padding(14)
             }
-            .padding(12)
         }
-        .frame(maxHeight: .infinity)
-        .background(AppTheme.cardBg)
-        .cornerRadius(16)
-        .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 3)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            HapticManager.selection()
-            onTap()
-        }
+        .frame(height: 180)
+        .clipShape(RoundedRectangle(cornerRadius: 18))
+        .shadow(color: accentColor.opacity(0.35), radius: 12, x: 0, y: 6)
+        .buttonStyle(.plain)
         .contextMenu {
-            Button { showEdit = true } label: {
-                Label("Edit Routine", systemImage: "pencil")
-            }
-            Button(role: .destructive) {
-                appState.deleteRoutine(id: routine.id)
-            } label: {
-                Label("Delete", systemImage: "trash")
-            }
+            Button { showEdit = true } label: { Label("Edit Routine", systemImage: "pencil") }
+            Button(role: .destructive) { appState.deleteRoutine(id: routine.id) } label: { Label("Delete", systemImage: "trash") }
         }
         .sheet(isPresented: $showEdit) { EditRoutineSheet(routine: routine) }
     }
@@ -1234,9 +1236,14 @@ struct AddRoutineSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var name = ""
+    @State private var emoji = "💪"
+    @State private var colorHex = "#30d158"
     @State private var exercises: [DraftRoutineExercise] = []
     @State private var showExercisePicker = false
     @FocusState private var isNameFocused: Bool
+
+    private let colorOptions = ["#30d158","#0a84ff","#ff375f","#ff9f0a","#bf5af2","#64d2ff","#ff6961","#ffffff"]
+    private let emojiOptions = ["💪","🏋️","🔥","⚡️","🦵","🫀","🏃","🤸","🥊","🧘","🎯","🏆"]
 
     var body: some View {
         NavigationStack {
@@ -1245,6 +1252,39 @@ struct AddRoutineSheet: View {
                     TextField("e.g. Push A, Leg Day", text: $name)
                         .focused($isNameFocused)
                 }
+
+                Section("Card Appearance") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Icon").font(.caption).foregroundColor(.secondary)
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 6), spacing: 8) {
+                            ForEach(emojiOptions, id: \.self) { e in
+                                Text(e)
+                                    .font(.title2)
+                                    .frame(width: 40, height: 40)
+                                    .background(emoji == e ? Color(hex: colorHex).opacity(0.25) : Color(.tertiarySystemFill))
+                                    .cornerRadius(8)
+                                    .onTapGesture { emoji = e }
+                            }
+                        }
+                    }
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Colour").font(.caption).foregroundColor(.secondary)
+                        HStack(spacing: 10) {
+                            ForEach(colorOptions, id: \.self) { hex in
+                                Circle()
+                                    .fill(Color(hex: hex))
+                                    .frame(width: 28, height: 28)
+                                    .overlay(Circle().stroke(Color.white, lineWidth: colorHex == hex ? 3 : 0))
+                                    .shadow(color: Color(hex: hex).opacity(0.5), radius: colorHex == hex ? 4 : 0)
+                                    .onTapGesture { colorHex = hex }
+                            }
+                        }
+                    }
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                }
+
                 Section {
                     ForEach($exercises) { $ex in
                         DraftExerciseRow(draft: $ex, allExercises: appState.exercises)
@@ -1272,7 +1312,11 @@ struct AddRoutineSheet: View {
                             RoutineExercise(exerciseId: d.exerciseId, defaultSets: d.sets,
                                            defaultReps: d.reps, defaultWeight: d.weight)
                         }
-                        appState.addRoutine(name: trimmed, exercises: routineExercises)
+                        var routine = Routine(name: trimmed, exercises: routineExercises)
+                        routine.emoji = emoji
+                        routine.colorHex = colorHex
+                        appState.routines.append(routine)
+                        appState.save()
                         dismiss()
                     }
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -1299,12 +1343,22 @@ struct EditRoutineSheet: View {
 
     let routine: Routine
     @State private var name: String
+    @State private var emoji: String
+    @State private var colorHex: String
+    @State private var photoData: Data?
     @State private var exercises: [DraftRoutineExercise]
     @State private var showExercisePicker = false
+    @State private var showPhotoPicker = false
+
+    private let colorOptions = ["#30d158","#0a84ff","#ff375f","#ff9f0a","#bf5af2","#64d2ff","#ff6961","#ffffff"]
+    private let emojiOptions = ["💪","🏋️","🔥","⚡️","🦵","🫀","🏃","🤸","🥊","🧘","🎯","🏆"]
 
     init(routine: Routine) {
         self.routine = routine
-        _name = State(initialValue: routine.name)
+        _name      = State(initialValue: routine.name)
+        _emoji     = State(initialValue: routine.emoji)
+        _colorHex  = State(initialValue: routine.colorHex)
+        _photoData = State(initialValue: routine.photoData)
         _exercises = State(initialValue: routine.exercises.map { re in
             DraftRoutineExercise(exerciseId: re.exerciseId, sets: re.defaultSets,
                                  reps: re.defaultReps, weight: re.defaultWeight)
@@ -1317,6 +1371,68 @@ struct EditRoutineSheet: View {
                 Section("Name") {
                     TextField("Routine name", text: $name)
                 }
+
+                Section("Card Appearance") {
+                    // Photo picker
+                    Button {
+                        showPhotoPicker = true
+                    } label: {
+                        HStack {
+                            if let data = photoData, let ui = UIImage(data: data) {
+                                Image(uiImage: ui)
+                                    .resizable().scaledToFill()
+                                    .frame(width: 60, height: 40)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                            } else {
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(Color(hex: colorHex).opacity(0.3))
+                                    .frame(width: 60, height: 40)
+                                    .overlay(Image(systemName: "photo").foregroundColor(.secondary))
+                            }
+                            Text(photoData != nil ? "Change Photo" : "Add Photo")
+                            Spacer()
+                            if photoData != nil {
+                                Button("Remove") { photoData = nil }
+                                    .font(.caption)
+                                    .foregroundColor(.red)
+                            }
+                        }
+                    }
+                    .foregroundColor(.primary)
+
+                    // Emoji
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Icon").font(.caption).foregroundColor(.secondary)
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 6), spacing: 8) {
+                            ForEach(emojiOptions, id: \.self) { e in
+                                Text(e)
+                                    .font(.title2)
+                                    .frame(width: 40, height: 40)
+                                    .background(emoji == e ? Color(hex: colorHex).opacity(0.25) : Color(.tertiarySystemFill))
+                                    .cornerRadius(8)
+                                    .onTapGesture { emoji = e }
+                            }
+                        }
+                    }
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+
+                    // Colour
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Colour").font(.caption).foregroundColor(.secondary)
+                        HStack(spacing: 10) {
+                            ForEach(colorOptions, id: \.self) { hex in
+                                Circle()
+                                    .fill(Color(hex: hex))
+                                    .frame(width: 28, height: 28)
+                                    .overlay(Circle().stroke(Color.white, lineWidth: colorHex == hex ? 3 : 0))
+                                    .shadow(color: Color(hex: hex).opacity(0.5), radius: colorHex == hex ? 4 : 0)
+                                    .onTapGesture { colorHex = hex }
+                            }
+                        }
+                    }
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                }
+
                 Section {
                     ForEach($exercises) { $ex in
                         DraftExerciseRow(draft: $ex, allExercises: appState.exercises)
@@ -1350,7 +1466,11 @@ struct EditRoutineSheet: View {
                             RoutineExercise(exerciseId: d.exerciseId, defaultSets: d.sets,
                                            defaultReps: d.reps, defaultWeight: d.weight)
                         }
-                        appState.updateRoutine(id: routine.id, name: trimmed, exercises: routineExercises)
+                        appState.updateRoutine(
+                            id: routine.id, name: trimmed, exercises: routineExercises,
+                            colorHex: colorHex, emoji: emoji,
+                            photoData: photoData, clearPhoto: photoData == nil && routine.photoData != nil
+                        )
                         dismiss()
                     }
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -1363,6 +1483,16 @@ struct EditRoutineSheet: View {
                     }
                 }
             }
+            .photosPicker(isPresented: $showPhotoPicker, selection: Binding(
+                get: { nil },
+                set: { item in
+                    Task {
+                        if let data = try? await item?.loadTransferable(type: Data.self) {
+                            photoData = data
+                        }
+                    }
+                }
+            ), matching: .images)
         }
     }
 }

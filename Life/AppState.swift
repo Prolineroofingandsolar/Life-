@@ -560,10 +560,14 @@ final class AppState {
         save()
     }
 
-    func updateRoutine(id: String, name: String? = nil, exercises: [RoutineExercise]? = nil) {
+    func updateRoutine(id: String, name: String? = nil, exercises: [RoutineExercise]? = nil, colorHex: String? = nil, emoji: String? = nil, photoData: Data? = nil, clearPhoto: Bool = false) {
         guard let idx = routines.firstIndex(where: { $0.id == id }) else { return }
         if let name = name { routines[idx].name = name }
         if let exercises = exercises { routines[idx].exercises = exercises }
+        if let colorHex = colorHex { routines[idx].colorHex = colorHex }
+        if let emoji = emoji { routines[idx].emoji = emoji }
+        if clearPhoto { routines[idx].photoData = nil }
+        else if let photoData = photoData { routines[idx].photoData = photoData }
         save()
     }
 

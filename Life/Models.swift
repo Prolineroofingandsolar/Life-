@@ -380,6 +380,9 @@ struct Routine: Codable, Identifiable {
     var name: String
     var exercises: [RoutineExercise] = []
     var createdAt: Date = Date()
+    var colorHex: String = "#30d158"
+    var emoji: String = "💪"
+    var photoData: Data? = nil
 }
 
 struct LoggedSet: Codable, Identifiable {
