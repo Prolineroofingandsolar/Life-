@@ -99,9 +99,9 @@ struct ContentView: View {
             }
             .toolbar(.hidden, for: .tabBar)
             .onAppear { UITabBar.appearance().isHidden = true }
-            // Reserve space so screen content scrolls above the pill
+            // Reserve space so content scrolls above tab bar
             .safeAreaInset(edge: .bottom) {
-                Color.clear.frame(height: 84)
+                Color.clear.frame(height: 60)
             }
             .sheet(isPresented: $showActiveWorkout) {
                 if let session = appState.activeSession {
@@ -126,7 +126,6 @@ struct ContentView: View {
             )
 
             FloatingTabBar(selectedTab: $selectedTab, isCompact: isCompact, hasActiveWorkout: appState.activeSession != nil)
-                .padding(.bottom, 10)
         }
         .onOpenURL { url in
             guard url.scheme == "life" else { return }
@@ -173,13 +172,11 @@ struct FloatingTabBar: View {
                 }
             }
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 4)
+        .padding(.top, 10)
+        .padding(.bottom, 4)
         .background(.ultraThinMaterial)
-        .clipShape(Capsule())
-        .overlay(Capsule().strokeBorder(Color.white.opacity(0.1), lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.22), radius: 18, x: 0, y: 6)
-        .padding(.horizontal, 18)
+        .overlay(Rectangle().frame(height: 0.5).foregroundColor(Color.primary.opacity(0.1)), alignment: .top)
     }
 }
 
