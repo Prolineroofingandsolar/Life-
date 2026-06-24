@@ -674,7 +674,9 @@ final class AppState {
     func addExerciseToSession(sessionId: String, exerciseId: String) {
         guard let sIdx = sessions.firstIndex(where: { $0.id == sessionId }) else { return }
         var sessionExercise = SessionExercise(exerciseId: exerciseId)
-        sessionExercise.sets = [LoggedSet(weight: 0, reps: 0), LoggedSet(weight: 0, reps: 0), LoggedSet(weight: 0, reps: 0)]
+        let w = suggestedWeight(for: exerciseId)
+        let r = suggestedReps(for: exerciseId)
+        sessionExercise.sets = [LoggedSet(weight: w, reps: r)]
         sessions[sIdx].exercises.append(sessionExercise)
         save()
     }

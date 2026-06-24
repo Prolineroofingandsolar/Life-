@@ -11,7 +11,7 @@ enum AppTheme {
     static let buttonRadius: CGFloat = 14
     static let danger       = Color.red
 
-    static let trainAccent = Color(hex: "#FFD700")
+    static let trainAccent = Color(hex: "#30d158")
     static let trainCard   = Color(.secondarySystemBackground)
     static let trainBg     = Color(.systemGroupedBackground)
 }

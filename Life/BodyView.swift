@@ -50,6 +50,23 @@ private struct WeightTab: View {
     @Environment(AppState.self) private var appState
     @State private var weightInput = ""
     @FocusState private var isWeightFocused: Bool
+    @State private var chartRange: ChartRange = .month
+
+    enum ChartRange: String, CaseIterable {
+        case week = "W"
+        case month = "1M"
+        case threeMonth = "3M"
+        case all = "All"
+
+        var days: Int? {
+            switch self {
+            case .week:       return 7
+            case .month:      return 30
+            case .threeMonth: return 90
+            case .all:        return nil
+            }
+        }
+    }
 
     private var unit: WeightUnit { appState.workoutSettings.weightUnit }
 
@@ -58,14 +75,33 @@ private struct WeightTab: View {
     }
 
     private var displayEntries: [(date: Date, value: Double)] {
-        entries.map { entry in
+        let cutoff: Date? = chartRange.days.map { Calendar.current.date(byAdding: .day, value: -$0, to: Date())! }
+        return entries.compactMap { entry in
+            if let cutoff, entry.date < cutoff { return nil }
             let val = unit == .kg ? entry.valueKg : WeightUnit.kg.convert(entry.valueKg, to: .lbs)
             return (entry.date, val)
         }
     }
 
     private var currentWeight: Double? {
-        displayEntries.last?.value
+        entries.map { unit == .kg ? $0.valueKg : WeightUnit.kg.convert($0.valueKg, to: .lbs) }.last
+    }
+
+    private var xAxisStride: Calendar.Component {
+        switch chartRange {
+        case .week:       return .day
+        case .month:      return .weekOfYear
+        case .threeMonth: return .month
+        case .all:        return .month
+        }
+    }
+
+    private var xAxisFormat: Date.FormatStyle {
+        switch chartRange {
+        case .week:  return .dateTime.weekday(.abbreviated)
+        case .month: return .dateTime.day()
+        default:     return .dateTime.month(.abbreviated)
+        }
     }
 
     var body: some View {
@@ -91,6 +127,16 @@ private struct WeightTab: View {
             // Chart
             if displayEntries.count > 1 {
                 Section {
+                    // Range picker
+                    Picker("Range", selection: $chartRange) {
+                        ForEach(ChartRange.allCases, id: \.self) { r in
+                            Text(r.rawValue).tag(r)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 0, trailing: 16))
+                    .listRowSeparator(.hidden)
+
                     Chart {
                         ForEach(Array(displayEntries.enumerated()), id: \.offset) { _, entry in
                             LineMark(
@@ -110,8 +156,8 @@ private struct WeightTab: View {
                     }
                     .frame(height: 200)
                     .chartXAxis {
-                        AxisMarks(values: .stride(by: .month)) { _ in
-                            AxisValueLabel(format: .dateTime.month(.abbreviated))
+                        AxisMarks(values: .stride(by: xAxisStride)) { _ in
+                            AxisValueLabel(format: xAxisFormat)
                         }
                     }
                 }

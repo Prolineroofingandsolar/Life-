@@ -658,6 +658,17 @@ private struct ResumeCard: View {
     let pulse: Bool
     let onTap: () -> Void
 
+    @State private var now = Date()
+
+    private var elapsed: String {
+        let secs = Int(now.timeIntervalSince(session.startedAt))
+        let h = secs / 3600
+        let m = (secs % 3600) / 60
+        let s = secs % 60
+        if h > 0 { return String(format: "%d:%02d:%02d", h, m, s) }
+        return String(format: "%d:%02d", m, s)
+    }
+
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 14) {
@@ -679,9 +690,14 @@ private struct ResumeCard: View {
                         .foregroundColor(Color(hex: "#A0A0B0"))
                 }
                 Spacer()
-                Image(systemName: "chevron.right")
-                    .foregroundColor(AppTheme.trainAccent)
-                    .font(.system(size: 14, weight: .semibold))
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(elapsed)
+                        .font(.system(.subheadline, design: .monospaced).weight(.semibold))
+                        .foregroundColor(AppTheme.trainAccent)
+                    Image(systemName: "chevron.right")
+                        .foregroundColor(AppTheme.trainAccent)
+                        .font(.system(size: 14, weight: .semibold))
+                }
             }
             .padding(16)
             .background(AppTheme.trainAccent.opacity(0.1))
@@ -689,6 +705,8 @@ private struct ResumeCard: View {
             .overlay(RoundedRectangle(cornerRadius: 14).stroke(AppTheme.trainAccent.opacity(0.35), lineWidth: 1))
         }
         .buttonStyle(PressableButtonStyle())
+        .onAppear { now = Date() }
+        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { t in now = t }
     }
 }
 
