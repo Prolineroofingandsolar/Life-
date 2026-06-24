@@ -98,7 +98,6 @@ struct ContentView: View {
                     .toolbar(.hidden, for: .tabBar)
             }
             .toolbar(.hidden, for: .tabBar)
-            .onAppear { UITabBar.appearance().isHidden = true }
             // Reserve space so content scrolls above tab bar
             .safeAreaInset(edge: .bottom) {
                 Color.clear.frame(height: 60)
