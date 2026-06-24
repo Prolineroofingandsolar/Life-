@@ -312,7 +312,7 @@ private struct TodaySupplementRow: View {
                     ForEach(0..<supplement.dosesPerDay, id: \.self) { i in
                         Image(systemName: i < taken ? "circle.fill" : "circle")
                             .font(.system(size: 8))
-                            .foregroundColor(i < taken ? .purple : .secondary)
+                            .foregroundColor(i < taken ? AppTheme.primary : .secondary)
                     }
                 }
             }
@@ -524,10 +524,14 @@ private struct TodayHabitRow: View {
                         Text("Slipped today")
                             .font(.caption)
                             .foregroundColor(.red)
-                    } else {
+                    } else if todayLog != nil {
                         Text("Maintained today")
                             .font(.caption)
                             .foregroundColor(.green)
+                    } else {
+                        Text("Clean so far")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     }
                 }
             }
