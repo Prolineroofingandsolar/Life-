@@ -171,6 +171,12 @@ struct HabitsView: View {
                 VStack(spacing: 10) {
                     ForEach(activeHabits) { habit in
                         HabitCard(habit: habit, filter: filter, onEdit: { editHabit = habit })
+                            .background(
+                                NavigationLink(destination: HabitDetailView(habitId: habit.id)) {
+                                    EmptyView()
+                                }
+                                .opacity(0)
+                            )
                     }
                 }
             }
