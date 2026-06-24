@@ -103,7 +103,19 @@ final class AppState {
 
     // MARK: Persistence
 
+    private var pendingSaveWork: DispatchWorkItem?
+
+    /// Debounced save — coalesces rapid text-field changes (title, notes) into a single disk write.
+    func saveDebounced(delay: Double = 0.4) {
+        pendingSaveWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.save() }
+        pendingSaveWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
     func save() {
+        pendingSaveWork?.cancel()
+        pendingSaveWork = nil
         let snapshot = makeSnapshot()
         if let data = try? JSONEncoder().encode(snapshot) {
             UserDefaults.standard.set(data, forKey: PersistenceKey.appState)
@@ -275,26 +287,34 @@ final class AppState {
 
     func updateTask(id: String, title: String? = nil, category: TaskCategory? = nil, dueDate: DueDate?? = nil, priority: TaskPriority? = nil, notes: String? = nil, listId: String? = nil, dueDateOverride: Date?? = nil, reminderDate: Date?? = nil, scheduledTime: Date?? = nil, estimatedMinutes: Int?? = nil, isRecurring: Bool? = nil, recurrenceType: RecurrenceType?? = nil) {
         guard let idx = tasks.firstIndex(where: { $0.id == id }) else { return }
+        // Track whether this update is text-only (title/notes) to debounce disk writes.
+        let isTextOnly = title != nil || notes != nil
+        var otherFieldsChanged = false
         if let title = title { tasks[idx].title = title }
-        if let category = category { tasks[idx].category = category }
-        if let dueDate = dueDate { tasks[idx].dueDate = dueDate }
-        if let priority = priority { tasks[idx].priority = priority }
+        if let category = category { tasks[idx].category = category; otherFieldsChanged = true }
+        if let dueDate = dueDate { tasks[idx].dueDate = dueDate; otherFieldsChanged = true }
+        if let priority = priority { tasks[idx].priority = priority; otherFieldsChanged = true }
         if let notes = notes { tasks[idx].notes = notes }
-        if let listId = listId { tasks[idx].listId = listId }
-        if let override = dueDateOverride { tasks[idx].dueDateOverride = override }
+        if let listId = listId { tasks[idx].listId = listId; otherFieldsChanged = true }
+        if let override = dueDateOverride { tasks[idx].dueDateOverride = override; otherFieldsChanged = true }
         if let rd = reminderDate {
             tasks[idx].reminderDate = rd
+            otherFieldsChanged = true
             if let date = rd {
                 NotificationsManager.shared.scheduleTaskReminder(taskId: id, title: tasks[idx].title, at: date)
             } else {
                 NotificationsManager.shared.cancelTaskReminder(taskId: id)
             }
         }
-        if let st = scheduledTime { tasks[idx].scheduledTime = st }
-        if let em = estimatedMinutes { tasks[idx].estimatedMinutes = em }
-        if let rec = isRecurring { tasks[idx].isRecurring = rec }
-        if let rt = recurrenceType { tasks[idx].recurrenceType = rt }
-        save()
+        if let st = scheduledTime { tasks[idx].scheduledTime = st; otherFieldsChanged = true }
+        if let em = estimatedMinutes { tasks[idx].estimatedMinutes = em; otherFieldsChanged = true }
+        if let rec = isRecurring { tasks[idx].isRecurring = rec; otherFieldsChanged = true }
+        if let rt = recurrenceType { tasks[idx].recurrenceType = rt; otherFieldsChanged = true }
+        if isTextOnly && !otherFieldsChanged {
+            saveDebounced()
+        } else {
+            save()
+        }
     }
 
     // MARK: - Subtask Mutations

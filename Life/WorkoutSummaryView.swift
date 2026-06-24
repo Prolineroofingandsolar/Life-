@@ -220,7 +220,7 @@ struct WorkoutSummaryView: View {
 
     private func formatVolume(_ kg: Double) -> String {
         if kg >= 1000 {
-            return String(format: "%.1ft", kg / 1000)
+            return String(format: "%.1fT", kg / 1000)
         }
         return "\(Int(kg))kg"
     }
