@@ -37,7 +37,12 @@ struct TasksView: View {
         } else {
             switch filter {
             case .all:      base = appState.tasks
-            case .today:    base = appState.tasks.filter { $0.dueDate == .today }
+            case .today:
+                let todayStart = Calendar.current.startOfDay(for: Date())
+                base = appState.tasks.filter { task in
+                    guard let resolved = task.resolvedDate else { return false }
+                    return Calendar.current.startOfDay(for: resolved) == todayStart
+                }
             case .work:     base = appState.tasks.filter { $0.category == .work }
             case .gym:      base = appState.tasks.filter { $0.category == .gym }
             case .personal: base = appState.tasks.filter { $0.category == .personal }
