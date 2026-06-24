@@ -20,7 +20,11 @@ struct TodayView: View {
     }
 
     private var todayTasks: [AppTask] {
-        appState.tasks.filter { $0.dueDate == .today && !$0.done }
+        let todayStart = Calendar.current.startOfDay(for: Date())
+        return appState.tasks.filter { task in
+            guard !task.done, let resolved = task.resolvedDate else { return false }
+            return Calendar.current.startOfDay(for: resolved) == todayStart
+        }
     }
 
     private var todayHabits: [Habit] {
