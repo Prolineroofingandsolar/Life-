@@ -224,7 +224,7 @@ private struct CompositionTab: View {
     @State private var importError: String? = nil
     @State private var selectedMetric: CompMetric = .bodyFat
 
-    private let healthKitManager = HealthKitManager()
+    @State private var healthKitManager = HealthKitManager()
 
     private var entries: [BodyCompEntry] {
         appState.bodyCompEntries.sorted { $0.date < $1.date }

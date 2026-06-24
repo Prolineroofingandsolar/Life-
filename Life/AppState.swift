@@ -243,6 +243,7 @@ final class AppState {
         let recurrenceType = tasks[idx].recurrenceType
         tasks[idx].done.toggle()
         tasks[idx].completedAt = tasks[idx].done ? Date() : nil
+        if tasks[idx].done { NotificationsManager.shared.cancelTaskReminder(taskId: id) }
 
         // Advance recurring task to next period when checked off
         if tasks[idx].done, wasRecurring, let rt = recurrenceType {
@@ -267,6 +268,7 @@ final class AppState {
     }
 
     func deleteTask(id: String) {
+        NotificationsManager.shared.cancelTaskReminder(taskId: id)
         tasks.removeAll { $0.id == id }
         save()
     }
@@ -280,7 +282,14 @@ final class AppState {
         if let notes = notes { tasks[idx].notes = notes }
         if let listId = listId { tasks[idx].listId = listId }
         if let override = dueDateOverride { tasks[idx].dueDateOverride = override }
-        if let rd = reminderDate { tasks[idx].reminderDate = rd }
+        if let rd = reminderDate {
+            tasks[idx].reminderDate = rd
+            if let date = rd {
+                NotificationsManager.shared.scheduleTaskReminder(taskId: id, title: tasks[idx].title, at: date)
+            } else {
+                NotificationsManager.shared.cancelTaskReminder(taskId: id)
+            }
+        }
         if let st = scheduledTime { tasks[idx].scheduledTime = st }
         if let em = estimatedMinutes { tasks[idx].estimatedMinutes = em }
         if let rec = isRecurring { tasks[idx].isRecurring = rec }

@@ -119,7 +119,7 @@ private struct CareSection: View {
     private var today: CareDay { appState.today }
     private var settings: CareSettings { appState.careSettings }
 
-    private let hkManager = HealthKitManager()
+    @State private var hkManager = HealthKitManager()
 
     private var rings: [ActivityRingsView.Ring] {
         [

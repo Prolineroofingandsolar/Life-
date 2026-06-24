@@ -97,6 +97,28 @@ final class NotificationsManager {
         center.removePendingNotificationRequests(withIdentifiers: ["rest_timer"])
     }
 
+    // MARK: - Task Reminder (one-shot)
+
+    func scheduleTaskReminder(taskId: String, title: String, at date: Date) {
+        let identifier = "task_reminder_\(taskId)"
+        center.removePendingNotificationRequests(withIdentifiers: [identifier])
+        guard date > Date() else { return }
+
+        let content = UNMutableNotificationContent()
+        content.title = "Task Reminder"
+        content.body = title
+        content.sound = .default
+
+        let comps = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: date)
+        let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
+        let request = UNNotificationRequest(identifier: identifier, content: content, trigger: trigger)
+        center.add(request)
+    }
+
+    func cancelTaskReminder(taskId: String) {
+        center.removePendingNotificationRequests(withIdentifiers: ["task_reminder_\(taskId)"])
+    }
+
     // MARK: - Cancel All
 
     func cancelAll() {
