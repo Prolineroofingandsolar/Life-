@@ -972,11 +972,12 @@ final class AppState {
     var workoutStreak: Int {
         let finished = sessions.filter { $0.finishedAt != nil }
         guard !finished.isEmpty else { return 0 }
-        var streak = 0
-        var checkDate = Calendar.current.startOfDay(for: Date())
         let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
         let dayKeys = Set(finished.compactMap { $0.finishedAt }.map { cal.startOfDay(for: $0) })
-        // Walk backwards day by day
+        // Start from today; if no workout today, start from yesterday so streak persists until midnight
+        var checkDate = dayKeys.contains(today) ? today : (cal.date(byAdding: .day, value: -1, to: today) ?? today)
+        var streak = 0
         while dayKeys.contains(checkDate) {
             streak += 1
             checkDate = cal.date(byAdding: .day, value: -1, to: checkDate) ?? checkDate
