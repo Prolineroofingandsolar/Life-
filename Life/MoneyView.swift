@@ -26,8 +26,7 @@ struct MoneyView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            List {
+        List {
                 // Monthly total card
                 Section {
                     VStack(alignment: .leading, spacing: 4) {
@@ -100,9 +99,8 @@ struct MoneyView: View {
                     EditButton()
                 }
             }
-            .sheet(isPresented: $showAddBill) {
-                AddBillSheet()
-            }
+        .sheet(isPresented: $showAddBill) {
+            AddBillSheet()
         }
     }
 }

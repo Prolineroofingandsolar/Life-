@@ -17,29 +17,27 @@ struct BodyView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                // Segmented picker
-                Picker("Tab", selection: $selectedTab) {
-                    ForEach(BodyTab.allCases) { tab in
-                        Text(tab.rawValue).tag(tab)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .padding()
-
-                // Content
-                switch selectedTab {
-                case .weight:       WeightTab()
-                case .composition:  CompositionTab()
-                case .measurements: MeasurementsTab()
-                case .lifts:        LiftsTab()
+        VStack(spacing: 0) {
+            // Segmented picker
+            Picker("Tab", selection: $selectedTab) {
+                ForEach(BodyTab.allCases) { tab in
+                    Text(tab.rawValue).tag(tab)
                 }
             }
-            .background(Color(.systemGroupedBackground))
-            .navigationTitle("Body")
-            .navigationBarTitleDisplayMode(.large)
+            .pickerStyle(.segmented)
+            .padding()
+
+            // Content
+            switch selectedTab {
+            case .weight:       WeightTab()
+            case .composition:  CompositionTab()
+            case .measurements: MeasurementsTab()
+            case .lifts:        LiftsTab()
+            }
         }
+        .background(Color(.systemGroupedBackground))
+        .navigationTitle("Body")
+        .navigationBarTitleDisplayMode(.large)
     }
 }
 
