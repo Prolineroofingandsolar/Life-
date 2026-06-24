@@ -16,38 +16,31 @@ struct CalculatorsView: View {
     @State private var selectedTab: CalcTab = .oneRM
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 20) {
-                    Picker("Calculator", selection: $selectedTab) {
-                        ForEach(CalcTab.allCases, id: \.self) { tab in
-                            Text(tab.rawValue).tag(tab)
-                        }
+        ScrollView {
+            VStack(spacing: 20) {
+                Picker("Calculator", selection: $selectedTab) {
+                    ForEach(CalcTab.allCases, id: \.self) { tab in
+                        Text(tab.rawValue).tag(tab)
                     }
-                    .pickerStyle(.segmented)
-                    .padding(.horizontal)
-                    .onChange(of: selectedTab) { _, _ in HapticManager.selection() }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
+                .onChange(of: selectedTab) { _, _ in HapticManager.selection() }
 
-                    switch selectedTab {
-                    case .oneRM:
-                        OneRMCalculatorView(unit: appState.workoutSettings.weightUnit)
-                    case .plate:
-                        PlateCalculatorView(unit: appState.workoutSettings.weightUnit)
-                    case .bmi:
-                        BMICalculatorView(unit: appState.workoutSettings.weightUnit)
-                    }
-                }
-                .padding(.vertical)
-            }
-            .background(Color(.systemGroupedBackground))
-            .navigationTitle("Calculators")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
+                switch selectedTab {
+                case .oneRM:
+                    OneRMCalculatorView(unit: appState.workoutSettings.weightUnit)
+                case .plate:
+                    PlateCalculatorView(unit: appState.workoutSettings.weightUnit)
+                case .bmi:
+                    BMICalculatorView(unit: appState.workoutSettings.weightUnit)
                 }
             }
+            .padding(.vertical)
         }
+        .background(Color(.systemGroupedBackground))
+        .navigationTitle("Calculators")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
