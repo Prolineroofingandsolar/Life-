@@ -274,10 +274,12 @@ struct WorkoutCalendarCard: View {
     @State private var showMonth = false
     private let cal = Calendar.current
 
+    private static let monthTitleFmt: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "MMMM yyyy"; return f
+    }()
+
     private var monthTitle: String {
-        let fmt = DateFormatter()
-        fmt.dateFormat = "MMMM yyyy"
-        return fmt.string(from: Date())
+        Self.monthTitleFmt.string(from: Date())
     }
 
     private var weekDays: [(date: Date, shortDay: String)] {
@@ -483,10 +485,12 @@ private struct WeekStripView: View {
         return (0..<7).map { cal.date(byAdding: .day, value: $0, to: monday)! }
     }
 
+    private static let monthLabelFmt: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "MMMM yyyy"; return f
+    }()
+
     private var monthLabel: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMMM yyyy"
-        return formatter.string(from: weekDates[3])
+        Self.monthLabelFmt.string(from: weekDates[3])
     }
 
     var body: some View {

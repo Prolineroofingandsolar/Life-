@@ -3,7 +3,7 @@ import Foundation
 
 // MARK: - Date Extensions
 
-private let _dayKeyFormatter: DateFormatter = {
+let _dayKeyFormatter: DateFormatter = {
     let f = DateFormatter()
     f.dateFormat = "yyyy-MM-dd"
     f.locale = Locale(identifier: "en_US_POSIX")

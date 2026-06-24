@@ -359,9 +359,7 @@ final class AppState {
 
     func bestStreakFor(_ habit: Habit) -> Int {
         let cal = Calendar.current
-        let fmt = DateFormatter()
-        fmt.dateFormat = "yyyy-MM-dd"
-        fmt.locale = Locale(identifier: "en_US_POSIX")
+        let fmt = _dayKeyFormatter
 
         if habit.kind == .break {
             // For break habits, find the longest run of days without a slip
@@ -1397,11 +1395,14 @@ final class AppState {
 
     // MARK: - Weekly Workout Counts (P3.3)
 
+    private static let weekLabelFmt: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "MMM d"; return f
+    }()
+
     func weeklyWorkoutCounts(weeks: Int) -> [(weekLabel: String, count: Int)] {
         let cal = Calendar.current
         let now = Date()
-        let fmt = DateFormatter()
-        fmt.dateFormat = "MMM d"
+        let fmt = Self.weekLabelFmt
         return (0..<weeks).reversed().map { offset in
             let weekAgo = cal.date(byAdding: .weekOfYear, value: -offset, to: now) ?? now
             let weekStart = cal.date(from: cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: weekAgo)) ?? weekAgo
