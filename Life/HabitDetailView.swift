@@ -18,8 +18,10 @@ struct HabitDetailView: View {
     private var todayLog: HabitLogEntry? { habit?.logs.first { $0.dayKey == Date().dayKey } }
 
     private var isCompleted: Bool {
-        guard let h = habit, let log = todayLog else { return false }
-        return h.kind == .break ? !log.slipped : log.count >= h.targetCount && !log.slipped
+        guard let h = habit else { return false }
+        if h.kind == .break { return todayLog?.slipped != true }
+        guard let log = todayLog else { return false }
+        return log.count >= h.targetCount && !log.slipped
     }
 
     private var progress: Double {

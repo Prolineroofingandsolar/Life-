@@ -23,8 +23,10 @@ struct HabitAnalyticsView: View {
             guard let date = cal.date(byAdding: .day, value: -i, to: Date()) else { return nil }
             let key = date.dayKey
             let done = Double(active.filter { h in
-                guard let log = h.logs.first(where: { $0.dayKey == key }) else { return false }
-                return h.kind == .break ? !log.slipped : log.count >= h.targetCount && !log.slipped
+                let log = h.logs.first(where: { $0.dayKey == key })
+                if h.kind == .break { return log?.slipped != true }
+                guard let log = log else { return false }
+                return log.count >= h.targetCount && !log.slipped
             }.count)
             let label = i % (range > 14 ? 7 : 1) == 0
                 ? date.formatted(.dateTime.weekday(.abbreviated))

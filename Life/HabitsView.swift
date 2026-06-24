@@ -490,8 +490,13 @@ struct HabitHeatmapView: View {
     }
 
     private func intensity(for key: String) -> Double {
-        guard let log = habit.logs.first(where: { $0.dayKey == key }) else { return 0 }
-        if log.slipped { return -1 }
+        let log = habit.logs.first(where: { $0.dayKey == key })
+        if let log = log, log.slipped { return -1 }
+        if habit.kind == .break {
+            // No log or non-slipped log = clean day = full intensity
+            return log == nil ? 1.0 : 1.0
+        }
+        guard let log = log else { return 0 }
         return min(Double(log.count) / Double(max(habit.targetCount, 1)), 1.0)
     }
 
