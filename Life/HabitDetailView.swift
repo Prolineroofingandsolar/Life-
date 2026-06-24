@@ -11,7 +11,7 @@ struct HabitDetailView: View {
     @State private var elapsed = 0
     @State private var showCompletion = false
 
-    let clockTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+    @State private var clockTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     private var habit: Habit? { appState.habits.first { $0.id == habitId } }
 

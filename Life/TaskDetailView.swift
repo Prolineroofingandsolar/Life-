@@ -242,8 +242,10 @@ struct TaskDetailView: View {
                     detailRow(icon: "timer", iconColor: estimatedMinutes != nil ? .teal : .secondary, label: "Duration") {
                         Picker("", selection: Binding(
                             get: { estimatedMinutes ?? 0 },
-                            set: { estimatedMinutes = $0 == 0 ? nil : $0
-                                  appState.updateTask(id: taskId, estimatedMinutes: .some(estimatedMinutes)) }
+                            set: { newVal in
+                                estimatedMinutes = newVal == 0 ? nil : newVal
+                                appState.updateTask(id: taskId, estimatedMinutes: .some(newVal == 0 ? nil : newVal))
+                            }
                         )) {
                             Text("None").tag(0)
                             Text("15m").tag(15)
