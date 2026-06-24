@@ -119,7 +119,6 @@ struct HabitsView: View {
 
     private var statsRow: some View {
         HStack(spacing: 10) {
-            HabitStatCard(icon: "flame.fill",         iconColor: .orange,        value: "\(bestStreak)d",           label: "Best Streak")
             HabitStatCard(icon: "checkmark.circle.fill", iconColor: AppTheme.primary, value: "\(completedToday)/\(totalToday)", label: "Today")
             HabitStatCard(icon: "chart.bar.fill",      iconColor: .blue,          value: "\(Int(weeklyRate * 100))%", label: "This Week")
         }
