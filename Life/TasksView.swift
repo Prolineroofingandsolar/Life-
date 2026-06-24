@@ -19,6 +19,8 @@ struct TasksView: View {
     @State private var filter: TaskFilter = .all
     @State private var searchText = ""
     @State private var showAddTask = false
+    @State private var showCalendar = false
+    @State private var showStats = false
     @State private var undoTask: AppTask? = nil
     @State private var undoTimer: Timer? = nil
     @State private var showUndo = false
@@ -143,15 +145,21 @@ struct TasksView: View {
                 }
             }
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                    Button { showStats = true } label: {
+                        Image(systemName: "chart.bar.fill")
+                    }
+                    Button { showCalendar = true } label: {
+                        Image(systemName: "calendar")
+                    }
                     Button { showAddTask = true } label: {
                         Image(systemName: "plus")
                     }
                 }
             }
-            .sheet(isPresented: $showAddTask) {
-                AddTaskSheet()
-            }
+            .sheet(isPresented: $showAddTask) { AddTaskSheet() }
+            .sheet(isPresented: $showCalendar) { TaskCalendarView() }
+            .sheet(isPresented: $showStats) { TaskStatsView() }
             .task {
                 await crm.fetchAll()
             }

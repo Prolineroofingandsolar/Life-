@@ -5,6 +5,7 @@ import SwiftUI
 struct TaskCalendarView: View {
 
     @Environment(AppState.self) private var appState
+    @Environment(\.dismiss) private var dismiss
     @State private var selectedDate: Date = Calendar.current.startOfDay(for: Date())
     @State private var weekOffset: Int = 0
 
@@ -34,6 +35,7 @@ struct TaskCalendarView: View {
     private var unscheduledTasks: [AppTask] { tasksForSelected.filter { $0.scheduledTime == nil } }
 
     var body: some View {
+        NavigationStack {
         VStack(spacing: 0) {
             weekStrip
             Divider()
@@ -77,6 +79,12 @@ struct TaskCalendarView: View {
         .background(Color(.systemGroupedBackground))
         .navigationTitle("Schedule")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Done") { dismiss() }
+            }
+        }
+        } // NavigationStack
     }
 
     private var weekStrip: some View {
