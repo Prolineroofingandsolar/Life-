@@ -478,6 +478,7 @@ final class AppState {
     }
 
     func deleteHabit(id: String) {
+        HabitReminderManager.shared.cancelReminder(habitId: id)
         habits.removeAll { $0.id == id }
         save()
     }
@@ -485,6 +486,7 @@ final class AppState {
     func toggleArchiveHabit(id: String) {
         guard let idx = habits.firstIndex(where: { $0.id == id }) else { return }
         habits[idx].isArchived.toggle()
+        HabitReminderManager.shared.syncReminders(for: [habits[idx]])
         save()
     }
 
