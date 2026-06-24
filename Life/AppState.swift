@@ -345,13 +345,19 @@ final class AppState {
     func streakFor(_ habit: Habit) -> Int {
         var count = 0
         let cal = Calendar.current
-        var date = Date()
+        let todayKey = Date().dayKey
+        let todayLog = habit.logs.first(where: { $0.dayKey == todayKey })
+        let todaySuccess: Bool = {
+            if habit.kind == .break { return todayLog?.slipped != true }
+            return todayLog != nil && (todayLog?.count ?? 0) >= habit.targetCount && todayLog?.slipped != true
+        }()
+        // If today isn't done yet, start from yesterday so streak persists until midnight
+        var date: Date = todaySuccess ? Date() : (cal.date(byAdding: .day, value: -1, to: Date()) ?? Date())
         while true {
             let key = date.dayKey
             let log = habit.logs.first(where: { $0.dayKey == key })
             let success: Bool
             if habit.kind == .break {
-                // No log or non-slipped log = success (didn't slip)
                 success = log?.slipped != true
             } else {
                 success = log != nil && (log?.count ?? 0) >= habit.targetCount && log?.slipped != true
