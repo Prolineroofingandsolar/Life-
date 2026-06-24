@@ -122,6 +122,9 @@ struct TasksView: View {
                 if showUndo, let task = undoTask {
                     UndoToast(message: "Task deleted") {
                         appState.tasks.append(task)
+                        if let date = task.reminderDate {
+                            NotificationsManager.shared.scheduleTaskReminder(taskId: task.id, title: task.title, at: date)
+                        }
                         appState.save()
                         dismissUndo()
                     }
