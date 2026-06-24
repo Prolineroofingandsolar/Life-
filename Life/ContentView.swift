@@ -154,6 +154,7 @@ struct FloatingTabBar: View {
     let isCompact: Bool
     var hasActiveWorkout: Bool = false
     @Namespace private var pillAnimation
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(spacing: 0) {
@@ -172,13 +173,36 @@ struct FloatingTabBar: View {
                 }
             }
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 8)
-        .background(.ultraThinMaterial)
-        .clipShape(Capsule())
-        .overlay(Capsule().strokeBorder(Color.white.opacity(0.1), lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.22), radius: 18, x: 0, y: 6)
-        .padding(.horizontal, 18)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 10)
+        .background {
+            ZStack {
+                // Deep frosted glass
+                Capsule()
+                    .fill(.ultraThinMaterial)
+                // Subtle tint so it reads as a distinct surface
+                Capsule()
+                    .fill(colorScheme == .dark
+                          ? Color.white.opacity(0.05)
+                          : Color.white.opacity(0.55))
+                // Inner highlight at the top edge (classic glass sheen)
+                Capsule()
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(colorScheme == .dark ? 0.25 : 0.7),
+                                Color.white.opacity(0.0)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 1
+                    )
+            }
+        }
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.5 : 0.14), radius: 24, x: 0, y: 8)
+        .shadow(color: .black.opacity(0.06), radius: 4, x: 0, y: 2)
+        .padding(.horizontal, 20)
     }
 }
 
@@ -248,46 +272,48 @@ private struct TabButton: View {
 
     @State private var pulseBadge = false
     private var showLabel: Bool { isSelected && !isCompact }
+    private let green = Color(hex: "#30d158")
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 2) {
+            VStack(spacing: 4) {
                 ZStack(alignment: .topTrailing) {
                     ZStack {
                         if isSelected {
-                            Capsule()
-                                .fill(Color(hex: "#30d158").opacity(0.18))
-                                .frame(height: 30)
-                                .matchedGeometryEffect(id: "pill", in: namespace)
+                            // Frosted selection pill
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(green.opacity(0.15))
+                                .frame(width: showLabel ? nil : 48, height: 32)
+                                .matchedGeometryEffect(id: "selectionPill", in: namespace)
                         }
                         Image(systemName: tab.icon)
-                            .font(.system(size: 15, weight: isSelected ? .semibold : .regular))
-                            .foregroundStyle(isSelected ? Color(hex: "#30d158") : Color.secondary)
-                            .frame(minWidth: 32, minHeight: 30)
-                            .padding(.horizontal, showLabel ? 5 : 0)
+                            .font(.system(size: 17, weight: isSelected ? .semibold : .regular))
+                            .foregroundStyle(isSelected ? green : Color(UIColor.tertiaryLabel))
+                            .frame(width: 48, height: 32)
+                            .scaleEffect(isSelected ? 1.08 : 1.0)
                     }
                     if badge {
                         Circle()
-                            .fill(Color(hex: "#30d158"))
-                            .frame(width: 8, height: 8)
-                            .scaleEffect(pulseBadge ? 1.3 : 1.0)
-                            .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: pulseBadge)
-                            .offset(x: -2, y: 2)
+                            .fill(green)
+                            .frame(width: 7, height: 7)
+                            .scaleEffect(pulseBadge ? 1.35 : 1.0)
+                            .animation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true), value: pulseBadge)
+                            .offset(x: 4, y: -2)
                             .onAppear { pulseBadge = true }
                     }
                 }
                 if showLabel {
                     Text(tab.label)
-                        .font(.system(size: 8, weight: .semibold))
-                        .foregroundStyle(Color(hex: "#30d158"))
-                        .transition(.opacity.combined(with: .scale(scale: 0.85, anchor: .top)))
+                        .font(.system(size: 9, weight: .semibold, design: .rounded))
+                        .foregroundStyle(green)
+                        .transition(.opacity.combined(with: .scale(scale: 0.8, anchor: .top)))
                 }
             }
             .frame(maxWidth: .infinity)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .animation(.spring(response: 0.3, dampingFraction: 0.75), value: isCompact)
-        .animation(.spring(response: 0.3, dampingFraction: 0.75), value: isSelected)
+        .animation(.spring(response: 0.3, dampingFraction: 0.72), value: isCompact)
+        .animation(.spring(response: 0.3, dampingFraction: 0.72), value: isSelected)
     }
 }
