@@ -1178,7 +1178,7 @@ final class AppState {
         let finished = sessions.filter { $0.finishedAt != nil }
         return finished.count * 100 + workoutStreak * 10 + achievements.count * 50
     }
-    var xpLevel: Int  { max(1, xpPoints / 500) }
+    var xpLevel: Int  { xpPoints / 500 + 1 }
     var xpProgress: Double { Double(xpPoints % 500) / 500.0 }
 
     // MARK: - Progress Screen Helpers
