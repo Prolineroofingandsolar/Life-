@@ -417,16 +417,20 @@ private struct ExerciseCard: View {
                 onSetDone: { sid in
                     appState.toggleSetDone(sessionId: sessionId, exerciseId: sessionExercise.id, setId: sid)
                     onSetDone(sid)
-                }
+                },
+                onPairSuperset: onPairSuperset
             )
 
             Divider()
 
-            // Footer: only superset
-            Button { onPairSuperset() } label: {
-                Label("Superset", systemImage: "arrow.triangle.2.circlepath")
+            // Footer: Add Set
+            Button {
+                appState.addSet(sessionId: sessionId, exerciseId: sessionExercise.id)
+                HapticManager.impact(.light)
+            } label: {
+                Label("Add Set", systemImage: "plus")
                     .font(.subheadline)
-                    .foregroundColor(Color(hex: "#5E9BF0"))
+                    .foregroundColor(Color(hex: "#30d158"))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 11)
             }
@@ -445,6 +449,7 @@ private struct ExerciseCardContent: View {
     let supersetLabel: String?
     let accentColor: Color
     let onSetDone: (String) -> Void
+    var onPairSuperset: (() -> Void)? = nil
 
     @State private var showExerciseDetail = false
 
@@ -514,8 +519,20 @@ private struct ExerciseCardContent: View {
                         Button { appState.addSet(sessionId: sessionId, exerciseId: sessionExercise.id) } label: {
                             Label("Add Set", systemImage: "plus")
                         }
+                        Button {
+                            let lastWorkingId = sessionExercise.sets.last(where: { !$0.isDropSet })?.id ?? sessionExercise.sets.last?.id ?? ""
+                            appState.addDropSet(sessionId: sessionId, exerciseId: sessionExercise.id, afterSetId: lastWorkingId)
+                            HapticManager.impact(.light)
+                        } label: {
+                            Label("Add Drop Set", systemImage: "arrow.down.circle")
+                        }
                         Button { appState.addWarmupSets(sessionId: sessionId, exerciseId: sessionExercise.id) } label: {
                             Label("Add Warmup Sets", systemImage: "flame")
+                        }
+                        if let pair = onPairSuperset {
+                            Button { pair() } label: {
+                                Label("Superset with Next", systemImage: "arrow.triangle.2.circlepath")
+                            }
                         }
                         Divider()
                         Button(role: .destructive) {
@@ -733,8 +750,12 @@ private struct SetRow: View {
                                     if !focused { showPlates = false }
                                     else if parsedWeight > 20 { showPlates = true }
                                 }
-                            Text("kg").font(.caption2).foregroundColor(.secondary)
+                            Text("kg")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                                .fixedSize()
                         }
+                        .frame(width: 68)
 
                         Button { adjustWeight(2.5) } label: {
                             Image(systemName: "plus")
