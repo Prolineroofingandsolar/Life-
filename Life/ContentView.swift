@@ -83,16 +83,22 @@ struct ContentView: View {
             TabView(selection: $selectedTab) {
                 TodayView()
                     .tag(AppTab.today)
+                    .toolbar(.hidden, for: .tabBar)
                 TasksView()
                     .tag(AppTab.tasks)
+                    .toolbar(.hidden, for: .tabBar)
                 TrainView()
                     .tag(AppTab.train)
+                    .toolbar(.hidden, for: .tabBar)
                 HabitsView()
                     .tag(AppTab.habits)
+                    .toolbar(.hidden, for: .tabBar)
                 MoreView()
                     .tag(AppTab.more)
+                    .toolbar(.hidden, for: .tabBar)
             }
             .toolbar(.hidden, for: .tabBar)
+            .onAppear { UITabBar.appearance().isHidden = true }
             // Reserve space so screen content scrolls above the pill
             .safeAreaInset(edge: .bottom) {
                 Color.clear.frame(height: 84)
