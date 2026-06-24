@@ -20,7 +20,9 @@ struct HabitsView: View {
 
     private var completedToday: Int {
         activeHabits.filter { habit in
-            guard let log = habit.logs.first(where: { $0.dayKey == Date().dayKey }) else { return false }
+            let log = habit.logs.first(where: { $0.dayKey == Date().dayKey })
+            if habit.kind == .break { return log?.slipped != true }
+            guard let log = log else { return false }
             return log.count >= habit.targetCount && !log.slipped
         }.count
     }
@@ -433,9 +435,12 @@ private struct WeekMiniGrid: View {
             let label = dayLabels[weekday]
             let log = habit.logs.first { $0.dayKey == key }
             let intensity: Double
-            if let log {
-                if log.slipped { intensity = -1 }
-                else { intensity = min(Double(log.count) / Double(max(habit.targetCount, 1)), 1.0) }
+            if let log, log.slipped {
+                intensity = -1
+            } else if habit.kind == .break {
+                intensity = 1.0  // no slip = clean day = full
+            } else if let log {
+                intensity = min(Double(log.count) / Double(max(habit.targetCount, 1)), 1.0)
             } else {
                 intensity = 0
             }
