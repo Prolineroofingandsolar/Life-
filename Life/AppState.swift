@@ -412,8 +412,10 @@ final class AppState {
         for offset in 0..<7 {
             guard let day = cal.date(byAdding: .day, value: -offset, to: today) else { continue }
             let key = day.dayKey
-            if let log = habit.logs.first(where: { $0.dayKey == key }),
-               log.count >= habit.targetCount, !log.slipped {
+            let log = habit.logs.first(where: { $0.dayKey == key })
+            if habit.kind == .break {
+                if log?.slipped != true { completed += 1 }
+            } else if let log = log, log.count >= habit.targetCount, !log.slipped {
                 completed += 1
             }
         }
