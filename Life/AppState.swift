@@ -1394,6 +1394,8 @@ final class AppState {
     func weeklyWorkoutCounts(weeks: Int) -> [(weekLabel: String, count: Int)] {
         let cal = Calendar.current
         let now = Date()
+        let fmt = DateFormatter()
+        fmt.dateFormat = "MMM d"
         return (0..<weeks).reversed().map { offset in
             let weekAgo = cal.date(byAdding: .weekOfYear, value: -offset, to: now) ?? now
             let weekStart = cal.date(from: cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: weekAgo)) ?? weekAgo
@@ -1402,9 +1404,7 @@ final class AppState {
                 guard let fin = $0.finishedAt else { return false }
                 return fin >= weekStart && fin < weekEnd
             }.count
-            let formatter = DateFormatter()
-            formatter.dateFormat = "MMM d"
-            return (weekLabel: formatter.string(from: weekStart), count: count)
+            return (weekLabel: fmt.string(from: weekStart), count: count)
         }
     }
 
