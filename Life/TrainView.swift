@@ -481,8 +481,8 @@ private struct WeekStripView: View {
         let today = cal.startOfDay(for: Date())
         let weekday = cal.component(.weekday, from: today)
         let daysToMonday = (weekday == 1 ? -6 : 2 - weekday)
-        let monday = cal.date(byAdding: .day, value: daysToMonday + weekOffset * 7, to: today)!
-        return (0..<7).map { cal.date(byAdding: .day, value: $0, to: monday)! }
+        let monday = cal.date(byAdding: .day, value: daysToMonday + weekOffset * 7, to: today) ?? today
+        return (0..<7).compactMap { cal.date(byAdding: .day, value: $0, to: monday) }
     }
 
     private static let monthLabelFmt: DateFormatter = {

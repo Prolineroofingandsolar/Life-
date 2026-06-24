@@ -73,7 +73,7 @@ private struct WeightTab: View {
     }
 
     private var displayEntries: [(date: Date, value: Double)] {
-        let cutoff: Date? = chartRange.days.map { Calendar.current.date(byAdding: .day, value: -$0, to: Date())! }
+        let cutoff: Date? = chartRange.days.flatMap { Calendar.current.date(byAdding: .day, value: -$0, to: Date()) }
         return entries.compactMap { entry in
             if let cutoff, entry.date < cutoff { return nil }
             let val = unit == .kg ? entry.valueKg : WeightUnit.kg.convert(entry.valueKg, to: .lbs)
