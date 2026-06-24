@@ -18,6 +18,7 @@ struct TrainView: View {
     @State private var sessionForDetail: WorkoutSession? = nil
     @State private var showSessionDetail = false
     @State private var detailRoutine: Routine? = nil
+    @State private var showAIRoutine = false
 
     private var finishedSessions: [WorkoutSession] {
         appState.sessions
@@ -88,6 +89,11 @@ struct TrainView: View {
                                 Button { showPrograms = true } label: {
                                     Image(systemName: "calendar")
                                         .foregroundColor(AppTheme.trainAccent)
+                                }
+                                Button { showAIRoutine = true } label: {
+                                    Image(systemName: "sparkles")
+                                        .foregroundColor(AppTheme.trainAccent)
+                                        .font(.system(size: 18))
                                 }
                                 Button { showAddRoutine = true } label: {
                                     Image(systemName: "plus.circle.fill")
@@ -171,6 +177,7 @@ struct TrainView: View {
             }
             .sheet(isPresented: $showExerciseLibrary) { ExerciseLibraryView() }
             .sheet(isPresented: $showAddRoutine) { AddRoutineSheet() }
+            .sheet(isPresented: $showAIRoutine) { AIRoutineSheet() }
             .sheet(item: $detailRoutine) { routine in
                 RoutineDetailSheet(routine: routine) {
                     appState.startSession(name: routine.name, routineId: routine.id)
@@ -2042,6 +2049,313 @@ private extension Array {
     func chunked(into size: Int) -> [[Element]] {
         stride(from: 0, to: count, by: size).map {
             Array(self[$0..<Swift.min($0 + size, count)])
+        }
+    }
+}
+
+// MARK: - AI Routine Sheet
+
+struct AIRoutineSheet: View {
+    @Environment(AppState.self) private var appState
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var prompt = ""
+    @State private var apiKey = UserDefaults.standard.string(forKey: "anthropicAPIKey") ?? ""
+    @State private var isGenerating = false
+    @State private var errorMessage: String? = nil
+    @State private var showAPIKeyField = false
+    @FocusState private var promptFocused: Bool
+
+    private let placeholders = [
+        "Push day — chest, shoulders, triceps, 5 exercises, intermediate",
+        "Full body workout, 45 mins, dumbbells only",
+        "Leg day with squats as the main lift, 6 exercises",
+        "Back and biceps, pull-focused, 5 sets per exercise"
+    ]
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 20) {
+
+                    // Hero
+                    VStack(spacing: 8) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 40))
+                            .foregroundColor(AppTheme.trainAccent)
+                        Text("AI Routine Builder")
+                            .font(.title2.bold())
+                        Text("Describe your workout and Claude will build a complete routine for you.")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(.top, 8)
+
+                    // Prompt box
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Describe your workout")
+                            .font(.subheadline.weight(.semibold))
+                        ZStack(alignment: .topLeading) {
+                            RoundedRectangle(cornerRadius: 14)
+                                .fill(Color(.secondarySystemGroupedBackground))
+                            if prompt.isEmpty {
+                                Text(placeholders.randomElement() ?? placeholders[0])
+                                    .foregroundColor(.tertiaryLabel)
+                                    .padding(14)
+                                    .allowsHitTesting(false)
+                            }
+                            TextEditor(text: $prompt)
+                                .focused($promptFocused)
+                                .frame(minHeight: 100)
+                                .padding(10)
+                                .scrollContentBackground(.hidden)
+                        }
+                        .frame(minHeight: 120)
+                    }
+
+                    // Example chips
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Examples")
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(.secondary)
+                        FlowLayout(spacing: 8) {
+                            ForEach(["Push day", "Pull day", "Leg day", "Full body", "Upper body", "Core & abs", "HIIT", "Mobility"], id: \.self) { chip in
+                                Button {
+                                    prompt = chip + " workout, "
+                                    promptFocused = true
+                                } label: {
+                                    Text(chip)
+                                        .font(.caption.weight(.medium))
+                                        .foregroundColor(AppTheme.trainAccent)
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 6)
+                                        .background(AppTheme.trainAccent.opacity(0.1))
+                                        .cornerRadius(20)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+
+                    // API Key
+                    VStack(alignment: .leading, spacing: 6) {
+                        Button {
+                            withAnimation { showAPIKeyField.toggle() }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: apiKey.isEmpty ? "key.slash" : "key.fill")
+                                    .font(.caption)
+                                    .foregroundColor(apiKey.isEmpty ? .red : .secondary)
+                                Text(apiKey.isEmpty ? "Add Anthropic API key to use AI" : "API key saved ✓")
+                                    .font(.caption)
+                                    .foregroundColor(apiKey.isEmpty ? .red : .secondary)
+                                Spacer()
+                                Image(systemName: showAPIKeyField ? "chevron.up" : "chevron.down")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+
+                        if showAPIKeyField {
+                            SecureField("sk-ant-...", text: $apiKey)
+                                .font(.system(.caption, design: .monospaced))
+                                .padding(10)
+                                .background(Color(.secondarySystemGroupedBackground))
+                                .cornerRadius(10)
+                                .onChange(of: apiKey) { _, v in
+                                    UserDefaults.standard.set(v, forKey: "anthropicAPIKey")
+                                }
+                            Text("Get a free key at console.anthropic.com")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    if let err = errorMessage {
+                        Text(err)
+                            .font(.caption)
+                            .foregroundColor(.red)
+                            .multilineTextAlignment(.center)
+                    }
+
+                    // Generate button
+                    Button {
+                        Task { await generate() }
+                    } label: {
+                        HStack(spacing: 8) {
+                            if isGenerating {
+                                ProgressView().tint(.white).scaleEffect(0.85)
+                            } else {
+                                Image(systemName: "sparkles")
+                            }
+                            Text(isGenerating ? "Building your routine…" : "Generate Routine")
+                                .font(.headline)
+                        }
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .background(prompt.trimmingCharacters(in: .whitespaces).isEmpty || apiKey.isEmpty ? Color.secondary : AppTheme.trainAccent)
+                        .cornerRadius(16)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(prompt.trimmingCharacters(in: .whitespaces).isEmpty || apiKey.isEmpty || isGenerating)
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 40)
+            }
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle("AI Routine")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func generate() async {
+        isGenerating = true
+        errorMessage = nil
+
+        let systemPrompt = """
+        You are a personal trainer. The user will describe a workout. Return ONLY valid JSON with this structure:
+        {
+          "routineName": "Push Day A",
+          "emoji": "💪",
+          "exercises": [
+            {
+              "name": "Barbell Bench Press",
+              "muscle": "Chest",
+              "sets": 4,
+              "reps": 8,
+              "restSeconds": 120
+            }
+          ]
+        }
+        Use 4-7 exercises. Include realistic sets/reps. muscle should be one of: Chest, Back, Shoulders, Biceps, Triceps, Legs, Glutes, Core, Cardio, Full Body. Return ONLY the JSON object, no markdown.
+        """
+
+        let body: [String: Any] = [
+            "model": "claude-haiku-4-5-20251001",
+            "max_tokens": 1024,
+            "system": systemPrompt,
+            "messages": [["role": "user", "content": prompt]]
+        ]
+
+        guard let url = URL(string: "https://api.anthropic.com/v1/messages"),
+              let bodyData = try? JSONSerialization.data(withJSONObject: body) else {
+            errorMessage = "Failed to build request."
+            isGenerating = false
+            return
+        }
+
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "content-type")
+        req.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+        req.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        req.httpBody = bodyData
+
+        do {
+            let (data, _) = try await URLSession.shared.data(for: req)
+            guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let content = (root["content"] as? [[String: Any]])?.first,
+                  let text = content["text"] as? String else {
+                errorMessage = "Unexpected API response. Check your API key."
+                isGenerating = false
+                return
+            }
+
+            guard let jsonData = text.data(using: .utf8),
+                  let parsed = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+                  let routineName = parsed["routineName"] as? String,
+                  let rawExercises = parsed["exercises"] as? [[String: Any]] else {
+                errorMessage = "Couldn't parse the routine. Try rephrasing your description."
+                isGenerating = false
+                return
+            }
+
+            let emoji = parsed["emoji"] as? String ?? "💪"
+
+            await MainActor.run {
+                buildRoutine(name: routineName, emoji: emoji, rawExercises: rawExercises)
+                dismiss()
+            }
+        } catch {
+            errorMessage = "Network error: \(error.localizedDescription)"
+        }
+
+        isGenerating = false
+    }
+
+    private func buildRoutine(name: String, emoji: String, rawExercises: [[String: Any]]) {
+        var routine = Routine(name: name)
+        routine.emoji = emoji
+
+        for raw in rawExercises {
+            guard let exName = raw["name"] as? String else { continue }
+            let muscle   = raw["muscle"] as? String ?? "Full Body"
+            let sets     = raw["sets"] as? Int ?? 3
+            let reps     = raw["reps"] as? Int ?? 10
+            let rest     = raw["restSeconds"] as? Int ?? 90
+
+            // Find existing exercise or create a custom one
+            let existing = appState.exercises.first {
+                $0.name.lowercased() == exName.lowercased()
+            }
+            let exerciseId: String
+            if let ex = existing {
+                exerciseId = ex.id
+            } else {
+                var newEx = Exercise(name: exName, muscle: muscle, kind: .barbell)
+                newEx.isCustom = true
+                appState.exercises.append(newEx)
+                exerciseId = newEx.id
+            }
+
+            var re = RoutineExercise(exerciseId: exerciseId)
+            re.defaultSets  = sets
+            re.defaultReps  = reps
+            re.repRangeMin  = max(reps - 2, 1)
+            re.repRangeMax  = reps + 2
+            re.restSeconds  = rest
+            routine.exercises.append(re)
+        }
+
+        appState.routines.append(routine)
+        appState.save()
+    }
+}
+
+// MARK: - Flow Layout (wrapping chip row)
+
+private struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? 0
+        var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0, maxY: CGFloat = 0
+        for view in subviews {
+            let size = view.sizeThatFits(.unspecified)
+            if x + size.width > width && x > 0 { y += rowHeight + spacing; x = 0; rowHeight = 0 }
+            rowHeight = max(rowHeight, size.height)
+            x += size.width + spacing
+            maxY = y + rowHeight
+        }
+        return CGSize(width: width, height: maxY)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX, y = bounds.minY, rowHeight: CGFloat = 0
+        for view in subviews {
+            let size = view.sizeThatFits(.unspecified)
+            if x + size.width > bounds.maxX && x > bounds.minX { y += rowHeight + spacing; x = bounds.minX; rowHeight = 0 }
+            view.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+            rowHeight = max(rowHeight, size.height)
+            x += size.width + spacing
         }
     }
 }
