@@ -608,7 +608,7 @@ private struct PlanSessionSheet: View {
     @State private var selectedRoutineId: String? = nil
     @State private var notes = ""
 
-    private let dateFmt: DateFormatter = {
+    private static let dateFmt: DateFormatter = {
         let f = DateFormatter(); f.dateStyle = .long; return f
     }()
 
