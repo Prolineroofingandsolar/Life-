@@ -2163,7 +2163,7 @@ Lateral Raise,3,15,45
                                 if pastedText.isEmpty {
                                     Text(exampleCSV)
                                         .font(.system(.caption, design: .monospaced))
-                                        .foregroundColor(.tertiaryLabel)
+                                        .foregroundColor(Color(.tertiaryLabel))
                                         .padding(12)
                                         .allowsHitTesting(false)
                                 }
@@ -2340,7 +2340,7 @@ My workout: [DESCRIBE YOUR WORKOUT HERE]
             if let ex = existing {
                 exerciseId = ex.id
             } else {
-                var newEx = Exercise(name: exName, muscle: muscle, kind: .barbell)
+                var newEx = Exercise(name: exName, muscle: muscle, kind: .weight)
                 newEx.isCustom = true
                 appState.exercises.append(newEx)
                 exerciseId = newEx.id
