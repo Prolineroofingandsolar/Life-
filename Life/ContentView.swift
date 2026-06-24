@@ -77,6 +77,7 @@ struct ContentView: View {
     @State private var isCompact = false
     @State private var expandWorkItem: DispatchWorkItem?
     @State private var showActiveWorkout = false
+    @State private var dragProgress: CGFloat = 0  // -1...1 fraction toward prev/next tab
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -111,21 +112,54 @@ struct ContentView: View {
                 DragGesture(minimumDistance: 10, coordinateSpace: .global)
                     .onChanged { value in
                         let dy = value.translation.height
-                        let dx = abs(value.translation.width)
-                        guard abs(dy) > dx else { return }
-                        if dy < -18 {
-                            expandWorkItem?.cancel()
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { isCompact = true }
-                        } else if dy > 18 {
-                            expandWorkItem?.cancel()
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { isCompact = false }
+                        let dx = value.translation.width
+                        if abs(dy) > abs(dx) {
+                            // Vertical — compact/expand pill
+                            if dy < -18 {
+                                expandWorkItem?.cancel()
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { isCompact = true }
+                            } else if dy > 18 {
+                                expandWorkItem?.cancel()
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { isCompact = false }
+                            }
+                        } else {
+                            // Horizontal — animate pill drag progress (-1 = left, +1 = right)
+                            let tabs = AppTab.allCases
+                            let currentIdx = tabs.firstIndex(of: selectedTab) ?? 0
+                            let screenWidth = UIScreen.main.bounds.width
+                            let raw = -dx / screenWidth
+                            // Clamp so we don't go past first/last tab
+                            let clamped = currentIdx == 0 ? max(raw, 0) :
+                                          currentIdx == tabs.count - 1 ? min(raw, 0) : raw
+                            dragProgress = clamped
                         }
                     }
-                    .onEnded { _ in scheduleExpand() }
+                    .onEnded { value in
+                        let dx = value.translation.width
+                        let tabs = AppTab.allCases
+                        let currentIdx = tabs.firstIndex(of: selectedTab) ?? 0
+                        // Snap tab if drag exceeded threshold
+                        if dx < -60 && currentIdx < tabs.count - 1 {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                selectedTab = tabs[currentIdx + 1]
+                            }
+                        } else if dx > 60 && currentIdx > 0 {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                selectedTab = tabs[currentIdx - 1]
+                            }
+                        }
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { dragProgress = 0 }
+                        scheduleExpand()
+                    }
             )
 
-            FloatingTabBar(selectedTab: $selectedTab, isCompact: isCompact, hasActiveWorkout: appState.activeSession != nil)
-                .padding(.bottom, 10)
+            FloatingTabBar(
+                selectedTab: $selectedTab,
+                isCompact: isCompact,
+                hasActiveWorkout: appState.activeSession != nil,
+                dragProgress: dragProgress
+            )
+            .padding(.bottom, 10)
         }
         .onOpenURL { url in
             guard url.scheme == "life" else { return }
@@ -172,14 +206,27 @@ struct FloatingTabBar: View {
     @Binding var selectedTab: AppTab
     let isCompact: Bool
     var hasActiveWorkout: Bool = false
+    var dragProgress: CGFloat = 0
     @Namespace private var pillAnimation
+
+    private var tabs: [AppTab] { AppTab.allCases }
+
+    private var currentIdx: Int { tabs.firstIndex(of: selectedTab) ?? 0 }
+
+    // Which tab index the indicator should visually sit at (fractional during drag)
+    private var indicatorPosition: CGFloat {
+        CGFloat(currentIdx) + dragProgress
+    }
 
     var body: some View {
         HStack(spacing: 0) {
-            ForEach(AppTab.allCases, id: \.self) { tab in
+            ForEach(tabs, id: \.self) { tab in
                 TabButton(
                     tab: tab,
                     isSelected: selectedTab == tab,
+                    dragProgress: dragProgress,
+                    currentIdx: currentIdx,
+                    tabIdx: tabs.firstIndex(of: tab) ?? 0,
                     isCompact: isCompact,
                     badge: tab == .train && hasActiveWorkout,
                     namespace: pillAnimation
@@ -258,6 +305,9 @@ private struct ActiveSessionBanner: View {
 private struct TabButton: View {
     let tab: AppTab
     let isSelected: Bool
+    var dragProgress: CGFloat = 0
+    var currentIdx: Int = 0
+    var tabIdx: Int = 0
     let isCompact: Bool
     var badge: Bool = false
     let namespace: Namespace.ID
@@ -266,6 +316,11 @@ private struct TabButton: View {
     @State private var pulseBadge = false
     private var showLabel: Bool { isSelected && !isCompact }
     private let green = Color(hex: "#30d158")
+
+    // 0...1 how "lit up" this tab icon is during a drag
+    private var activation: CGFloat {
+        max(0, 1 - abs(CGFloat(tabIdx) - (CGFloat(currentIdx) + dragProgress)))
+    }
 
     var body: some View {
         Button(action: action) {
@@ -279,10 +334,14 @@ private struct TabButton: View {
                                 .matchedGeometryEffect(id: "selectionPill", in: namespace)
                         }
                         Image(systemName: tab.icon)
-                            .font(.system(size: 17, weight: isSelected ? .semibold : .regular))
-                            .foregroundStyle(isSelected ? green : Color(UIColor.secondaryLabel))
+                            .font(.system(size: 17, weight: activation > 0.5 ? .semibold : .regular))
+                            .foregroundStyle(
+                                activation > 0.01
+                                ? green.opacity(0.4 + activation * 0.6)
+                                : Color(UIColor.secondaryLabel)
+                            )
                             .frame(width: 44, height: 30)
-                            .scaleEffect(isSelected ? 1.05 : 1.0)
+                            .scaleEffect(1.0 + activation * 0.05)
                     }
                     if badge {
                         Circle()
