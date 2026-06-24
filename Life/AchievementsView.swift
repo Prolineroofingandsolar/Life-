@@ -149,7 +149,7 @@ private struct AchievementCell: View {
     let unlocked: Bool
     let unlockedAt: Date?
 
-    private let dateFormatter: DateFormatter = {
+    private static let dateFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "MMM d"
         return f

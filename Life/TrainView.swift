@@ -545,14 +545,11 @@ private struct WeekDayCell: View {
     let sessionName: String?
     let onTap: () -> Void
 
-    private var dayLetter: String {
-        let f = DateFormatter(); f.dateFormat = "EEE"
-        return f.string(from: date).uppercased()
-    }
-    private var dayNumber: String {
-        let f = DateFormatter(); f.dateFormat = "d"
-        return f.string(from: date)
-    }
+    private static let dayLetterFmt: DateFormatter = { let f = DateFormatter(); f.dateFormat = "EEE"; return f }()
+    private static let dayNumberFmt: DateFormatter = { let f = DateFormatter(); f.dateFormat = "d"; return f }()
+
+    private var dayLetter: String { Self.dayLetterFmt.string(from: date).uppercased() }
+    private var dayNumber: String { Self.dayNumberFmt.string(from: date) }
     private var isFuture: Bool { date > Calendar.current.startOfDay(for: Date()) }
 
     var body: some View {
