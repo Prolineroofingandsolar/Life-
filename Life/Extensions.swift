@@ -3,12 +3,16 @@ import Foundation
 
 // MARK: - Date Extensions
 
+private let _dayKeyFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.dateFormat = "yyyy-MM-dd"
+    f.locale = Locale(identifier: "en_US_POSIX")
+    return f
+}()
+
 extension Date {
     var dayKey: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        return formatter.string(from: self)
+        _dayKeyFormatter.string(from: self)
     }
 
     var startOfDay: Date {
