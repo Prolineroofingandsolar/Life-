@@ -209,6 +209,7 @@ final class AppState {
             seedDefaults()
         }
         loadPhotos()
+        HabitReminderManager.shared.syncReminders(for: habits)
     }
 
     static let defaultTaskLists: [TaskList] = [
@@ -463,13 +464,16 @@ final class AppState {
         save()
     }
 
-    func updateHabit(id: String, name: String? = nil, emoji: String? = nil, kind: HabitKind? = nil, cadence: HabitCadence? = nil, targetCount: Int? = nil) {
+    func updateHabit(id: String, name: String? = nil, emoji: String? = nil, kind: HabitKind? = nil, cadence: HabitCadence? = nil, targetCount: Int? = nil, reminderEnabled: Bool? = nil, reminderTime: Date?? = nil) {
         guard let idx = habits.firstIndex(where: { $0.id == id }) else { return }
         if let name = name { habits[idx].name = name }
         if let emoji = emoji { habits[idx].emoji = emoji }
         if let kind = kind { habits[idx].kind = kind }
         if let cadence = cadence { habits[idx].cadence = cadence }
         if let target = targetCount { habits[idx].targetCount = target }
+        if let enabled = reminderEnabled { habits[idx].reminderEnabled = enabled }
+        if let time = reminderTime { habits[idx].reminderTime = time }
+        HabitReminderManager.shared.syncReminders(for: [habits[idx]])
         save()
     }
 

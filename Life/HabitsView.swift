@@ -632,17 +632,21 @@ struct EditHabitSheet: View {
     @State private var targetType: HabitTargetType
     @State private var targetCount: Int
     @State private var targetUnit: String
+    @State private var reminderEnabled: Bool
+    @State private var reminderTime: Date
 
     init(habit: Habit) {
         self.habit = habit
-        _name        = State(initialValue: habit.name)
-        _emoji       = State(initialValue: habit.emoji)
-        _kind        = State(initialValue: habit.kind)
-        _category    = State(initialValue: habit.category)
-        _cadence     = State(initialValue: habit.cadence)
-        _targetType  = State(initialValue: habit.targetType)
-        _targetCount = State(initialValue: habit.targetCount)
-        _targetUnit  = State(initialValue: habit.targetUnit)
+        _name             = State(initialValue: habit.name)
+        _emoji            = State(initialValue: habit.emoji)
+        _kind             = State(initialValue: habit.kind)
+        _category         = State(initialValue: habit.category)
+        _cadence          = State(initialValue: habit.cadence)
+        _targetType       = State(initialValue: habit.targetType)
+        _targetCount      = State(initialValue: habit.targetCount)
+        _targetUnit       = State(initialValue: habit.targetUnit)
+        _reminderEnabled  = State(initialValue: habit.reminderEnabled)
+        _reminderTime     = State(initialValue: habit.reminderTime ?? Calendar.current.date(bySettingHour: 9, minute: 0, second: 0, of: Date()) ?? Date())
     }
 
     var body: some View {
@@ -678,6 +682,12 @@ struct EditHabitSheet: View {
                         }
                     }
                 }
+                Section("Reminder") {
+                    Toggle("Daily reminder", isOn: $reminderEnabled)
+                    if reminderEnabled {
+                        DatePicker("Time", selection: $reminderTime, displayedComponents: .hourAndMinute)
+                    }
+                }
             }
             .navigationTitle("Edit Habit")
             .navigationBarTitleDisplayMode(.inline)
@@ -685,9 +695,14 @@ struct EditHabitSheet: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        appState.updateHabit(id: habit.id, name: name.trimmingCharacters(in: .whitespaces),
-                                             emoji: emoji.isEmpty ? "⭐️" : emoji,
-                                             kind: kind, cadence: cadence, targetCount: targetCount)
+                        appState.updateHabit(
+                            id: habit.id,
+                            name: name.trimmingCharacters(in: .whitespaces),
+                            emoji: emoji.isEmpty ? "⭐️" : emoji,
+                            kind: kind, cadence: cadence, targetCount: targetCount,
+                            reminderEnabled: reminderEnabled,
+                            reminderTime: reminderEnabled ? reminderTime : nil
+                        )
                         if let idx = appState.habits.firstIndex(where: { $0.id == habit.id }) {
                             appState.habits[idx].category   = category
                             appState.habits[idx].targetType = targetType
