@@ -11,7 +11,6 @@ struct LifeApp: App {
         if Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist") != nil {
             FirebaseApp.configure()
         }
-        UITabBar.appearance().isHidden = true
     }
 
     var body: some Scene {

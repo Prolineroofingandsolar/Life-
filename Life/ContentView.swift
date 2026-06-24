@@ -78,21 +78,21 @@ struct ContentView: View {
 
     var body: some View {
         TabView(selection: $selectedTab) {
-            Tab(AppTab.today.label, systemImage: AppTab.today.icon, value: AppTab.today) {
-                TodayView()
-            }
-            Tab(AppTab.tasks.label, systemImage: AppTab.tasks.icon, value: AppTab.tasks) {
-                TasksView()
-            }
-            Tab(AppTab.train.label, systemImage: AppTab.train.icon, value: AppTab.train) {
-                TrainView()
-            }
-            Tab(AppTab.habits.label, systemImage: AppTab.habits.icon, value: AppTab.habits) {
-                HabitsView()
-            }
-            Tab(AppTab.more.label, systemImage: AppTab.more.icon, value: AppTab.more) {
-                MoreView()
-            }
+            TodayView()
+                .tag(AppTab.today)
+                .tabItem { Label(AppTab.today.label, systemImage: AppTab.today.icon) }
+            TasksView()
+                .tag(AppTab.tasks)
+                .tabItem { Label(AppTab.tasks.label, systemImage: AppTab.tasks.icon) }
+            TrainView()
+                .tag(AppTab.train)
+                .tabItem { Label(AppTab.train.label, systemImage: AppTab.train.icon) }
+            HabitsView()
+                .tag(AppTab.habits)
+                .tabItem { Label(AppTab.habits.label, systemImage: AppTab.habits.icon) }
+            MoreView()
+                .tag(AppTab.more)
+                .tabItem { Label(AppTab.more.label, systemImage: AppTab.more.icon) }
         }
         .tint(Color(hex: "#30d158"))
         .sheet(isPresented: $showActiveWorkout) {
