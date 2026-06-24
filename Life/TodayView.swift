@@ -508,6 +508,7 @@ private struct TodayHabitRow: View {
     }
 
     private var isComplete: Bool {
+        if habit.kind == .break { return todayLog?.slipped != true }
         guard let log = todayLog else { return false }
         return log.count >= habit.targetCount && !log.slipped
     }
