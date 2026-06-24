@@ -303,6 +303,7 @@ struct ActiveWorkoutView: View {
         restSecondsRemaining = seconds
         restTotalSeconds = seconds
         showRestBanner = true
+        NotificationsManager.shared.scheduleRestTimerNotification(seconds: seconds)
         restTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
             if restSecondsRemaining > 0 { restSecondsRemaining -= 1 } else { stopRestTimer() }
         }
@@ -313,6 +314,7 @@ struct ActiveWorkoutView: View {
         restTimer = nil
         showRestBanner = false
         restSecondsRemaining = 0
+        NotificationsManager.shared.cancelRestTimer()
     }
 
     private func stopTimers() {
