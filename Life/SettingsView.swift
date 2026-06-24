@@ -77,8 +77,12 @@ struct SettingsView: View {
                         .onChange(of: careSettings.waterReminderEnabled) { _, enabled in
                             if enabled {
                                 Task {
-                                    _ = await NotificationsManager.shared.requestPermission()
-                                    NotificationsManager.shared.scheduleWaterReminder(intervalMinutes: careSettings.waterReminderIntervalMinutes)
+                                    let granted = await NotificationsManager.shared.requestPermission()
+                                    if granted {
+                                        NotificationsManager.shared.scheduleWaterReminder(intervalMinutes: careSettings.waterReminderIntervalMinutes)
+                                    } else {
+                                        careSettings.waterReminderEnabled = false
+                                    }
                                 }
                             } else {
                                 NotificationsManager.shared.cancelAll()
