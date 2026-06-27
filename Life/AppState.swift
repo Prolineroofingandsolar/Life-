@@ -378,7 +378,11 @@ final class AppState {
         }()
         // If today isn't done yet, start from yesterday so streak persists until midnight
         var date: Date = todaySuccess ? Date() : (cal.date(byAdding: .day, value: -1, to: Date()) ?? Date())
-        while true {
+        // Lower bound: never walk before the habit was created. Critical for break
+        // habits, where a no-log day counts as success — without this the loop
+        // would walk backward forever and freeze the main thread.
+        let startBound = cal.startOfDay(for: habit.createdAt)
+        while date >= startBound {
             let key = date.dayKey
             let log = habit.logs.first(where: { $0.dayKey == key })
             let success: Bool
@@ -389,7 +393,8 @@ final class AppState {
             }
             if success {
                 count += 1
-                date = cal.date(byAdding: .day, value: -1, to: date) ?? date
+                guard let prev = cal.date(byAdding: .day, value: -1, to: date) else { break }
+                date = prev
             } else {
                 break
             }
@@ -416,7 +421,8 @@ final class AppState {
                 } else {
                     current = 0
                 }
-                date = cal.date(byAdding: .day, value: 1, to: date) ?? date
+                guard let next = cal.date(byAdding: .day, value: 1, to: date) else { break }
+                date = next
             }
             return best
         }
