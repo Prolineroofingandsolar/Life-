@@ -25,8 +25,7 @@ final class AuthManager: ObservableObject {
         }
         // Watchdog: never let the splash hang forever if the auth listener
         // doesn't fire (slow/no network, misconfigured Firebase, etc.).
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 4 * 1_000_000_000)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
             if self?.isLoading == true { self?.isLoading = false }
         }
     }
