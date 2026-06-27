@@ -616,7 +616,7 @@ private struct PlanSessionSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    Text(dateFmt.string(from: date))
+                    Text(Self.dateFmt.string(from: date))
                         .foregroundColor(.secondary)
                 } header: { Text("Date") }
 

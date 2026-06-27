@@ -266,7 +266,7 @@ private struct SessionHistoryCard: View {
             VStack(spacing: 0) {
                 ForEach(Array(sessions.enumerated()), id: \.offset) { idx, entry in
                     HStack {
-                        Text(dateFormatter.string(from: entry.date))
+                        Text(Self.dateFormatter.string(from: entry.date))
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                             .frame(width: 60, alignment: .leading)
