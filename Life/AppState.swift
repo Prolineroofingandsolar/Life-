@@ -209,7 +209,11 @@ final class AppState {
             seedDefaults()
         }
         loadPhotos()
-        HabitReminderManager.shared.syncReminders(for: habits)
+        // Defer notification scheduling off the synchronous launch path.
+        let habitsSnapshot = habits
+        DispatchQueue.main.async {
+            HabitReminderManager.shared.syncReminders(for: habitsSnapshot)
+        }
     }
 
     static let defaultTaskLists: [TaskList] = [
