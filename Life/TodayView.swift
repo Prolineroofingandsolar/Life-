@@ -35,19 +35,11 @@ struct TodayView: View {
         appState.supplements.filter { appState.isDueToday($0) }
     }
 
-    private var workedOutToday: Bool {
-        let key = Date().dayKey
-        return appState.sessions.contains { $0.finishedAt != nil && $0.startedAt.dayKey == key }
-    }
-
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
                     CareSection()
-                    if workedOutToday {
-                        WorkedOutBanner()
-                    }
                     if !todaySupplements.isEmpty {
                         TodaySupplementsSection(supplements: todaySupplements)
                     }
@@ -121,6 +113,11 @@ private struct CareSection: View {
 
     @State private var hkManager = HealthKitManager()
 
+    private var workedOutToday: Bool {
+        let key = Date().dayKey
+        return appState.sessions.contains { $0.finishedAt != nil && $0.startedAt.dayKey == key }
+    }
+
     private var rings: [ActivityRingsView.Ring] {
         [
             .init(color: .blue,   progress: settings.waterGoal > 0 ? Double(today.waterGlasses) / Double(settings.waterGoal) : 0),
@@ -129,49 +126,49 @@ private struct CareSection: View {
         ]
     }
 
+    private let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
+
     var body: some View {
-        HStack(spacing: 16) {
-            ActivityRingsView(rings: rings, size: 130)
-                .padding(.leading, 4)
-
-            VStack(spacing: 16) {
-                CareRow(
-                    systemImage: "drop.fill",
-                    color: .blue,
-                    label: "Hydrate",
-                    count: "\(today.waterGlasses)/\(settings.waterGoal)",
-                    done: today.waterGlasses >= settings.waterGoal
-                ) {
-                    appState.addWater()
-                }
-
-                CareRow(
-                    systemImage: "fork.knife",
-                    color: .orange,
-                    label: "Nourish",
-                    count: "\(today.meals.count)/\(settings.mealGoal)",
-                    done: today.meals.count >= settings.mealGoal
-                ) {
-                    appState.addMeal()
-                }
-
-                CareRow(
-                    systemImage: "figure.walk",
-                    color: .green,
-                    label: "Move",
-                    count: "\(today.steps.formatted())/\(settings.stepGoal.formatted())",
-                    done: today.steps >= settings.stepGoal,
-                    buttonDisabled: true
-                ) {
-                    // Steps come from HealthKit — no manual increment
-                }
+        VStack(spacing: 12) {
+            // Rings card
+            HStack {
+                Spacer()
+                ActivityRingsView(rings: rings, size: 150)
+                    .padding(.vertical, 22)
+                Spacer()
             }
-            .padding(.trailing, 4)
+            .frame(maxWidth: .infinity)
+            .background(AppTheme.cardBg)
+            .cornerRadius(AppTheme.cardRadius)
+            .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
+
+            // Stat boxes
+            LazyVGrid(columns: columns, spacing: 12) {
+                TodayStatBox(
+                    icon: "drop.fill", iconColor: .blue,
+                    value: "\(today.waterGlasses)/\(settings.waterGoal)", label: "Water",
+                    done: today.waterGlasses >= settings.waterGoal
+                ) { appState.addWater() }
+
+                TodayStatBox(
+                    icon: "fork.knife", iconColor: .orange,
+                    value: "\(today.meals.count)/\(settings.mealGoal)", label: "Meals",
+                    done: today.meals.count >= settings.mealGoal
+                ) { appState.addMeal() }
+
+                TodayStatBox(
+                    icon: "figure.walk", iconColor: .green,
+                    value: today.steps.formatted(), label: "Steps · \(settings.stepGoal.formatted()) goal",
+                    done: today.steps >= settings.stepGoal
+                )
+
+                TodayStatBox(
+                    icon: "flame.fill", iconColor: workedOutToday ? .orange : .secondary,
+                    value: workedOutToday ? "Done" : "Rest", label: "Workout",
+                    done: workedOutToday
+                )
+            }
         }
-        .padding(16)
-        .background(Color(.secondarySystemGroupedBackground))
-        .cornerRadius(16)
-        .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 2)
         .padding(.horizontal, 16)
         .task {
             await syncStepsFromHealth()
@@ -196,77 +193,68 @@ private struct CareSection: View {
     }
 }
 
-private struct CareRow: View {
-    let systemImage: String
-    let color: Color
+// MARK: - Today Stat Box
+
+private struct TodayStatBox: View {
+    let icon: String
+    let iconColor: Color
+    let value: String
     let label: String
-    let count: String
-    let done: Bool
-    var buttonDisabled: Bool = false
-    let action: () -> Void
+    var done: Bool = false
+    var action: (() -> Void)? = nil
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: systemImage)
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundColor(color)
-                .frame(width: 26)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(label)
-                    .font(.body.weight(.semibold))
-                    .foregroundColor(.primary)
-                Text(count)
-                    .font(.footnote)
-                    .foregroundColor(.secondary)
-            }
-
-            Spacer()
-
+        if let action {
             Button {
                 HapticManager.impact(done ? .light : .medium)
                 action()
-            } label: {
-                Image(systemName: done ? "checkmark" : (buttonDisabled ? "arrow.clockwise" : "plus"))
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundColor(.white)
-                    .frame(width: 44, height: 44)
-                    .background(done ? color : color.opacity(buttonDisabled ? 0.4 : 0.85))
-                    .clipShape(Circle())
-                    .shadow(color: color.opacity(done ? 0.5 : 0.3), radius: done ? 6 : 4, x: 0, y: 2)
-                    .scaleEffect(done ? 1.05 : 1.0)
-                    .animation(.spring(response: 0.3, dampingFraction: 0.5), value: done)
-            }
+            } label: { content }
             .buttonStyle(PressableButtonStyle())
-            .disabled(buttonDisabled && !done)
+        } else {
+            content
         }
     }
-}
 
-// MARK: - Worked Out Banner
-
-private struct WorkedOutBanner: View {
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "flame.fill")
-                .font(.title2)
-                .foregroundColor(.orange)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Workout complete!")
-                    .font(.subheadline.weight(.semibold))
-                Text("Great work today.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+    private var content: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                ZStack {
+                    Circle().fill(iconColor.opacity(0.15)).frame(width: 38, height: 38)
+                    Image(systemName: icon)
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundColor(iconColor)
+                }
+                Spacer()
+                if done {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 19))
+                        .foregroundColor(iconColor)
+                } else if action != nil {
+                    Image(systemName: "plus")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(iconColor)
+                        .frame(width: 30, height: 30)
+                        .background(iconColor.opacity(0.12))
+                        .clipShape(Circle())
+                }
             }
-            Spacer()
-            Image(systemName: "checkmark.circle.fill")
-                .foregroundColor(.green)
-                .font(.title2)
+            Text(value)
+                .font(.system(size: 24, weight: .bold, design: .rounded))
+                .foregroundColor(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text(label)
+                .font(.system(size: 13))
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
         }
-        .padding(14)
-        .background(Color(.secondarySystemGroupedBackground))
-        .cornerRadius(12)
-        .padding(.horizontal, 16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(AppTheme.cardBg)
+        .cornerRadius(AppTheme.cardRadius)
+        .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
+        .animation(.spring(response: 0.3, dampingFraction: 0.6), value: done)
     }
 }
 
