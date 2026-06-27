@@ -5,6 +5,7 @@ struct TodayView: View {
 
     @Environment(AppState.self) private var appState
     @State private var showSettings = false
+    @State private var showActiveWorkout = false
 
     private var greeting: String {
         let hour = Calendar.current.component(.hour, from: Date())
@@ -21,10 +22,20 @@ struct TodayView: View {
 
     private var todayTasks: [AppTask] {
         let todayStart = Calendar.current.startOfDay(for: Date())
-        return appState.tasks.filter { task in
-            guard !task.done, let resolved = task.resolvedDate else { return false }
-            return Calendar.current.startOfDay(for: resolved) == todayStart
-        }
+        return appState.tasks
+            .filter { task in
+                guard !task.done, let resolved = task.resolvedDate else { return false }
+                return Calendar.current.startOfDay(for: resolved) == todayStart
+            }
+            .sorted { a, b in
+                // Timed tasks first (chronological), then untimed.
+                switch (a.scheduledTime, b.scheduledTime) {
+                case let (ta?, tb?): return ta < tb
+                case (_?, nil):      return true
+                case (nil, _?):      return false
+                case (nil, nil):     return false
+                }
+            }
     }
 
     private var todayHabits: [Habit] {
@@ -35,11 +46,29 @@ struct TodayView: View {
         appState.supplements.filter { appState.isDueToday($0) }
     }
 
+    /// Today's planned (uncompleted) workout, if one is scheduled.
+    private var todaysPlan: PlannedSession? {
+        let todayStart = Calendar.current.startOfDay(for: Date())
+        return appState.plannedSessions.first {
+            !$0.completed && Calendar.current.startOfDay(for: $0.date) == todayStart
+        }
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
                     CareSection()
+                    TodayWorkoutCard(plan: todaysPlan) {
+                        if appState.activeSession == nil {
+                            if let plan = todaysPlan {
+                                appState.startSession(name: plan.routineName, routineId: plan.routineId)
+                            } else {
+                                appState.startSession(name: "Quick Workout")
+                            }
+                        }
+                        showActiveWorkout = true
+                    }
                     if !todaySupplements.isEmpty {
                         TodaySupplementsSection(supplements: todaySupplements)
                     }
@@ -63,7 +92,66 @@ struct TodayView: View {
             .sheet(isPresented: $showSettings) {
                 SettingsView()
             }
+            .sheet(isPresented: $showActiveWorkout) {
+                if let session = appState.activeSession {
+                    ActiveWorkoutView(isPresented: $showActiveWorkout, sessionId: session.id)
+                }
+            }
         }
+    }
+}
+
+// MARK: - Today Workout Card
+
+private struct TodayWorkoutCard: View {
+    @Environment(AppState.self) private var appState
+    let plan: PlannedSession?
+    let onStart: () -> Void
+
+    private var isActive: Bool { appState.activeSession != nil }
+
+    var body: some View {
+        Button {
+            HapticManager.impact(.medium)
+            onStart()
+        } label: {
+            HStack(spacing: 14) {
+                ZStack {
+                    Circle()
+                        .fill((isActive ? Color.orange : AppTheme.primary).opacity(0.15))
+                        .frame(width: 46, height: 46)
+                    Image(systemName: isActive ? "figure.run" : "dumbbell.fill")
+                        .font(.system(size: 19, weight: .semibold))
+                        .foregroundColor(isActive ? .orange : AppTheme.primary)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(isActive ? "Workout in progress" : (plan != nil ? "Today's Plan" : "Start a workout"))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.primary)
+                    Text(isActive ? (appState.activeSession?.name ?? "Resume") : (plan?.routineName ?? "Quick session — log as you go"))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                Text(isActive ? "Resume" : "Start")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 9)
+                    .background(isActive ? Color.orange : AppTheme.primary)
+                    .clipShape(Capsule())
+            }
+            .padding(16)
+            .background(AppTheme.cardBg)
+            .cornerRadius(AppTheme.cardRadius)
+            .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
+        }
+        .buttonStyle(PressableButtonStyle())
+        .padding(.horizontal, 16)
     }
 }
 
@@ -418,31 +506,65 @@ private struct TodayTaskRow: View {
     @Environment(AppState.self) private var appState
     let task: AppTask
 
+    private static let timeFmt: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "h:mm a"
+        return f
+    }()
+
     var body: some View {
-        Button {
-            HapticManager.impact(.light)
-            appState.toggleTask(id: task.id)
-        } label: {
-            HStack(spacing: 12) {
+        HStack(spacing: 12) {
+            // Toggle (independent of navigation)
+            Button {
+                HapticManager.impact(.light)
+                appState.toggleTask(id: task.id)
+            } label: {
                 Image(systemName: task.done ? "checkmark.circle.fill" : "circle")
                     .foregroundColor(task.done ? .green : task.category.color)
                     .font(.title3)
+            }
+            .buttonStyle(.plain)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(task.title)
-                        .strikethrough(task.done)
-                        .foregroundColor(task.done ? .secondary : .primary)
+            // Tap row body → detail
+            NavigationLink {
+                TaskDetailView(taskId: task.id)
+            } label: {
+                HStack(spacing: 8) {
+                    // Priority indicator
+                    if task.priority != .none {
+                        Circle()
+                            .fill(task.priority.color)
+                            .frame(width: 7, height: 7)
+                    }
 
-                    Text(task.category.emoji + " " + task.category.label)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(task.title)
+                            .strikethrough(task.done)
+                            .foregroundColor(task.done ? .secondary : .primary)
+
+                        HStack(spacing: 6) {
+                            Text(task.category.emoji + " " + task.category.label)
+                            if let time = task.scheduledTime {
+                                Text("·")
+                                Label(Self.timeFmt.string(from: time), systemImage: "clock")
+                                    .labelStyle(.titleAndIcon)
+                            }
+                        }
                         .font(.caption)
                         .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(Color(.tertiaryLabel))
                 }
-                Spacer()
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+            .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
     }
 }
 
@@ -503,36 +625,43 @@ private struct TodayHabitRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Text(habit.emoji)
-                .font(.title2)
+            NavigationLink {
+                HabitDetailView(habitId: habit.id)
+            } label: {
+                HStack(spacing: 12) {
+                    Text(habit.emoji)
+                        .font(.title2)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(habit.name)
-                    .foregroundColor(.primary)
-                    .font(.subheadline)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(habit.name)
+                            .foregroundColor(.primary)
+                            .font(.subheadline)
 
-                if habit.kind == .build {
-                    Text("\(todayLog?.count ?? 0) / \(habit.targetCount)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                } else {
-                    if todayLog?.slipped == true {
-                        Text("Slipped today")
-                            .font(.caption)
-                            .foregroundColor(.red)
-                    } else if todayLog != nil {
-                        Text("Maintained today")
-                            .font(.caption)
-                            .foregroundColor(.green)
-                    } else {
-                        Text("Clean so far")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                        if habit.kind == .build {
+                            Text("\(todayLog?.count ?? 0) / \(habit.targetCount)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        } else {
+                            if todayLog?.slipped == true {
+                                Text("Slipped today")
+                                    .font(.caption)
+                                    .foregroundColor(.red)
+                            } else if todayLog != nil {
+                                Text("Maintained today")
+                                    .font(.caption)
+                                    .foregroundColor(.green)
+                            } else {
+                                Text("Clean so far")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
                     }
+
+                    Spacer()
                 }
             }
-
-            Spacer()
+            .buttonStyle(.plain)
 
             if showUndo {
                 Button {
