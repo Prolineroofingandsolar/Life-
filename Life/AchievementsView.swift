@@ -174,7 +174,7 @@ private struct AchievementCell: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             if unlocked, let date = unlockedAt {
-                Text(dateFormatter.string(from: date))
+                Text(Self.dateFormatter.string(from: date))
                     .font(.caption2)
                     .foregroundColor(Color(hex: kind.color))
             } else if !unlocked {
