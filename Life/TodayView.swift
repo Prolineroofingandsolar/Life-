@@ -6,6 +6,7 @@ struct TodayView: View {
     @Environment(AppState.self) private var appState
     @State private var showSettings = false
     @State private var showActiveWorkout = false
+    @State private var dayToken = UUID()
 
     private var greeting: String {
         let hour = Calendar.current.component(.hour, from: Date())
@@ -54,10 +55,32 @@ struct TodayView: View {
         }
     }
 
+    private func habitComplete(_ habit: Habit) -> Bool {
+        let log = habit.logs.first { $0.dayKey == Date().dayKey }
+        if habit.kind == .break { return log?.slipped != true }
+        guard let log else { return false }
+        return log.count >= habit.targetCount && !log.slipped
+    }
+
+    private var habitsDoneCount: Int {
+        todayHabits.filter { habitComplete($0) }.count
+    }
+
+    private var workedOutToday: Bool {
+        let key = Date().dayKey
+        return appState.sessions.contains { $0.finishedAt != nil && $0.startedAt.dayKey == key }
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
+                    DaySummaryCard(
+                        tasksLeft: todayTasks.count,
+                        habitsDone: habitsDoneCount,
+                        habitsTotal: todayHabits.count,
+                        workedOut: workedOutToday
+                    )
                     CareSection()
                     TodayWorkoutCard(plan: todaysPlan) {
                         if appState.activeSession == nil {
@@ -76,8 +99,12 @@ struct TodayView: View {
                     TodayHabitsSection(habits: todayHabits)
                 }
                 .padding(.vertical, 8)
+                .id(dayToken)
             }
             .background(Color(.systemGroupedBackground))
+            .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in
+                dayToken = UUID()
+            }
             .navigationTitle(greeting)
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
@@ -98,6 +125,63 @@ struct TodayView: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Day Summary Card
+
+private struct DaySummaryCard: View {
+    let tasksLeft: Int
+    let habitsDone: Int
+    let habitsTotal: Int
+    let workedOut: Bool
+
+    var body: some View {
+        HStack(spacing: 0) {
+            summaryItem(
+                icon: "checkmark.circle.fill",
+                color: tasksLeft == 0 ? .green : AppTheme.primary,
+                value: tasksLeft == 0 ? "Clear" : "\(tasksLeft)",
+                label: tasksLeft == 1 ? "task left" : "tasks left"
+            )
+            Divider().frame(height: 34)
+            summaryItem(
+                icon: "chart.bar.fill",
+                color: .blue,
+                value: "\(habitsDone)/\(habitsTotal)",
+                label: "habits"
+            )
+            Divider().frame(height: 34)
+            summaryItem(
+                icon: "flame.fill",
+                color: workedOut ? .orange : Color(.tertiaryLabel),
+                value: workedOut ? "Done" : "Rest",
+                label: "workout"
+            )
+        }
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity)
+        .background(AppTheme.cardBg)
+        .cornerRadius(AppTheme.cardRadius)
+        .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
+        .padding(.horizontal, 16)
+    }
+
+    private func summaryItem(icon: String, color: Color, value: String, label: String) -> some View {
+        VStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(color)
+            Text(value)
+                .font(.system(size: 17, weight: .bold, design: .rounded))
+                .foregroundColor(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text(label)
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
     }
 }
 
@@ -195,6 +279,7 @@ private struct CareSection: View {
 
     @Environment(AppState.self) private var appState
     @State private var stepSyncTask: Task<Void, Never>? = nil
+    @State private var showMealSheet = false
 
     private var today: CareDay { appState.today }
     private var settings: CareSettings { appState.careSettings }
@@ -235,14 +320,16 @@ private struct CareSection: View {
                 TodayStatBox(
                     icon: "drop.fill", iconColor: .blue,
                     value: "\(today.waterGlasses)/\(settings.waterGoal)", label: "Water",
-                    done: today.waterGlasses >= settings.waterGoal
-                ) { appState.addWater() }
+                    done: today.waterGlasses >= settings.waterGoal,
+                    action: { appState.addWater() },
+                    secondaryAction: { appState.removeWater() }
+                )
 
                 TodayStatBox(
                     icon: "fork.knife", iconColor: .orange,
                     value: "\(today.meals.count)/\(settings.mealGoal)", label: "Meals",
                     done: today.meals.count >= settings.mealGoal
-                ) { appState.addMeal() }
+                ) { showMealSheet = true }
 
                 TodayStatBox(
                     icon: "figure.walk", iconColor: .green,
@@ -258,6 +345,11 @@ private struct CareSection: View {
             }
         }
         .padding(.horizontal, 16)
+        .sheet(isPresented: $showMealSheet) {
+            MealLogSheet { name in
+                appState.addMeal(name: name)
+            }
+        }
         .task {
             await syncStepsFromHealth()
         }
@@ -281,6 +373,65 @@ private struct CareSection: View {
     }
 }
 
+// MARK: - Meal Log Sheet
+
+private struct MealLogSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let onAdd: (String) -> Void
+
+    @State private var name = ""
+    @FocusState private var focused: Bool
+
+    private let quickPicks = ["Breakfast", "Lunch", "Dinner", "Snack"]
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("What did you eat?") {
+                    TextField("Optional — e.g. Chicken & rice", text: $name)
+                        .focused($focused)
+                }
+                Section {
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                        ForEach(quickPicks, id: \.self) { pick in
+                            Button {
+                                onAdd(pick)
+                                HapticManager.impact(.medium)
+                                dismiss()
+                            } label: {
+                                Text(pick)
+                                    .font(.subheadline.weight(.medium))
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 12)
+                                    .background(Color.orange.opacity(0.12))
+                                    .foregroundColor(.orange)
+                                    .cornerRadius(AppTheme.chipRadius)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
+                }
+            }
+            .navigationTitle("Log a Meal")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Add") {
+                        onAdd(name.trimmingCharacters(in: .whitespaces))
+                        HapticManager.impact(.medium)
+                        dismiss()
+                    }
+                }
+            }
+            .onAppear { focused = true }
+        }
+        .presentationDetents([.medium])
+    }
+}
+
 // MARK: - Today Stat Box
 
 private struct TodayStatBox: View {
@@ -290,6 +441,7 @@ private struct TodayStatBox: View {
     let label: String
     var done: Bool = false
     var action: (() -> Void)? = nil
+    var secondaryAction: (() -> Void)? = nil
 
     var body: some View {
         if let action {
@@ -298,6 +450,14 @@ private struct TodayStatBox: View {
                 action()
             } label: { content }
             .buttonStyle(PressableButtonStyle())
+            .simultaneousGesture(
+                secondaryAction.map { secondary in
+                    LongPressGesture(minimumDuration: 0.4).onEnded { _ in
+                        HapticManager.impact(.rigid)
+                        secondary()
+                    }
+                }
+            )
         } else {
             content
         }
@@ -447,6 +607,34 @@ private struct TodaySupplementRow: View {
     }
 }
 
+// MARK: - Today Empty Card
+
+private struct TodayEmptyCard: View {
+    let icon: String
+    let iconColor: Color
+    let message: String
+
+    var body: some View {
+        HStack {
+            Spacer()
+            VStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.largeTitle)
+                    .foregroundColor(iconColor)
+                Text(message)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            .padding()
+            Spacer()
+        }
+        .background(AppTheme.cardBg)
+        .cornerRadius(12)
+        .padding(.horizontal, 16)
+    }
+}
+
 // MARK: - Today Tasks Section
 
 private struct TodayTasksSection: View {
@@ -469,22 +657,11 @@ private struct TodayTasksSection: View {
             .padding(.horizontal, 20)
 
             if tasks.isEmpty {
-                HStack {
-                    Spacer()
-                    VStack(spacing: 6) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.largeTitle)
-                            .foregroundColor(.green)
-                        Text("All done for today!")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                    .padding()
-                    Spacer()
-                }
-                .background(Color(.secondarySystemGroupedBackground))
-                .cornerRadius(12)
-                .padding(.horizontal, 16)
+                TodayEmptyCard(
+                    icon: "checkmark.circle.fill",
+                    iconColor: .green,
+                    message: "All done for today!"
+                )
             } else {
                 VStack(spacing: 0) {
                     ForEach(tasks) { task in
@@ -581,14 +758,11 @@ private struct TodayHabitsSection: View {
                 .padding(.horizontal, 20)
 
             if habits.isEmpty {
-                Text("No habits yet. Add some in the Habits tab.")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .padding()
-                    .frame(maxWidth: .infinity)
-                    .background(Color(.secondarySystemGroupedBackground))
-                    .cornerRadius(12)
-                    .padding(.horizontal, 16)
+                TodayEmptyCard(
+                    icon: "repeat.circle.fill",
+                    iconColor: Color(.tertiaryLabel),
+                    message: "No habits yet.\nAdd some in the Habits tab."
+                )
             } else {
                 VStack(spacing: 0) {
                     ForEach(habits) { habit in
@@ -623,6 +797,8 @@ private struct TodayHabitRow: View {
         return log.count >= habit.targetCount && !log.slipped
     }
 
+    private var streak: Int { appState.streakFor(habit) }
+
     var body: some View {
         HStack(spacing: 12) {
             NavigationLink {
@@ -633,9 +809,24 @@ private struct TodayHabitRow: View {
                         .font(.title2)
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(habit.name)
-                            .foregroundColor(.primary)
-                            .font(.subheadline)
+                        HStack(spacing: 6) {
+                            Text(habit.name)
+                                .foregroundColor(.primary)
+                                .font(.subheadline)
+                            if streak > 0 {
+                                HStack(spacing: 2) {
+                                    Image(systemName: "flame.fill")
+                                        .font(.system(size: 10))
+                                    Text("\(streak)")
+                                        .font(.caption2.weight(.semibold))
+                                }
+                                .foregroundColor(.orange)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.orange.opacity(0.12))
+                                .clipShape(Capsule())
+                            }
+                        }
 
                         if habit.kind == .build {
                             Text("\(todayLog?.count ?? 0) / \(habit.targetCount)")
