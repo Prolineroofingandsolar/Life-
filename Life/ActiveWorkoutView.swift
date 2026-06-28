@@ -275,9 +275,15 @@ struct ActiveWorkoutView: View {
 
     // MARK: - Set done handler
 
+    private var setsCompletedCount: Int {
+        session?.exercises.reduce(0) { $0 + $1.sets.filter { $0.done }.count } ?? 0
+    }
+
     private func handleSetDone(_ setId: String) {
         if appState.workoutSettings.restTimerEnabled {
             startRestTimer(seconds: appState.workoutSettings.defaultRestSeconds)
+        } else if #available(iOS 16.2, *) {
+            WorkoutLiveActivityManager.shared.update(restEndsAt: nil, setsCompleted: setsCompletedCount)
         }
         if let pr = appState.latestPR {
             prBannerText = "🏆 New PR — \(pr.exerciseName) \(pr.value)"
@@ -304,6 +310,12 @@ struct ActiveWorkoutView: View {
         restTotalSeconds = seconds
         showRestBanner = true
         NotificationsManager.shared.scheduleRestTimerNotification(seconds: seconds)
+        if #available(iOS 16.2, *) {
+            WorkoutLiveActivityManager.shared.update(
+                restEndsAt: Date().addingTimeInterval(TimeInterval(seconds)),
+                setsCompleted: setsCompletedCount
+            )
+        }
         restTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
             if restSecondsRemaining > 0 { restSecondsRemaining -= 1 } else { stopRestTimer() }
         }
@@ -315,6 +327,9 @@ struct ActiveWorkoutView: View {
         showRestBanner = false
         restSecondsRemaining = 0
         NotificationsManager.shared.cancelRestTimer()
+        if #available(iOS 16.2, *) {
+            WorkoutLiveActivityManager.shared.update(restEndsAt: nil, setsCompleted: setsCompletedCount)
+        }
     }
 
     private func stopTimers() {

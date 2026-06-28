@@ -711,6 +711,9 @@ final class AppState {
         }
 
         sessions.append(session)
+        if #available(iOS 16.2, *) {
+            WorkoutLiveActivityManager.shared.start(workoutName: session.name, startedAt: session.startedAt)
+        }
         save()
     }
 
@@ -834,6 +837,9 @@ final class AppState {
             plannedSessions[pIdx].completed = true
         }
         checkAndGrantAchievements()
+        if #available(iOS 16.2, *) {
+            WorkoutLiveActivityManager.shared.end()
+        }
         save()
     }
 
@@ -856,6 +862,9 @@ final class AppState {
 
     func discardSession(sessionId: String) {
         sessions.removeAll { $0.id == sessionId }
+        if #available(iOS 16.2, *) {
+            WorkoutLiveActivityManager.shared.end()
+        }
         save()
     }
 

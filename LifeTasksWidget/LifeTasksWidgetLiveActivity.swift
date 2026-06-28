@@ -2,79 +2,151 @@
 //  LifeTasksWidgetLiveActivity.swift
 //  LifeTasksWidget
 //
-//  Created by Will on 02/06/2026.
+//  Workout Live Activity — elapsed time, rest countdown, sets completed.
 //
 
 import ActivityKit
 import WidgetKit
 import SwiftUI
 
-struct LifeTasksWidgetAttributes: ActivityAttributes {
-    public struct ContentState: Codable, Hashable {
-        // Dynamic stateful properties about your activity go here!
-        var emoji: String
-    }
-
-    // Fixed non-changing properties about your activity go here!
-    var name: String
-}
+private let accent = Color(red: 0.19, green: 0.82, blue: 0.35) // #30d158
 
 struct LifeTasksWidgetLiveActivity: Widget {
     var body: some WidgetConfiguration {
-        ActivityConfiguration(for: LifeTasksWidgetAttributes.self) { context in
-            // Lock screen/banner UI goes here
-            VStack {
-                Text("Hello \(context.state.emoji)")
-            }
-            .activityBackgroundTint(Color.cyan)
-            .activitySystemActionForegroundColor(Color.black)
+        ActivityConfiguration(for: WorkoutActivityAttributes.self) { context in
+            // MARK: Lock screen / banner
+            LockScreenView(context: context)
+                .activityBackgroundTint(Color.black.opacity(0.55))
+                .activitySystemActionForegroundColor(accent)
 
         } dynamicIsland: { context in
             DynamicIsland {
-                // Expanded UI goes here.  Compose the expanded UI through
-                // various regions, like leading/trailing/center/bottom
                 DynamicIslandExpandedRegion(.leading) {
-                    Text("Leading")
+                    Label {
+                        Text(context.attributes.workoutName)
+                            .font(.caption).fontWeight(.semibold)
+                            .lineLimit(1)
+                    } icon: {
+                        Image(systemName: "figure.strengthtraining.traditional")
+                            .foregroundColor(accent)
+                    }
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    Text("Trailing")
+                    Text(context.attributes.startedAt, style: .timer)
+                        .font(.system(.title3, design: .rounded).monospacedDigit())
+                        .fontWeight(.semibold)
+                        .frame(maxWidth: 70, alignment: .trailing)
+                        .foregroundColor(.white)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    Text("Bottom \(context.state.emoji)")
-                    // more content
+                    if let restEndsAt = context.state.restEndsAt, restEndsAt > Date() {
+                        HStack(spacing: 8) {
+                            Image(systemName: "timer").foregroundColor(.orange)
+                            Text("Rest")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundColor(.orange)
+                            ProgressView(timerInterval: Date()...restEndsAt, countsDown: true) {
+                                EmptyView()
+                            } currentValueLabel: {
+                                EmptyView()
+                            }
+                            .progressViewStyle(.linear)
+                            .tint(.orange)
+                            Text(timerInterval: Date()...restEndsAt, countsDown: true)
+                                .font(.subheadline.monospacedDigit())
+                                .foregroundColor(.orange)
+                                .frame(width: 44)
+                        }
+                    } else {
+                        HStack {
+                            Image(systemName: "checkmark.circle.fill").foregroundColor(accent)
+                            Text("\(context.state.setsCompleted) sets done")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                    }
                 }
             } compactLeading: {
-                Text("L")
+                Image(systemName: "figure.strengthtraining.traditional")
+                    .foregroundColor(accent)
             } compactTrailing: {
-                Text("T \(context.state.emoji)")
+                if let restEndsAt = context.state.restEndsAt, restEndsAt > Date() {
+                    Text(timerInterval: Date()...restEndsAt, countsDown: true)
+                        .font(.system(.caption, design: .rounded).monospacedDigit())
+                        .foregroundColor(.orange)
+                        .frame(width: 40)
+                } else {
+                    Text(context.attributes.startedAt, style: .timer)
+                        .font(.system(.caption, design: .rounded).monospacedDigit())
+                        .foregroundColor(accent)
+                        .frame(width: 48)
+                }
             } minimal: {
-                Text(context.state.emoji)
+                if let restEndsAt = context.state.restEndsAt, restEndsAt > Date() {
+                    Image(systemName: "timer").foregroundColor(.orange)
+                } else {
+                    Image(systemName: "figure.strengthtraining.traditional")
+                        .foregroundColor(accent)
+                }
             }
-            .widgetURL(URL(string: "http://www.apple.com"))
-            .keylineTint(Color.red)
+            .keylineTint(accent)
         }
     }
 }
 
-extension LifeTasksWidgetAttributes {
-    fileprivate static var preview: LifeTasksWidgetAttributes {
-        LifeTasksWidgetAttributes(name: "World")
+// MARK: - Lock screen view
+
+private struct LockScreenView: View {
+    let context: ActivityViewContext<WorkoutActivityAttributes>
+
+    var body: some View {
+        VStack(spacing: 10) {
+            HStack {
+                Label {
+                    Text(context.attributes.workoutName)
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                } icon: {
+                    Image(systemName: "figure.strengthtraining.traditional")
+                        .foregroundColor(accent)
+                }
+                Spacer()
+                Text(context.attributes.startedAt, style: .timer)
+                    .font(.system(.title3, design: .rounded).monospacedDigit())
+                    .fontWeight(.semibold)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: 80, alignment: .trailing)
+            }
+
+            if let restEndsAt = context.state.restEndsAt, restEndsAt > Date() {
+                HStack(spacing: 8) {
+                    Image(systemName: "timer").foregroundColor(.orange)
+                    Text("Rest")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundColor(.orange)
+                    ProgressView(timerInterval: Date()...restEndsAt, countsDown: true) {
+                        EmptyView()
+                    } currentValueLabel: {
+                        EmptyView()
+                    }
+                    .progressViewStyle(.linear)
+                    .tint(.orange)
+                    Text(timerInterval: Date()...restEndsAt, countsDown: true)
+                        .font(.subheadline.monospacedDigit())
+                        .foregroundColor(.orange)
+                        .frame(width: 44)
+                }
+            } else {
+                HStack {
+                    Image(systemName: "checkmark.circle.fill").foregroundColor(accent)
+                    Text("\(context.state.setsCompleted) sets done")
+                        .font(.subheadline)
+                        .foregroundColor(.white.opacity(0.8))
+                    Spacer()
+                }
+            }
+        }
+        .padding(16)
     }
-}
-
-extension LifeTasksWidgetAttributes.ContentState {
-    fileprivate static var smiley: LifeTasksWidgetAttributes.ContentState {
-        LifeTasksWidgetAttributes.ContentState(emoji: "😀")
-     }
-     
-     fileprivate static var starEyes: LifeTasksWidgetAttributes.ContentState {
-         LifeTasksWidgetAttributes.ContentState(emoji: "🤩")
-     }
-}
-
-#Preview("Notification", as: .content, using: LifeTasksWidgetAttributes.preview) {
-   LifeTasksWidgetLiveActivity()
-} contentStates: {
-    LifeTasksWidgetAttributes.ContentState.smiley
-    LifeTasksWidgetAttributes.ContentState.starEyes
 }
