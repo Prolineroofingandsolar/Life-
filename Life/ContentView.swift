@@ -63,8 +63,6 @@ private struct SplashView: View {
                     .resizable()
                     .scaledToFit()
                     .frame(width: 120, height: 120)
-                    .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
-                    .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: 4)
                 ProgressView()
                     .scaleEffect(1.2)
             }
