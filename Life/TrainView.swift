@@ -19,7 +19,6 @@ struct TrainView: View {
     @State private var pulseResume = false
     @State private var planDate: Date? = nil
     @State private var sessionForDetail: WorkoutSession? = nil
-    @State private var showSessionDetail = false
     @State private var detailRoutine: Routine? = nil
     @State private var showAIRoutine = false
 
@@ -39,7 +38,6 @@ struct TrainView: View {
                         onPlanDate: { date in planDate = date },
                         onTapSession: { session in
                             sessionForDetail = session
-                            showSessionDetail = true
                         }
                     )
                     .padding(.horizontal, 16)
@@ -168,10 +166,8 @@ struct TrainView: View {
                     }
                 }
             }
-            .sheet(isPresented: $showSessionDetail) {
-                if let session = sessionForDetail {
-                    NavigationStack { SessionDetailView(session: session) }
-                }
+            .sheet(item: $sessionForDetail) { session in
+                NavigationStack { SessionDetailView(session: session) }
             }
             .onChange(of: showActiveWorkout) { _, shown in
                 if shown { presentedWorkoutId = appState.activeSession?.id }
