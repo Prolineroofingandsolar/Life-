@@ -1738,8 +1738,8 @@ struct SessionDetailView: View {
                 }
             }
         }
-        .sheet(isPresented: $showEditSheet) {
-            EditSessionSheet(session: session)
+        .fullScreenCover(isPresented: $showEditSheet) {
+            ActiveWorkoutView(isPresented: $showEditSheet, sessionId: session.id, mode: .editFinished)
         }
         .confirmationDialog("Delete this workout?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
@@ -1749,63 +1749,6 @@ struct SessionDetailView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This cannot be undone.")
-        }
-    }
-}
-
-struct EditSessionSheet: View {
-    @Environment(AppState.self) private var appState
-    @Environment(\.dismiss) private var dismiss
-    let session: WorkoutSession
-
-    @State private var name: String
-    @State private var notes: String
-
-    init(session: WorkoutSession) {
-        self.session = session
-        _name  = State(initialValue: session.name)
-        _notes = State(initialValue: session.notes)
-    }
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("Workout Name") {
-                    TextField("Name", text: $name)
-                }
-                Section("Notes") {
-                    TextField("Add notes...", text: $notes, axis: .vertical)
-                        .lineLimit(4...)
-                }
-                Section("Sets") {
-                    ForEach(session.exercises) { ex in
-                        if let exercise = appState.exercises.first(where: { $0.id == ex.exerciseId }) {
-                            HStack {
-                                Circle().fill(exercise.muscle.muscleColor).frame(width: 8, height: 8)
-                                Text(exercise.name).font(.subheadline.weight(.semibold))
-                                Spacer()
-                                Text("\(ex.sets.filter(\.done).count) sets")
-                                    .font(.caption).foregroundColor(.secondary)
-                            }
-                        }
-                    }
-                }
-            }
-            .navigationTitle("Edit Workout")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        let trimmed = name.trimmingCharacters(in: .whitespaces)
-                        if !trimmed.isEmpty {
-                            appState.renameSession(sessionId: session.id, name: trimmed)
-                        }
-                        appState.updateSessionNotes(sessionId: session.id, notes: notes)
-                        dismiss()
-                    }
-                }
-            }
         }
     }
 }

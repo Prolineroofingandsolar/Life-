@@ -968,6 +968,15 @@ final class AppState {
         save()
     }
 
+    /// Adjust a (finished) workout's date and duration. Sets `finishedAt` to the
+    /// chosen date and back-dates `startedAt` so the stored duration is preserved.
+    func setSessionTimes(sessionId: String, date: Date, durationSeconds: Int) {
+        guard let idx = sessions.firstIndex(where: { $0.id == sessionId }) else { return }
+        sessions[idx].finishedAt = date
+        sessions[idx].startedAt = date.addingTimeInterval(-TimeInterval(max(0, durationSeconds)))
+        save()
+    }
+
     func addWarmupSets(sessionId: String, exerciseId: String) {
         guard let sIdx = sessions.firstIndex(where: { $0.id == sessionId }),
               let eIdx = sessions[sIdx].exercises.firstIndex(where: { $0.id == exerciseId }) else { return }

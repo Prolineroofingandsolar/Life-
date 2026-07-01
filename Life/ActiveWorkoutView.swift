@@ -2,13 +2,20 @@ import SwiftUI
 
 // MARK: - Active Workout View
 
+enum WorkoutViewMode {
+    case active         // live workout in progress
+    case editFinished   // editing a past/finished workout
+}
+
 struct ActiveWorkoutView: View {
 
     @Environment(AppState.self) private var appState
     @Binding var isPresented: Bool
 
     let sessionId: String
+    var mode: WorkoutViewMode = .active
 
+    @State private var showTimeEditor = false
     @State private var elapsedSeconds: Int = 0
     @State private var timer: Timer? = nil
     @State private var restSecondsRemaining: Int = 0
@@ -27,6 +34,14 @@ struct ActiveWorkoutView: View {
 
     private var session: WorkoutSession? {
         appState.sessions.first { $0.id == sessionId }
+    }
+
+    /// "12 Jun · 1h 04m" style label shown (and tappable) when editing a finished workout.
+    private var headerDateTimeLabel: String {
+        guard let session = session else { return "" }
+        let date = (session.finishedAt ?? session.startedAt)
+            .formatted(.dateTime.month(.abbreviated).day())
+        return "\(date) · \(session.durationSeconds.formattedDurationShort)"
     }
 
     // Groups exercises: supersets together, solo exercises alone
@@ -60,17 +75,22 @@ struct ActiveWorkoutView: View {
         .onAppear {
             sessionName = session?.name ?? "Workout"
             notesText = session?.notes ?? ""
-            startElapsedTimer()
-            if #available(iOS 16.2, *), let session = session {
-                let setsCompleted = session.exercises.flatMap { $0.sets }.filter { $0.done }.count
-                WorkoutLiveActivityManager.shared.start(
-                    workoutName: session.name,
-                    startedAt: session.startedAt,
-                    setsCompleted: setsCompleted
-                )
+            if mode == .active {
+                startElapsedTimer()
+                if #available(iOS 16.2, *), let session = session {
+                    let setsCompleted = session.exercises.flatMap { $0.sets }.filter { $0.done }.count
+                    WorkoutLiveActivityManager.shared.start(
+                        workoutName: session.name,
+                        startedAt: session.startedAt,
+                        setsCompleted: setsCompleted
+                    )
+                }
+            } else {
+                // Editing a finished workout — show its stored duration, no timers.
+                elapsedSeconds = session?.durationSeconds ?? 0
             }
         }
-        .onDisappear { stopTimers() }
+        .onDisappear { if mode == .active { stopTimers() } }
     }
 
     // MARK: - Main Content
@@ -206,12 +226,21 @@ struct ActiveWorkoutView: View {
                         }
                         .buttonStyle(.plain)
                     }
-                    Text(elapsedSeconds.formattedDuration)
-                        .font(.caption.monospacedDigit())
-                        .foregroundColor(.secondary)
+                    if mode == .editFinished {
+                        Button { showTimeEditor = true } label: {
+                            Text(headerDateTimeLabel)
+                                .font(.caption.monospacedDigit())
+                                .foregroundColor(AppTheme.primary)
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        Text(elapsedSeconds.formattedDuration)
+                            .font(.caption.monospacedDigit())
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
-            // RIGHT: reorder toggle + finish
+            // RIGHT: reorder toggle + finish / done
             ToolbarItemGroup(placement: .navigationBarTrailing) {
                 Button {
                     withAnimation(.spring(response: 0.3)) { isReorderMode.toggle() }
@@ -221,25 +250,46 @@ struct ActiveWorkoutView: View {
                         .foregroundColor(isReorderMode ? AppTheme.primary : .secondary)
                 }
                 Menu {
-                    Button(role: .destructive) { showDiscardAlert = true } label: {
-                        Label("Discard Workout", systemImage: "trash")
+                    if mode == .editFinished {
+                        Button { showTimeEditor = true } label: {
+                            Label("Edit Date & Time", systemImage: "clock")
+                        }
+                        Button(role: .destructive) { showDiscardAlert = true } label: {
+                            Label("Delete Workout", systemImage: "trash")
+                        }
+                    } else {
+                        Button(role: .destructive) { showDiscardAlert = true } label: {
+                            Label("Discard Workout", systemImage: "trash")
+                        }
                     }
                 } label: {
                     Image(systemName: "ellipsis.circle")
                         .foregroundColor(.secondary)
                 }
-                Button {
-                    stopTimers()
-                    appState.finishSession(sessionId: sessionId)
-                    showSummary = true
-                } label: {
-                    Text("Finish")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 6)
-                        .background(AppTheme.primary)
-                        .cornerRadius(8)
+                if mode == .editFinished {
+                    Button { isPresented = false } label: {
+                        Text("Done")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 6)
+                            .background(AppTheme.primary)
+                            .cornerRadius(8)
+                    }
+                } else {
+                    Button {
+                        stopTimers()
+                        appState.finishSession(sessionId: sessionId)
+                        showSummary = true
+                    } label: {
+                        Text("Finish")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 6)
+                            .background(AppTheme.primary)
+                            .cornerRadius(8)
+                    }
                 }
             }
         }
@@ -254,6 +304,17 @@ struct ActiveWorkoutView: View {
         }
         .sheet(isPresented: $showExercisePicker) {
             ExercisePickerSheet(sessionId: sessionId)
+        }
+        .sheet(isPresented: $showTimeEditor) {
+            if let session = session {
+                WorkoutTimeEditorSheet(
+                    date: session.finishedAt ?? session.startedAt,
+                    durationSeconds: session.durationSeconds
+                ) { newDate, newDuration in
+                    appState.setSessionTimes(sessionId: sessionId, date: newDate, durationSeconds: newDuration)
+                    elapsedSeconds = newDuration
+                }
+            }
         }
         .fullScreenCover(isPresented: $showSummary) {
             WorkoutSummaryView(sessionId: sessionId) {
@@ -288,6 +349,8 @@ struct ActiveWorkoutView: View {
     }
 
     private func handleSetDone(_ setId: String) {
+        // No rest timer / Live Activity / PR banner while editing a past workout.
+        guard mode == .active else { return }
         if appState.workoutSettings.restTimerEnabled {
             startRestTimer(seconds: appState.workoutSettings.defaultRestSeconds)
         } else if #available(iOS 16.2, *) {
@@ -344,6 +407,50 @@ struct ActiveWorkoutView: View {
         timer?.invalidate()
         timer = nil
         stopRestTimer()
+    }
+}
+
+// MARK: - Workout Time Editor (edit-finished mode)
+
+private struct WorkoutTimeEditorSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var date: Date
+    @State private var hours: Int
+    @State private var minutes: Int
+    let onSave: (Date, Int) -> Void
+
+    init(date: Date, durationSeconds: Int, onSave: @escaping (Date, Int) -> Void) {
+        _date = State(initialValue: date)
+        _hours = State(initialValue: durationSeconds / 3600)
+        _minutes = State(initialValue: (durationSeconds % 3600) / 60)
+        self.onSave = onSave
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Date & Time") {
+                    DatePicker("When", selection: $date)
+                }
+                Section("Duration") {
+                    Stepper("Hours: \(hours)", value: $hours, in: 0...12)
+                    Stepper("Minutes: \(minutes)", value: $minutes, in: 0...59)
+                }
+            }
+            .navigationTitle("Edit Date & Time")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        onSave(date, hours * 3600 + minutes * 60)
+                        dismiss()
+                    }
+                }
+            }
+        }
+        .presentationDetents([.medium])
     }
 }
 
