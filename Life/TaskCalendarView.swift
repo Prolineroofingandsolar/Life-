@@ -8,6 +8,7 @@ struct TaskCalendarView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var selectedDate: Date = Calendar.current.startOfDay(for: Date())
     @State private var weekOffset: Int = 0
+    @State private var showAddTask = false
 
     private var weekDates: [Date] {
         let cal = Calendar.current
@@ -83,6 +84,17 @@ struct TaskCalendarView: View {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Done") { dismiss() }
             }
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    HapticManager.impact(.light)
+                    showAddTask = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+            }
+        }
+        .sheet(isPresented: $showAddTask) {
+            AddTaskSheet(presetDate: selectedDate)
         }
         } // NavigationStack
     }

@@ -156,6 +156,12 @@ struct TaskDetailView: View {
                                 useCustomDate = false
                                 appState.updateTask(id: taskId, dueDate: .some(.thisWeek), dueDateOverride: .some(nil))
                             }
+                            Divider()
+                            Button("Pick a Date…") {
+                                useCustomDate = true
+                                dueDate = nil
+                                appState.updateTask(id: taskId, dueDate: .some(nil), dueDateOverride: .some(customDate))
+                            }
                         } label: {
                             Text(useCustomDate
                                  ? customDate.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())

@@ -281,10 +281,11 @@ final class AppState {
 
     // MARK: - Task Mutations
 
-    func addTask(title: String, category: TaskCategory, dueDate: DueDate, priority: TaskPriority = .none, notes: String = "") {
+    func addTask(title: String, category: TaskCategory, dueDate: DueDate, priority: TaskPriority = .none, notes: String = "", dueDateOverride: Date? = nil) {
         var task = AppTask(title: title, category: category, dueDate: dueDate)
         task.priority = priority
         task.notes = notes
+        task.dueDateOverride = dueDateOverride
         tasks.append(task)
         save()
     }

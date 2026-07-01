@@ -694,6 +694,9 @@ struct AddTaskSheet: View {
     @Environment(AppState.self) private var appState
     @Environment(\.dismiss) private var dismiss
 
+    /// When set (e.g. from the calendar), the new task is pinned to this exact date.
+    var presetDate: Date? = nil
+
     @State private var title = ""
     @State private var category: TaskCategory = .personal
     @State private var dueDate: DueDate = .today
@@ -753,7 +756,8 @@ struct AddTaskSheet: View {
                             category: category,
                             dueDate: dueDate,
                             priority: priority,
-                            notes: notes
+                            notes: notes,
+                            dueDateOverride: presetDate
                         )
                         dismiss()
                     }
