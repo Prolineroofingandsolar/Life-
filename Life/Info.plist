@@ -31,6 +31,12 @@
         <string>UIInterfaceOrientationLandscapeRight</string>
     </array>
 
+    <!-- Live Activities (ActivityKit) -->
+    <key>NSSupportsLiveActivities</key>
+    <true/>
+    <key>NSSupportsLiveActivitiesFrequentUpdates</key>
+    <true/>
+
     <!-- HealthKit -->
     <key>NSHealthShareUsageDescription</key>
     <string>Life uses Apple Health to import your weight, body fat, and BMI data.</string>

@@ -75,6 +75,7 @@
 			membershipExceptions = (
 				Assets.xcassets,
 				SharedHabitStore.swift,
+				WorkoutActivityAttributes.swift,
 			);
 			target = BE4A02742FCEDDBE002102BD /* Life */;
 		};
@@ -291,7 +292,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 1640;
-				LastUpgradeCheck = 1640;
+				LastUpgradeCheck = 2650;
 				TargetAttributes = {
 					BE4A02742FCEDDBE002102BD = {
 						CreatedOnToolsVersion = 16.4;
@@ -372,18 +373,12 @@
 			buildActionMask = 2147483647;
 			files = (
 			);
-			fileSystemSynchronizedGroupsByFolder = (
-				BE4A02772FCEDDBE002102BD /* Life */,
-			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		BE4A027E2FCEDDC2002102BD /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-			);
-			fileSystemSynchronizedGroupsByFolder = (
-				BE4A02852FCEDDC2002102BD /* LifeTests */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -392,18 +387,12 @@
 			buildActionMask = 2147483647;
 			files = (
 			);
-			fileSystemSynchronizedGroupsByFolder = (
-				BE4A028F2FCEDDC2002102BD /* LifeUITests */,
-			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		BE4A03A62FCF90B8002102BD /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-			);
-			fileSystemSynchronizedGroupsByFolder = (
-				BE4A03B02FCF90B9002102BD /* LifeTasksWidget */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -487,6 +476,7 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
@@ -544,6 +534,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				VALIDATE_PRODUCT = YES;
 			};

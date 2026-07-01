@@ -13,8 +13,6 @@ struct LifeTasksWidgetBundle: WidgetBundle {
     var body: some Widget {
         LifeTasksWidget()
         LifeHabitsWidget()
-        if #available(iOS 16.2, *) {
-            LifeTasksWidgetLiveActivity()
-        }
+        LifeTasksWidgetLiveActivity()
     }
 }

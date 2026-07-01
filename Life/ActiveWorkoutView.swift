@@ -61,6 +61,14 @@ struct ActiveWorkoutView: View {
             sessionName = session?.name ?? "Workout"
             notesText = session?.notes ?? ""
             startElapsedTimer()
+            if #available(iOS 16.2, *), let session = session {
+                let setsCompleted = session.exercises.flatMap { $0.sets }.filter { $0.done }.count
+                WorkoutLiveActivityManager.shared.start(
+                    workoutName: session.name,
+                    startedAt: session.startedAt,
+                    setsCompleted: setsCompleted
+                )
+            }
         }
         .onDisappear { stopTimers() }
     }
