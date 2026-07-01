@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import CoreLocation
+import UIKit
 
 // MARK: - Persistence Keys
 
@@ -26,6 +27,15 @@ struct ProgressPhoto: Identifiable, Codable {
     var date: Date
     var label: String
     var imageData: Data
+}
+
+// MARK: - Sync State
+
+enum SyncState: Equatable {
+    case idle
+    case syncing
+    case synced(Date)
+    case failed(String)
 }
 
 // MARK: - Serializable State Snapshot
@@ -79,6 +89,7 @@ final class AppState {
     var userName: String = ""
     var supplements: [Supplement] = []
     var cloudUserId: String? = nil
+    var syncState: SyncState = .idle
     var visitedLocations: [VisitedLocation] = []
     var plannedSessions: [PlannedSession] = []
     var progressPhotos: [ProgressPhoto] = []
@@ -99,6 +110,18 @@ final class AppState {
 
     init() {
         load()
+        // Surface sync errors and success timestamps from FirestoreSync into
+        // our observable syncState so the UI can show a banner instead of
+        // failures being swallowed silently.
+        FirestoreSync.shared.onUploadCompletion = { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success(let date):
+                self.syncState = .synced(date)
+            case .failure(let error):
+                self.syncState = .failed(error.localizedDescription)
+            }
+        }
     }
 
     // MARK: Persistence
@@ -123,6 +146,7 @@ final class AppState {
         WidgetSync.sync(tasks: tasks)
         WidgetSync.syncHabits(habits: habits, todayKey: todayKey)
         if let uid = cloudUserId {
+            syncState = .syncing
             FirestoreSync.shared.scheduleUpload(snapshot, userId: uid)
         }
     }
@@ -181,20 +205,31 @@ final class AppState {
 
     func loadFromCloud(userId: String) async {
         cloudUserId = userId
+        await MainActor.run { syncState = .syncing }
         do {
             if let snapshot = try await FirestoreSync.shared.download(userId: userId) {
-                await MainActor.run { apply(snapshot: snapshot) }
+                await MainActor.run {
+                    apply(snapshot: snapshot)
+                    syncState = .synced(Date())
+                }
             } else {
                 // First sign-in — upload existing local data to the cloud
                 FirestoreSync.shared.scheduleUpload(makeSnapshot(), userId: userId)
+                await MainActor.run { syncState = .synced(Date()) }
             }
         } catch {
-            // Network unavailable — carry on with local data
+            // Network unavailable — carry on with local data, but surface the
+            // failure so the UI can show a "Sync failed" banner with retry.
+            await MainActor.run { syncState = .failed(error.localizedDescription) }
         }
     }
 
     func disableCloudSync() {
+        // Cancel any queued upload so a debounced write from the previous
+        // session can't fire after sign-out and leak data into the cloud.
+        FirestoreSync.shared.cancelPending()
         cloudUserId = nil
+        syncState = .idle
     }
 
     private func load() {
@@ -279,6 +314,19 @@ final class AppState {
                 tasks[idx].completedAt = nil
                 tasks[idx].dueDateOverride = cal.startOfDay(for: next)
                 tasks[idx].dueDate = nil
+
+                // Carry the reminder forward to the next occurrence so
+                // recurring tasks don't silently lose their notifications.
+                if let oldReminder = tasks[idx].reminderDate {
+                    let delta = next.timeIntervalSince(base)
+                    let newReminder = oldReminder.addingTimeInterval(delta)
+                    tasks[idx].reminderDate = newReminder
+                    NotificationsManager.shared.scheduleTaskReminder(
+                        taskId: tasks[idx].id,
+                        title: tasks[idx].title,
+                        at: newReminder
+                    )
+                }
             }
         }
         save()
@@ -689,7 +737,10 @@ final class AppState {
     // MARK: - Workout Session Mutations
 
     func startSession(name: String, routineId: String? = nil) {
-        sessions.removeAll { $0.finishedAt == nil }
+        // Safety: if a workout is already in progress, do nothing instead of
+        // silently destroying it. Callers should inspect `activeSession` first
+        // and either resume it or prompt the user to finish/discard.
+        guard activeSession == nil else { return }
 
         var session = WorkoutSession(name: name, routineId: routineId)
 
@@ -1494,36 +1545,105 @@ final class AppState {
     }
 
     // MARK: - Progress Photos (stored separately, not cloud-synced)
+    //
+    // Storage layout:
+    //   - Image bytes: one JPEG per photo under Documents/progress_photos/<id>.jpg
+    //   - Metadata only (id, date, label) in UserDefaults under photosKeyV2
+    //
+    // Rationale: UserDefaults isn't designed for large blobs. With raw camera
+    // photos (~5–10 MB each), the previous design re-encoded and re-wrote the
+    // entire array on every add/delete and risked silent truncation. Each
+    // image is also compressed to ~500 KB at insert time.
 
-    private let photosKey = "life_progress_photos_v1"
+    private let photosKey = "life_progress_photos_v1"     // legacy (full bytes)
+    private let photosKeyV2 = "life_progress_photos_v2"   // metadata only
+
+    private struct ProgressPhotoMetadata: Codable {
+        var id: String
+        var date: Date
+        var label: String
+    }
+
+    private static let photoDirectory: URL = {
+        let urls = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
+        let dir = urls[0].appendingPathComponent("progress_photos", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }()
+
+    private func photoURL(for id: String) -> URL {
+        Self.photoDirectory.appendingPathComponent("\(id).jpg")
+    }
+
+    /// Down-scale the image and re-encode as JPEG so we don't store
+    /// multi-megabyte camera originals on disk.
+    private static func compressedJPEG(from data: Data, maxDimension: CGFloat = 2000, quality: CGFloat = 0.7) -> Data? {
+        guard let image = UIImage(data: data) else { return nil }
+        let longest = max(image.size.width, image.size.height)
+        let scale = longest > maxDimension ? maxDimension / longest : 1.0
+        let newSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let renderer = UIGraphicsImageRenderer(size: newSize, format: format)
+        let resized = renderer.image { _ in image.draw(in: CGRect(origin: .zero, size: newSize)) }
+        return resized.jpegData(compressionQuality: quality)
+    }
 
     func addProgressPhoto(imageData: Data, label: String) {
-        let photo = ProgressPhoto(date: Date(), label: label, imageData: imageData)
+        let compressed = Self.compressedJPEG(from: imageData) ?? imageData
+        let photo = ProgressPhoto(date: Date(), label: label, imageData: compressed)
         progressPhotos.append(photo)
-        savePhotos()
+        try? compressed.write(to: photoURL(for: photo.id), options: .atomic)
+        saveMetadata()
     }
 
     func deleteProgressPhoto(id: String) {
         progressPhotos.removeAll { $0.id == id }
-        savePhotos()
+        try? FileManager.default.removeItem(at: photoURL(for: id))
+        saveMetadata()
     }
 
-    private func savePhotos() {
-        if let data = try? JSONEncoder().encode(progressPhotos) {
-            UserDefaults.standard.set(data, forKey: photosKey)
+    private func saveMetadata() {
+        let metadata = progressPhotos.map {
+            ProgressPhotoMetadata(id: $0.id, date: $0.date, label: $0.label)
+        }
+        if let data = try? JSONEncoder().encode(metadata) {
+            UserDefaults.standard.set(data, forKey: photosKeyV2)
         }
     }
 
     func loadPhotos() {
+        // Prefer the v2 metadata-only format.
+        if let data = UserDefaults.standard.data(forKey: photosKeyV2),
+           let metadata = try? JSONDecoder().decode([ProgressPhotoMetadata].self, from: data) {
+            progressPhotos = metadata.compactMap { meta in
+                guard let bytes = try? Data(contentsOf: photoURL(for: meta.id)) else { return nil }
+                return ProgressPhoto(id: meta.id, date: meta.date, label: meta.label, imageData: bytes)
+            }
+            return
+        }
+        // Legacy migration: pull from v1 (full bytes in UserDefaults) and rewrite to disk.
         if let data = UserDefaults.standard.data(forKey: photosKey),
-           let photos = try? JSONDecoder().decode([ProgressPhoto].self, from: data) {
-            progressPhotos = photos
+           let legacy = try? JSONDecoder().decode([ProgressPhoto].self, from: data) {
+            progressPhotos = legacy
+            for photo in legacy {
+                try? photo.imageData.write(to: photoURL(for: photo.id), options: .atomic)
+            }
+            saveMetadata()
+            UserDefaults.standard.removeObject(forKey: photosKey)
         }
     }
+
+    // Backwards-compat shim; old call sites called savePhotos() directly.
+    private func savePhotos() { saveMetadata() }
 
     // MARK: - Reset
 
     func resetAllData() {
+        // Disable cloud sync first so the subsequent save() doesn't push the
+        // empty/seed state to Firestore and wipe data on other devices.
+        // User can sign in again afterwards to re-sync the reset state.
+        disableCloudSync()
         tasks = []
         bills = []
         habits = []
