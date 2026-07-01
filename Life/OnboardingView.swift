@@ -116,7 +116,10 @@ struct OnboardingView: View {
                 .focused($nameFocused)
                 .padding(.horizontal, 32)
                 .submitLabel(.continue)
-                .onSubmit { withAnimation { page += 1 } }
+                .onSubmit {
+                    appState.setName(nameInput.trimmingCharacters(in: .whitespaces))
+                    withAnimation { page += 1 }
+                }
 
             Spacer()
             Spacer()
