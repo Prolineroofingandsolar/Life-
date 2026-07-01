@@ -7,6 +7,7 @@ struct MoreView: View {
     @Environment(AppState.self) private var appState
     @EnvironmentObject private var authManager: AuthManager
     @State private var showSettings = false
+    @State private var showProgressPhotos = false
 
     var body: some View {
         NavigationStack {
@@ -21,6 +22,34 @@ struct MoreView: View {
                     ) {
                         BodyView()
                     }
+                    Button {
+                        showProgressPhotos = true
+                    } label: {
+                        HStack(spacing: 14) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 9)
+                                    .fill(Color.pink.opacity(0.15))
+                                    .frame(width: 38, height: 38)
+                                Image(systemName: "photo.stack.fill")
+                                    .font(.system(size: 17, weight: .semibold))
+                                    .foregroundColor(.pink)
+                            }
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Progress Photos")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundColor(.primary)
+                                Text("Track your visual progress")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .foregroundColor(Color(.tertiaryLabel))
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    .buttonStyle(.plain)
                     MoreRow(
                         icon: "dollarsign.circle.fill",
                         color: .orange,
@@ -103,6 +132,9 @@ struct MoreView: View {
             .navigationBarTitleDisplayMode(.large)
             .sheet(isPresented: $showSettings) {
                 SettingsView()
+            }
+            .sheet(isPresented: $showProgressPhotos) {
+                ProgressPhotosView()
             }
         }
     }

@@ -434,11 +434,14 @@ private struct WeekMiniGrid: View {
             let weekday = cal.component(.weekday, from: date) - 1
             let label = dayLabels[weekday]
             let log = habit.logs.first { $0.dayKey == key }
+            let beforeCreation = cal.startOfDay(for: date) < cal.startOfDay(for: habit.createdAt)
             let intensity: Double
-            if let log, log.slipped {
+            if beforeCreation {
+                intensity = 0            // habit didn't exist yet — not a "clean" day
+            } else if let log, log.slipped {
                 intensity = -1
             } else if habit.kind == .break {
-                intensity = 1.0  // no slip = clean day = full
+                intensity = 1.0          // no slip since creation = clean day
             } else if let log {
                 intensity = min(Double(log.count) / Double(max(habit.targetCount, 1)), 1.0)
             } else {
@@ -495,12 +498,16 @@ struct HabitHeatmapView: View {
         return result
     }
 
-    private func intensity(for key: String) -> Double {
+    private func intensity(for key: String, date: Date) -> Double {
+        let cal = Calendar.current
+        // Days before the habit existed (and future days) aren't "clean" days.
+        if cal.startOfDay(for: date) < cal.startOfDay(for: habit.createdAt) { return 0 }
+        if cal.startOfDay(for: date) > cal.startOfDay(for: Date()) { return 0 }
         let log = habit.logs.first(where: { $0.dayKey == key })
         if let log = log, log.slipped { return -1 }
         if habit.kind == .break {
-            // No log or non-slipped log = clean day = full intensity
-            return log == nil ? 1.0 : 1.0
+            // No slip since creation = clean day = full intensity.
+            return 1.0
         }
         guard let log = log else { return 0 }
         return min(Double(log.count) / Double(max(habit.targetCount, 1)), 1.0)
@@ -520,7 +527,7 @@ struct HabitHeatmapView: View {
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 3), count: cols), spacing: 3) {
                 ForEach(cells, id: \.key) { cell in
                     RoundedRectangle(cornerRadius: 2)
-                        .fill(cellColor(intensity: intensity(for: cell.key)))
+                        .fill(cellColor(intensity: intensity(for: cell.key, date: cell.date)))
                         .aspectRatio(1, contentMode: .fit)
                 }
             }
@@ -543,6 +550,7 @@ struct AddHabitSheet: View {
     @State private var targetType: HabitTargetType = .yesNo
     @State private var targetCount = 1
     @State private var targetUnit = ""
+    @State private var notes = ""
     @FocusState private var isNameFocused: Bool
 
     var body: some View {
@@ -587,6 +595,10 @@ struct AddHabitSheet: View {
                         }
                     }
                 }
+                Section("Notes") {
+                    TextField("Optional notes…", text: $notes, axis: .vertical)
+                        .lineLimit(2...5)
+                }
             }
             .navigationTitle("New Habit")
             .navigationBarTitleDisplayMode(.inline)
@@ -595,7 +607,7 @@ struct AddHabitSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add") {
                         guard !name.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-                        let habit = Habit(
+                        var habit = Habit(
                             name: name.trimmingCharacters(in: .whitespaces),
                             emoji: emoji.isEmpty ? "⭐️" : emoji,
                             category: category,
@@ -605,6 +617,7 @@ struct AddHabitSheet: View {
                             targetCount: targetCount,
                             targetUnit: targetUnit
                         )
+                        habit.notes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
                         appState.habits.append(habit)
                         appState.save()
                         dismiss()
@@ -634,6 +647,7 @@ struct EditHabitSheet: View {
     @State private var targetUnit: String
     @State private var reminderEnabled: Bool
     @State private var reminderTime: Date
+    @State private var notes: String
 
     init(habit: Habit) {
         self.habit = habit
@@ -647,6 +661,7 @@ struct EditHabitSheet: View {
         _targetUnit       = State(initialValue: habit.targetUnit)
         _reminderEnabled  = State(initialValue: habit.reminderEnabled)
         _reminderTime     = State(initialValue: habit.reminderTime ?? Calendar.current.date(bySettingHour: 9, minute: 0, second: 0, of: Date()) ?? Date())
+        _notes            = State(initialValue: habit.notes)
     }
 
     var body: some View {
@@ -688,6 +703,10 @@ struct EditHabitSheet: View {
                         DatePicker("Time", selection: $reminderTime, displayedComponents: .hourAndMinute)
                     }
                 }
+                Section("Notes") {
+                    TextField("Optional notes…", text: $notes, axis: .vertical)
+                        .lineLimit(2...5)
+                }
             }
             .navigationTitle("Edit Habit")
             .navigationBarTitleDisplayMode(.inline)
@@ -707,6 +726,7 @@ struct EditHabitSheet: View {
                             appState.habits[idx].category   = category
                             appState.habits[idx].targetType = targetType
                             appState.habits[idx].targetUnit = targetUnit
+                            appState.habits[idx].notes      = notes.trimmingCharacters(in: .whitespacesAndNewlines)
                             appState.save()
                         }
                         dismiss()
