@@ -160,6 +160,7 @@ private struct EmptyHint: View {
 
 private struct ActivityTab: View {
     @Environment(AppState.self) private var appState
+    @State private var detailSession: WorkoutSession?
 
     private var trainingTime: String {
         let s = appState.trainingSecondsThisWeek
@@ -213,7 +214,13 @@ private struct ActivityTab: View {
                     CardContainer {
                         VStack(spacing: 0) {
                             ForEach(Array(recent.enumerated()), id: \.element.id) { idx, session in
-                                RecentWorkoutRow(session: session)
+                                Button {
+                                    HapticManager.selection()
+                                    detailSession = session
+                                } label: {
+                                    RecentWorkoutRow(session: session)
+                                }
+                                .buttonStyle(.plain)
                                 if idx < recent.count - 1 { Divider().opacity(0.4) }
                             }
                         }
@@ -238,6 +245,9 @@ private struct ActivityTab: View {
             }
         }
         .padding(.horizontal, 20)
+        .sheet(item: $detailSession) { session in
+            NavigationStack { SessionDetailView(session: session) }
+        }
     }
 }
 

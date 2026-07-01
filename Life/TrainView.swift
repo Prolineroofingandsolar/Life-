@@ -8,6 +8,9 @@ struct TrainView: View {
 
     @Environment(AppState.self) private var appState
     @State private var showActiveWorkout = false
+    /// Captured when the workout sheet opens so it survives `finishSession`
+    /// nulling `activeSession` (otherwise Finish → blank white page).
+    @State private var presentedWorkoutId: String?
     @State private var showExerciseLibrary = false
     @State private var showAddRoutine = false
     @State private var showBrowsePrograms = false
@@ -170,9 +173,12 @@ struct TrainView: View {
                     NavigationStack { SessionDetailView(session: session) }
                 }
             }
+            .onChange(of: showActiveWorkout) { _, shown in
+                if shown { presentedWorkoutId = appState.activeSession?.id }
+            }
             .sheet(isPresented: $showActiveWorkout) {
-                if let session = appState.activeSession {
-                    ActiveWorkoutView(isPresented: $showActiveWorkout, sessionId: session.id)
+                if let id = presentedWorkoutId {
+                    ActiveWorkoutView(isPresented: $showActiveWorkout, sessionId: id)
                 }
             }
             .sheet(isPresented: $showExerciseLibrary) { ExerciseLibraryView() }

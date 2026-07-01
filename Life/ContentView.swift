@@ -84,6 +84,9 @@ struct ContentView: View {
     @Environment(AppState.self) private var appState
     @State private var selectedTab: AppTab = .today
     @State private var showActiveWorkout = false
+    /// Captured when the workout sheet opens so it survives `finishSession`
+    /// nulling `activeSession` (otherwise the sheet goes blank white on Finish).
+    @State private var presentedWorkoutId: String?
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -117,9 +120,12 @@ struct ContentView: View {
             }
         }
         .animation(.spring(response: 0.35), value: appState.activeSession?.id)
+        .onChange(of: showActiveWorkout) { _, shown in
+            if shown { presentedWorkoutId = appState.activeSession?.id }
+        }
         .sheet(isPresented: $showActiveWorkout) {
-            if let session = appState.activeSession {
-                ActiveWorkoutView(isPresented: $showActiveWorkout, sessionId: session.id)
+            if let id = presentedWorkoutId {
+                ActiveWorkoutView(isPresented: $showActiveWorkout, sessionId: id)
             }
         }
         .onOpenURL { url in
