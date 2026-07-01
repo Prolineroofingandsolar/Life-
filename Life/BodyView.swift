@@ -141,14 +141,14 @@ private struct WeightTab: View {
                                 x: .value("Date", entry.date),
                                 y: .value("Weight", entry.value)
                             )
-                            .foregroundStyle(Color(hex: "#30d158"))
+                            .foregroundStyle(AppTheme.primary)
                             .interpolationMethod(.catmullRom)
 
                             AreaMark(
                                 x: .value("Date", entry.date),
                                 y: .value("Weight", entry.value)
                             )
-                            .foregroundStyle(Color(hex: "#30d158").opacity(0.1))
+                            .foregroundStyle(AppTheme.primary.opacity(0.1))
                             .interpolationMethod(.catmullRom)
                         }
                     }
@@ -483,7 +483,7 @@ private struct PRRow: View {
                     .foregroundColor(.secondary)
                 Text("\(item.pr.best1RM.formatted1) kg")
                     .font(.subheadline.bold())
-                    .foregroundColor(Color(hex: "#30d158"))
+                    .foregroundColor(AppTheme.primary)
             }
         }
         .padding(.vertical, 2)
@@ -521,7 +521,7 @@ private struct MeasurementsTab: View {
                     showAddMeasurement = true
                 } label: {
                     Label("Log Measurements", systemImage: "ruler")
-                        .foregroundColor(Color(hex: "#30d158"))
+                        .foregroundColor(AppTheme.primary)
                 }
             }
 

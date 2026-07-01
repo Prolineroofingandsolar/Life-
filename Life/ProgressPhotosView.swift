@@ -162,7 +162,7 @@ struct ProgressPhotosView: View {
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
-                    .background(Color(hex: "#30d158"))
+                    .background(AppTheme.primary)
                     .cornerRadius(12)
                     .padding(.horizontal, 60)
             }

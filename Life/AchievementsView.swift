@@ -75,11 +75,11 @@ private struct LevelCard: View {
                 Spacer()
                 ZStack {
                     Circle()
-                        .fill(Color(hex: "#30d158").opacity(0.15))
+                        .fill(AppTheme.brandGradient)
                         .frame(width: 56, height: 56)
                     Text("\(xpLevel)")
                         .font(.title.bold())
-                        .foregroundColor(Color(hex: "#30d158"))
+                        .foregroundColor(.white)
                 }
             }
 
@@ -90,7 +90,7 @@ private struct LevelCard: View {
                             .fill(Color(.systemFill))
                             .frame(height: 12)
                         RoundedRectangle(cornerRadius: 6)
-                            .fill(Color(hex: "#30d158"))
+                            .fill(AppTheme.brandGradient)
                             .frame(width: max(0, geo.size.width * xpProgress), height: 12)
                             .animation(.spring(response: 0.5, dampingFraction: 0.8), value: xpProgress)
                     }

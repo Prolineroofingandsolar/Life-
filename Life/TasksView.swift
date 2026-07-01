@@ -338,7 +338,7 @@ private struct TaskRow: View {
                                     .font(.caption)
                                     .padding(.horizontal, 8)
                                     .padding(.vertical, 4)
-                                    .background(task.dueDate == d ? Color(hex: "#30d158") : Color(.tertiarySystemFill))
+                                    .background(task.dueDate == d ? AppTheme.primary : Color(.tertiarySystemFill))
                                     .foregroundColor(task.dueDate == d ? .white : .secondary)
                                     .cornerRadius(6)
                             }
@@ -387,7 +387,7 @@ private struct TaskRow: View {
 
                     // Add subtask
                     HStack(spacing: 8) {
-                        Image(systemName: "plus.circle").font(.caption).foregroundColor(Color(hex: "#30d158"))
+                        Image(systemName: "plus.circle").font(.caption).foregroundColor(AppTheme.primary)
                         TextField("Add subtask...", text: $newSubtaskText)
                             .font(.caption)
                             .onSubmit {
@@ -434,7 +434,7 @@ private struct FilterChip: View {
                 .font(.subheadline.weight(isSelected ? .semibold : .regular))
                 .padding(.horizontal, 14)
                 .padding(.vertical, 6)
-                .background(isSelected ? Color(hex: "#30d158") : Color(.secondarySystemGroupedBackground))
+                .background(isSelected ? AppTheme.primary : Color(.secondarySystemGroupedBackground))
                 .foregroundColor(isSelected ? .white : .primary)
                 .cornerRadius(20)
                 .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isSelected)
@@ -474,7 +474,7 @@ struct UndoToast: View {
             Spacer()
             Button("Undo", action: onUndo)
                 .font(.subheadline.bold())
-                .foregroundColor(Color(hex: "#30d158"))
+                .foregroundColor(AppTheme.primary)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 14)

@@ -72,7 +72,7 @@ struct ExerciseLibraryView: View {
                                     .cornerRadius(10)
                                 if activeFilterCount > 0 {
                                     Circle()
-                                        .fill(Color(hex: "#30d158"))
+                                        .fill(AppTheme.primary)
                                         .frame(width: 16, height: 16)
                                         .overlay(Text("\(activeFilterCount)").font(.system(size: 10, weight: .bold)).foregroundColor(.black))
                                         .offset(x: 4, y: -4)
@@ -292,10 +292,10 @@ private struct EquipmentChip: View {
                 .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
                 .padding(.horizontal, 14)
                 .padding(.vertical, 7)
-                .background(isSelected ? Color(hex: "#30d158").opacity(0.15) : Color(.secondarySystemFill))
-                .foregroundColor(isSelected ? Color(hex: "#30d158") : .primary)
+                .background(isSelected ? AppTheme.primary.opacity(0.15) : Color(.secondarySystemFill))
+                .foregroundColor(isSelected ? AppTheme.primary : .primary)
                 .clipShape(Capsule())
-                .overlay(Capsule().stroke(isSelected ? Color(hex: "#30d158").opacity(0.4) : Color.clear, lineWidth: 1))
+                .overlay(Capsule().stroke(isSelected ? AppTheme.primary.opacity(0.4) : Color.clear, lineWidth: 1))
         }
         .buttonStyle(.plain)
     }
@@ -355,7 +355,7 @@ private struct LibraryFilterSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Apply") { dismiss() }
-                        .foregroundColor(Color(hex: "#30d158"))
+                        .foregroundColor(AppTheme.primary)
                 }
             }
         }

@@ -253,7 +253,7 @@ final class AppState {
 
     static let defaultTaskLists: [TaskList] = [
         TaskList(id: "work",     name: "Work",     emoji: "💼", colorHex: "#5E9BF0", isSystem: true),
-        TaskList(id: "gym",      name: "Gym",      emoji: "🏋️", colorHex: "#30d158", isSystem: true),
+        TaskList(id: "gym",      name: "Gym",      emoji: "🏋️", colorHex: "#2FD4C0", isSystem: true),
         TaskList(id: "personal", name: "Personal", emoji: "🌱", colorHex: "#FF9F0A", isSystem: true),
     ]
 
@@ -1135,7 +1135,7 @@ final class AppState {
         }
         var color: Color {
             switch self {
-            case .addWeight: return Color(hex: "#30d158")
+            case .addWeight: return AppTheme.primary
             case .addReps:   return .blue
             case .addSet:    return .orange
             case .deload:    return .red
@@ -1196,7 +1196,7 @@ final class AppState {
         var color: Color {
             switch self {
             case .fresh:      return Color(.tertiaryLabel)
-            case .recovered:  return Color(hex: "#30d158")
+            case .recovered:  return AppTheme.primary
             case .recovering: return .orange
             case .fatigued:   return .red
             }

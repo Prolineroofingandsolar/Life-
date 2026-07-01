@@ -63,8 +63,16 @@ private struct SplashView: View {
                     .resizable()
                     .scaledToFit()
                     .frame(width: 120, height: 120)
+                    .background {
+                        Circle()
+                            .fill(AppTheme.brandGradient)
+                            .frame(width: 168, height: 168)
+                            .blur(radius: 44)
+                            .opacity(0.35)
+                    }
                 ProgressView()
                     .scaleEffect(1.2)
+                    .tint(AppTheme.primary)
             }
         }
     }
@@ -96,7 +104,7 @@ struct ContentView: View {
                     .tag(AppTab.more)
                     .tabItem { Label(AppTab.more.label, systemImage: AppTab.more.icon) }
             }
-            .tint(Color(hex: "#30d158"))
+            .tint(AppTheme.primary)
 
             // Global active workout banner shown on non-Train tabs
             if selectedTab != .train, let session = appState.activeSession {
@@ -137,7 +145,7 @@ private struct ActiveWorkoutBanner: View {
         Button(action: onTap) {
             HStack(spacing: 10) {
                 Circle()
-                    .fill(Color(hex: "#30d158"))
+                    .fill(AppTheme.primary)
                     .frame(width: 8, height: 8)
                     .scaleEffect(pulse ? 1.3 : 1.0)
                     .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: pulse)
@@ -147,10 +155,10 @@ private struct ActiveWorkoutBanner: View {
                 Spacer()
                 Text("Resume")
                     .font(.subheadline.weight(.semibold))
-                    .foregroundColor(Color(hex: "#30d158"))
+                    .foregroundColor(AppTheme.primary)
                 Image(systemName: "chevron.up")
                     .font(.caption.weight(.semibold))
-                    .foregroundColor(Color(hex: "#30d158"))
+                    .foregroundColor(AppTheme.primary)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)

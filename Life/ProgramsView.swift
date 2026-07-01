@@ -45,12 +45,12 @@ struct ProgramsView: View {
             if let active = appState.activeProgram {
                 HStack(spacing: 12) {
                     Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(Color(hex: "#30d158"))
+                        .foregroundColor(AppTheme.primary)
                         .font(.title2)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Active Program")
                             .font(.caption)
-                            .foregroundColor(Color(hex: "#30d158"))
+                            .foregroundColor(AppTheme.primary)
                         Text(active.name)
                             .font(.headline)
                     }
@@ -62,12 +62,12 @@ struct ProgramsView: View {
                                 .foregroundColor(.secondary)
                             Text(routine.name)
                                 .font(.caption.bold())
-                                .foregroundColor(Color(hex: "#30d158"))
+                                .foregroundColor(AppTheme.primary)
                         }
                     }
                 }
                 .padding(.vertical, 4)
-                .listRowBackground(Color(hex: "#30d158").opacity(0.1))
+                .listRowBackground(AppTheme.primary.opacity(0.1))
             } else {
                 HStack(spacing: 12) {
                     Image(systemName: "circle.dashed")
@@ -106,7 +106,7 @@ struct ProgramsView: View {
                             } label: {
                                 Label("Set Active", systemImage: "checkmark.circle")
                             }
-                            .tint(Color(hex: "#30d158"))
+                            .tint(AppTheme.primary)
                         }
                     }
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
@@ -126,7 +126,7 @@ struct ProgramsView: View {
                 showAddProgram = true
             } label: {
                 Label("New Program", systemImage: "plus")
-                    .foregroundColor(Color(hex: "#30d158"))
+                    .foregroundColor(AppTheme.primary)
             }
             .buttonStyle(PressableButtonStyle())
         }
@@ -153,8 +153,8 @@ private struct ProgramRow: View {
                             .font(.caption2.bold())
                             .padding(.horizontal, 7)
                             .padding(.vertical, 3)
-                            .background(Color(hex: "#30d158").opacity(0.18))
-                            .foregroundColor(Color(hex: "#30d158"))
+                            .background(AppTheme.primary.opacity(0.18))
+                            .foregroundColor(AppTheme.primary)
                             .clipShape(Capsule())
                     }
                     Spacer()
@@ -169,9 +169,9 @@ private struct ProgramRow: View {
                         VStack(spacing: 3) {
                             Text(weekdays[weekday - 1])
                                 .font(.system(size: 8, weight: .medium))
-                                .foregroundColor(hasRoutine ? Color(hex: "#30d158") : .secondary)
+                                .foregroundColor(hasRoutine ? AppTheme.primary : .secondary)
                             RoundedRectangle(cornerRadius: 3)
-                                .fill(hasRoutine ? Color(hex: "#30d158") : Color(.systemFill))
+                                .fill(hasRoutine ? AppTheme.primary : Color(.systemFill))
                                 .frame(width: 28, height: 20)
                         }
                     }
@@ -279,7 +279,7 @@ struct EditProgramSheet: View {
                             dismiss()
                         } label: {
                             Label("Set as Active", systemImage: "checkmark.circle")
-                                .foregroundColor(Color(hex: "#30d158"))
+                                .foregroundColor(AppTheme.primary)
                         }
                     }
                 }
@@ -327,7 +327,7 @@ private struct DayScheduleRow: View {
                 }
             }
             .pickerStyle(.menu)
-            .tint(day.routineId != nil ? Color(hex: "#30d158") : .secondary)
+            .tint(day.routineId != nil ? AppTheme.primary : .secondary)
         }
     }
 }

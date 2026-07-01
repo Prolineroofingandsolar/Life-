@@ -18,7 +18,7 @@ struct LifeApp: App {
             RootView()
                 .environment(appState)
                 .environmentObject(authManager)
-                .tint(Color(hex: "#30d158"))
+                .tint(AppTheme.primary)
         }
     }
 }

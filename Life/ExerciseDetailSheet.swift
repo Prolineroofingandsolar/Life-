@@ -68,8 +68,8 @@ struct ExerciseDetailSheet: View {
                             .font(.subheadline.bold())
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 14)
-                            .background(Color(hex: "#30d158").opacity(0.15))
-                            .foregroundColor(Color(hex: "#30d158"))
+                            .background(AppTheme.primary.opacity(0.15))
+                            .foregroundColor(AppTheme.primary)
                             .cornerRadius(12)
                     }
                 }
@@ -156,10 +156,10 @@ private struct KindBadge: View {
     var body: some View {
         Text(label)
             .font(.caption.bold())
-            .foregroundColor(Color(hex: "#30d158"))
+            .foregroundColor(AppTheme.primary)
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
-            .background(Color(hex: "#30d158").opacity(0.15))
+            .background(AppTheme.primary.opacity(0.15))
             .cornerRadius(6)
     }
 }
@@ -170,7 +170,7 @@ private struct DifficultyDots: View {
         HStack(spacing: 4) {
             ForEach(1...3, id: \.self) { level in
                 Circle()
-                    .fill(level <= difficulty ? Color(hex: "#30d158") : Color(.systemFill))
+                    .fill(level <= difficulty ? AppTheme.primary : Color(.systemFill))
                     .frame(width: 8, height: 8)
             }
         }
@@ -230,7 +230,7 @@ private struct PRStatCell: View {
         VStack(spacing: 4) {
             Text(value)
                 .font(.headline.bold())
-                .foregroundColor(Color(hex: "#30d158"))
+                .foregroundColor(AppTheme.primary)
                 .minimumScaleFactor(0.7)
                 .lineLimit(1)
             Text(label)
@@ -343,13 +343,13 @@ private struct StrengthChartCard: View {
                             y: .value(show1RM ? "1RM" : "Weight", pt.value)
                         )
                         .interpolationMethod(.catmullRom)
-                        .foregroundStyle(Color(hex: "#30d158").gradient)
+                        .foregroundStyle(AppTheme.primary.gradient)
 
                         PointMark(
                             x: .value("Date", pt.date),
                             y: .value(show1RM ? "1RM" : "Weight", pt.value)
                         )
-                        .foregroundStyle(Color(hex: "#30d158"))
+                        .foregroundStyle(AppTheme.primary)
                         .symbolSize(40)
                     }
                 }
@@ -414,7 +414,7 @@ private struct AddExerciseToRoutineSheet: View {
                                 Spacer()
                                 if routine.exercises.contains(where: { $0.exerciseId == exerciseId }) {
                                     Image(systemName: "checkmark")
-                                        .foregroundColor(Color(hex: "#30d158"))
+                                        .foregroundColor(AppTheme.primary)
                                 }
                             }
                         }

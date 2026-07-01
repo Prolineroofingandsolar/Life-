@@ -22,13 +22,14 @@ struct WorkoutSummaryView: View {
                     VStack(spacing: 12) {
                         ZStack {
                             Circle()
-                                .fill(Color(hex: "#30d158").opacity(0.15))
+                                .fill(AppTheme.brandGradient)
+                                .opacity(0.18)
                                 .frame(width: 100, height: 100)
                                 .scaleEffect(appeared ? 1 : 0.5)
                                 .animation(.spring(response: 0.5, dampingFraction: 0.6).delay(0.1), value: appeared)
                             Image(systemName: "trophy.fill")
                                 .font(.system(size: 44))
-                                .foregroundColor(Color(hex: "#30d158"))
+                                .foregroundStyle(AppTheme.brandGradient)
                                 .scaleEffect(appeared ? 1 : 0.3)
                                 .animation(.spring(response: 0.5, dampingFraction: 0.5).delay(0.2), value: appeared)
                         }
@@ -52,7 +53,7 @@ struct WorkoutSummaryView: View {
                         // Stats grid
                         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
                             StatCard(icon: "clock.fill", color: .blue, label: "Duration", value: session.durationSeconds.formattedDuration)
-                            StatCard(icon: "checkmark.circle.fill", color: Color(hex: "#30d158"), label: "Sets", value: "\(session.totalSets)")
+                            StatCard(icon: "checkmark.circle.fill", color: AppTheme.primary, label: "Sets", value: "\(session.totalSets)")
                             StatCard(icon: "scalemass.fill", color: .orange, label: "Volume", value: formatVolume(session.totalVolumeKg))
                         }
                         .padding(.horizontal, 16)
@@ -101,7 +102,7 @@ struct WorkoutSummaryView: View {
                         onDone()
                     }
                     .bold()
-                    .foregroundColor(Color(hex: "#30d158"))
+                    .foregroundColor(AppTheme.primary)
                 }
             }
             .onAppear {

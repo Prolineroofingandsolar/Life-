@@ -29,7 +29,7 @@ struct BodyDiagramView: View {
 
     private func fill(_ region: BodyRegion) -> Color {
         (highlighted.contains(region) || highlighted.contains(.full))
-            ? Color(hex: "#30d158")
+            ? AppTheme.primary
             : Color.white.opacity(0.13)
     }
 

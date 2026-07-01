@@ -389,7 +389,7 @@ struct WorkoutCalendarCard: View {
 
             // Legend
             HStack(spacing: 14) {
-                legendDot(color: Color(hex: "#30d158"), label: "Done")
+                legendDot(color: AppTheme.primary, label: "Done")
                 legendDot(color: AppTheme.trainAccent, label: "Planned", isRing: true)
             }
             .padding(.horizontal, 16)
@@ -421,7 +421,7 @@ struct WorkoutCalendarCard: View {
                 // Background fill
                 if hasDone {
                     Circle()
-                        .fill(Color(hex: "#30d158"))
+                        .fill(AppTheme.primary)
                         .frame(width: 34, height: 34)
                 } else if hasPlanned {
                     Circle()
@@ -1263,12 +1263,12 @@ struct AddRoutineSheet: View {
 
     @State private var name = ""
     @State private var emoji = "💪"
-    @State private var colorHex = "#30d158"
+    @State private var colorHex = "#2FD4C0"
     @State private var exercises: [DraftRoutineExercise] = []
     @State private var showExercisePicker = false
     @FocusState private var isNameFocused: Bool
 
-    private let colorOptions = ["#30d158","#0a84ff","#ff375f","#ff9f0a","#bf5af2","#64d2ff","#ff6961","#ffffff"]
+    private let colorOptions = ["#2FD4C0","#0a84ff","#ff375f","#ff9f0a","#bf5af2","#64d2ff","#ff6961","#ffffff"]
     private let emojiOptions = ["💪","🏋️","🔥","⚡️","🦵","🫀","🏃","🤸","🥊","🧘","🎯","🏆"]
 
     var body: some View {
@@ -1322,7 +1322,7 @@ struct AddRoutineSheet: View {
                         showExercisePicker = true
                     } label: {
                         Label("Add Exercise", systemImage: "plus")
-                            .foregroundColor(Color(hex: "#30d158"))
+                            .foregroundColor(AppTheme.primary)
                     }
                 } header: { Text("Exercises") }
             }
@@ -1376,7 +1376,7 @@ struct EditRoutineSheet: View {
     @State private var showExercisePicker = false
     @State private var showPhotoPicker = false
 
-    private let colorOptions = ["#30d158","#0a84ff","#ff375f","#ff9f0a","#bf5af2","#64d2ff","#ff6961","#ffffff"]
+    private let colorOptions = ["#2FD4C0","#0a84ff","#ff375f","#ff9f0a","#bf5af2","#64d2ff","#ff6961","#ffffff"]
     private let emojiOptions = ["💪","🏋️","🔥","⚡️","🦵","🫀","🏃","🤸","🥊","🧘","🎯","🏆"]
 
     init(routine: Routine) {
@@ -1470,7 +1470,7 @@ struct EditRoutineSheet: View {
                         showExercisePicker = true
                     } label: {
                         Label("Add Exercise", systemImage: "plus")
-                            .foregroundColor(Color(hex: "#30d158"))
+                            .foregroundColor(AppTheme.primary)
                     }
                 } header: {
                     HStack {
@@ -1683,7 +1683,7 @@ struct ExerciseSelectSheet: View {
 private struct FilterChipSmall: View {
     let label: String
     let isSelected: Bool
-    var color: Color = Color(hex: "#30d158")
+    var color: Color = AppTheme.primary
     let action: () -> Void
 
     var body: some View {
@@ -1985,7 +1985,7 @@ struct BrowseProgramsSheet: View {
                         HStack(spacing: 12) {
                             Image(systemName: program.icon)
                                 .font(.title2)
-                                .foregroundColor(Color(hex: "#30d158"))
+                                .foregroundColor(AppTheme.primary)
                                 .frame(width: 40)
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(program.name).font(.headline)
@@ -2005,7 +2005,7 @@ struct BrowseProgramsSheet: View {
                                 .font(.subheadline.bold())
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 8)
-                                .background(Color(hex: "#30d158"))
+                                .background(AppTheme.primary)
                                 .foregroundColor(.white)
                                 .cornerRadius(8)
                         }

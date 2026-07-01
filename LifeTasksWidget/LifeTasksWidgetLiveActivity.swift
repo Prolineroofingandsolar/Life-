@@ -9,7 +9,7 @@ import ActivityKit
 import WidgetKit
 import SwiftUI
 
-private let accent = Color(red: 0.19, green: 0.82, blue: 0.35) // #30d158
+private let accent = Color(red: 0.184, green: 0.831, blue: 0.753) // #2FD4C0 brand teal
 
 struct LifeTasksWidgetLiveActivity: Widget {
     var body: some WidgetConfiguration {

@@ -253,7 +253,7 @@ private struct DayCell: View {
             ZStack {
                 if isToday {
                     Circle()
-                        .fill(Color(hex: "#30d158"))
+                        .fill(AppTheme.primary)
                         .frame(width: 28, height: 28)
                 }
                 Text("\(day)")

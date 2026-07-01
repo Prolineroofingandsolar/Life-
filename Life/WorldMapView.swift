@@ -83,7 +83,7 @@ struct WorldMapView: View {
         VStack(spacing: 2) {
             Text(value)
                 .font(.system(size: 18, weight: .bold))
-                .foregroundColor(Color(hex: "#30d158"))
+                .foregroundColor(AppTheme.primary)
             Text(label)
                 .font(.system(size: 11))
                 .foregroundColor(.secondary)

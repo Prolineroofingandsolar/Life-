@@ -135,7 +135,7 @@ struct ActiveWorkoutView: View {
                             } label: {
                                 Label("Add Exercise", systemImage: "plus.circle.fill")
                                     .font(.headline)
-                                    .foregroundColor(Color(hex: "#30d158"))
+                                    .foregroundColor(AppTheme.primary)
                                     .frame(maxWidth: .infinity)
                                     .padding()
                                     .background(Color(.secondarySystemGroupedBackground))
@@ -218,7 +218,7 @@ struct ActiveWorkoutView: View {
                 } label: {
                     Image(systemName: isReorderMode ? "checkmark" : "arrow.up.arrow.down")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(isReorderMode ? Color(hex: "#30d158") : .secondary)
+                        .foregroundColor(isReorderMode ? AppTheme.primary : .secondary)
                 }
                 Menu {
                     Button(role: .destructive) { showDiscardAlert = true } label: {
@@ -238,7 +238,7 @@ struct ActiveWorkoutView: View {
                         .foregroundColor(.white)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 6)
-                        .background(Color(hex: "#30d158"))
+                        .background(AppTheme.primary)
                         .cornerRadius(8)
                 }
             }
@@ -438,7 +438,7 @@ private struct ExerciseCard: View {
                 sessionId: sessionId,
                 sessionExercise: sessionExercise,
                 supersetLabel: nil,
-                accentColor: exercise?.muscle.muscleColor ?? Color(hex: "#30d158"),
+                accentColor: exercise?.muscle.muscleColor ?? AppTheme.primary,
                 onSetDone: { sid in
                     appState.toggleSetDone(sessionId: sessionId, exerciseId: sessionExercise.id, setId: sid)
                     onSetDone(sid)
@@ -455,7 +455,7 @@ private struct ExerciseCard: View {
             } label: {
                 Label("Add Set", systemImage: "plus")
                     .font(.subheadline)
-                    .foregroundColor(Color(hex: "#30d158"))
+                    .foregroundColor(AppTheme.primary)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 11)
             }
@@ -648,7 +648,7 @@ private struct ExerciseCardContent: View {
                 } label: {
                     Label("Add Set", systemImage: "plus")
                         .font(.subheadline)
-                        .foregroundColor(Color(hex: "#30d158"))
+                        .foregroundColor(AppTheme.primary)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
                 }
@@ -824,7 +824,7 @@ private struct SetRow: View {
                 } label: {
                     ZStack {
                         Circle()
-                            .fill(set.done ? Color(hex: "#30d158") : Color(.tertiarySystemFill))
+                            .fill(set.done ? AppTheme.primary : Color(.tertiarySystemFill))
                             .frame(width: 44, height: 44)
                         Image(systemName: set.done ? "checkmark" : "")
                             .font(.system(size: 16, weight: .bold))
@@ -850,7 +850,7 @@ private struct SetRow: View {
             }
             .frame(minHeight: 56)
             .padding(.horizontal, 8)
-            .background(set.done ? Color(hex: "#30d158").opacity(0.08) : Color.clear)
+            .background(set.done ? AppTheme.primary.opacity(0.08) : Color.clear)
             .animation(.easeInOut(duration: 0.2), value: set.done)
             .contextMenu {
                 if !set.isDropSet {
@@ -926,7 +926,7 @@ private struct PlateBreakdownView: View {
             case 25: return Color(hex: "#FF3B30")
             case 20: return Color(hex: "#007AFF")
             case 15: return Color(hex: "#FFD60A")
-            case 10: return Color(hex: "#30D158")
+            case 10: return AppTheme.primary
             case 5:  return Color(hex: "#F2F2F7").opacity(0.9)
             case 2.5: return Color(hex: "#636366")
             default: return Color(hex: "#8E8E93")
@@ -1039,8 +1039,8 @@ private struct PRBanner: View {
         .padding(.vertical, 10)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(Color(hex: "#30d158").opacity(0.15))
-                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color(hex: "#30d158").opacity(0.4), lineWidth: 1))
+                .fill(AppTheme.primary.opacity(0.15))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(AppTheme.primary.opacity(0.4), lineWidth: 1))
         )
     }
 }
@@ -1061,7 +1061,7 @@ private struct RPEPicker: View {
                     Text("\(value)")
                         .font(.caption.bold())
                         .frame(width: 28, height: 22)
-                        .background(current == value ? Color(hex: "#30d158") : Color(.tertiarySystemFill))
+                        .background(current == value ? AppTheme.primary : Color(.tertiarySystemFill))
                         .foregroundColor(current == value ? .white : .secondary)
                         .cornerRadius(6)
                 }
@@ -1176,7 +1176,7 @@ struct EquipmentFilterChips: View {
                             .font(.subheadline)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 7)
-                            .background(isSelected ? Color(hex: "#30d158") : Color(.secondarySystemGroupedBackground))
+                            .background(isSelected ? AppTheme.primary : Color(.secondarySystemGroupedBackground))
                             .foregroundColor(isSelected ? .white : .primary)
                             .cornerRadius(20)
                     }

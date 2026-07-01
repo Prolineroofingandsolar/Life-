@@ -333,11 +333,11 @@ enum AchievementKind: String, Codable, CaseIterable {
     var color: String {
         switch self {
         case .firstWorkout: return "#FF6B35"
-        case .streak7: return "#30d158"
+        case .streak7: return "#2FD4C0"
         case .streak30: return "#FFD700"
         case .totalSets100, .totalSets1000: return "#5E9BF0"
         case .volumePR, .weightPR: return "#FF375F"
-        case .consistency4Weeks: return "#30d158"
+        case .consistency4Weeks: return "#2FD4C0"
         case .totalSessions10, .totalSessions50, .totalSessions100: return "#BF5AF2"
         }
     }
@@ -380,7 +380,7 @@ struct Routine: Codable, Identifiable {
     var name: String
     var exercises: [RoutineExercise] = []
     var createdAt: Date = Date()
-    var colorHex: String = "#30d158"
+    var colorHex: String = "#2FD4C0"
     var emoji: String = "💪"
     var photoData: Data? = nil
 }

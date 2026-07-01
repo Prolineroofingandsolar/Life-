@@ -226,7 +226,9 @@ private struct TodayWorkoutCard: View {
                     .foregroundColor(.white)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 9)
-                    .background(isActive ? Color.orange : AppTheme.primary)
+                    .background {
+                        if isActive { Color.orange } else { AppTheme.brandGradient }
+                    }
                     .clipShape(Capsule())
             }
             .padding(16)
@@ -295,7 +297,7 @@ private struct CareSection: View {
         [
             .init(color: .blue,   progress: settings.waterGoal > 0 ? Double(today.waterGlasses) / Double(settings.waterGoal) : 0),
             .init(color: .orange, progress: settings.mealGoal > 0  ? Double(today.meals.count)  / Double(settings.mealGoal)  : 0),
-            .init(color: .green,  progress: settings.stepGoal > 0  ? Double(today.steps)        / Double(settings.stepGoal)  : 0),
+            .init(color: AppTheme.primary,  progress: settings.stepGoal > 0  ? Double(today.steps)        / Double(settings.stepGoal)  : 0),
         ]
     }
 
@@ -332,7 +334,7 @@ private struct CareSection: View {
                 ) { showMealSheet = true }
 
                 TodayStatBox(
-                    icon: "figure.walk", iconColor: .green,
+                    icon: "figure.walk", iconColor: AppTheme.primary,
                     value: today.steps.formatted(), label: "Steps · \(settings.stepGoal.formatted()) goal",
                     done: today.steps >= settings.stepGoal
                 )

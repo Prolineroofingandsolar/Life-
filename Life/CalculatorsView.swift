@@ -133,7 +133,7 @@ private struct OneRMCalculatorView: View {
                         .foregroundColor(.secondary)
                     Text("\(oneRM.formatted1) \(selectedUnit.label)")
                         .font(.system(size: 34, weight: .bold, design: .rounded))
-                        .foregroundColor(Color(hex: "#30d158"))
+                        .foregroundColor(AppTheme.primary)
                 }
                 .frame(maxWidth: .infinity)
                 .cardStyle()
@@ -267,7 +267,7 @@ private struct PlateCalculatorView: View {
                         Spacer()
                         Text("Total: \(totalLoaded.formatted1) \(selectedUnit.label)")
                             .font(.subheadline)
-                            .foregroundColor(Color(hex: "#30d158"))
+                            .foregroundColor(AppTheme.primary)
                             .fontWeight(.semibold)
                     }
 
@@ -304,8 +304,8 @@ private struct PlateChip: View {
         .font(.subheadline)
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
-        .background(Color(hex: "#30d158").opacity(0.15))
-        .foregroundColor(Color(hex: "#30d158"))
+        .background(AppTheme.primary.opacity(0.15))
+        .foregroundColor(AppTheme.primary)
         .cornerRadius(20)
     }
 }
@@ -397,7 +397,7 @@ private struct BMICalculatorView: View {
     private var bmiCategory: (label: String, color: Color) {
         switch bmi {
         case ..<18.5:  return ("Underweight", .blue)
-        case ..<25:    return ("Normal", Color(hex: "#30d158"))
+        case ..<25:    return ("Normal", AppTheme.primary)
         case ..<30:    return ("Overweight", .orange)
         default:       return ("Obese", .red)
         }
@@ -480,7 +480,7 @@ private struct BMICalculatorView: View {
                         .foregroundColor(.secondary)
                     Text(bmi.formatted1)
                         .font(.system(size: 52, weight: .bold, design: .rounded))
-                        .foregroundColor(Color(hex: "#30d158"))
+                        .foregroundColor(AppTheme.primary)
 
                     Text(bmiCategory.label)
                         .font(.subheadline.bold())
@@ -500,7 +500,7 @@ private struct BMICalculatorView: View {
 
                     let categories: [(String, String, Color)] = [
                         ("Underweight", "< 18.5", .blue),
-                        ("Normal", "18.5 – 24.9", Color(hex: "#30d158")),
+                        ("Normal", "18.5 – 24.9", AppTheme.primary),
                         ("Overweight", "25 – 29.9", .orange),
                         ("Obese", "≥ 30", .red)
                     ]
