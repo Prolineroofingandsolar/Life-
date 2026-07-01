@@ -1071,8 +1071,15 @@ final class AppState {
 
     // MARK: - Workout Analytics
 
+    /// A session counts as a real workout only if it's finished AND has at least
+    /// one completed set. Excludes empty/accidental finishes so counts aren't
+    /// inflated (all-time total, this-week, streak, achievements all use this).
+    var completedWorkouts: [WorkoutSession] {
+        sessions.filter { $0.finishedAt != nil && $0.totalSets > 0 }
+    }
+
     var workoutStreak: Int {
-        let finished = sessions.filter { $0.finishedAt != nil }
+        let finished = completedWorkouts
         guard !finished.isEmpty else { return 0 }
         let cal = Calendar.current
         let today = cal.startOfDay(for: Date())
@@ -1245,8 +1252,7 @@ final class AppState {
     // MARK: - XP / Level
 
     var xpPoints: Int {
-        let finished = sessions.filter { $0.finishedAt != nil }
-        return finished.count * 100 + workoutStreak * 10 + achievements.count * 50
+        return completedWorkouts.count * 100 + workoutStreak * 10 + achievements.count * 50
     }
     var xpLevel: Int  { xpPoints / 500 + 1 }
     var xpProgress: Double { Double(xpPoints % 500) / 500.0 }
@@ -1271,13 +1277,13 @@ final class AppState {
     }
 
     private var finishedSessionsSorted: [WorkoutSession] {
-        sessions.filter { $0.finishedAt != nil }
+        completedWorkouts
             .sorted { ($0.finishedAt ?? .distantPast) > ($1.finishedAt ?? .distantPast) }
     }
 
     var workoutsThisWeekCount: Int {
         let start = weekStartDate
-        return sessions.filter { ($0.finishedAt ?? .distantPast) >= start }.count
+        return completedWorkouts.filter { ($0.finishedAt ?? .distantPast) >= start }.count
     }
 
     var trainingSecondsThisWeek: Int {
@@ -1390,7 +1396,7 @@ final class AppState {
     // MARK: - Achievements
 
     func checkAndGrantAchievements() {
-        let finishedSessions = sessions.filter { $0.finishedAt != nil }
+        let finishedSessions = completedWorkouts
         let totalSets = finishedSessions.reduce(0) { $0 + $1.totalSets }
         let unlocked = Set(achievements.map(\.kind))
 
@@ -1519,7 +1525,7 @@ final class AppState {
             let weekAgo = cal.date(byAdding: .weekOfYear, value: -offset, to: now) ?? now
             let weekStart = cal.date(from: cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: weekAgo)) ?? weekAgo
             let weekEnd   = cal.date(byAdding: .day, value: 7, to: weekStart) ?? weekStart
-            let count = sessions.filter {
+            let count = completedWorkouts.filter {
                 guard let fin = $0.finishedAt else { return false }
                 return fin >= weekStart && fin < weekEnd
             }.count

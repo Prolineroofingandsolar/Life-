@@ -479,7 +479,7 @@ private struct WeekStripView: View {
     let onTapSession: (WorkoutSession) -> Void
 
     private var finishedSessions: [WorkoutSession] {
-        appState.sessions.filter { $0.finishedAt != nil }
+        appState.completedWorkouts
     }
 
     private var weekDates: [Date] {

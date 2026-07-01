@@ -6,6 +6,7 @@ struct TodayView: View {
     @Environment(AppState.self) private var appState
     @State private var showSettings = false
     @State private var showActiveWorkout = false
+    @State private var presentedWorkoutId: String?
     @State private var dayToken = UUID()
 
     private var greeting: String {
@@ -68,7 +69,7 @@ struct TodayView: View {
 
     private var workedOutToday: Bool {
         let key = Date().dayKey
-        return appState.sessions.contains { $0.finishedAt != nil && $0.startedAt.dayKey == key }
+        return appState.completedWorkouts.contains { $0.startedAt.dayKey == key }
     }
 
     var body: some View {
@@ -119,9 +120,12 @@ struct TodayView: View {
             .sheet(isPresented: $showSettings) {
                 SettingsView()
             }
+            .onChange(of: showActiveWorkout) { _, shown in
+                if shown { presentedWorkoutId = appState.activeSession?.id }
+            }
             .sheet(isPresented: $showActiveWorkout) {
-                if let session = appState.activeSession {
-                    ActiveWorkoutView(isPresented: $showActiveWorkout, sessionId: session.id)
+                if let id = presentedWorkoutId {
+                    ActiveWorkoutView(isPresented: $showActiveWorkout, sessionId: id)
                 }
             }
         }
@@ -290,7 +294,7 @@ private struct CareSection: View {
 
     private var workedOutToday: Bool {
         let key = Date().dayKey
-        return appState.sessions.contains { $0.finishedAt != nil && $0.startedAt.dayKey == key }
+        return appState.completedWorkouts.contains { $0.startedAt.dayKey == key }
     }
 
     private var rings: [ActivityRingsView.Ring] {

@@ -196,7 +196,7 @@ private struct ActivityTab: View {
                 MuscleRecoverySection()
             }
 
-            if !appState.sessions.filter({ $0.finishedAt != nil }).isEmpty {
+            if !appState.completedWorkouts.isEmpty {
                 VStack(spacing: 12) {
                     SectionHeader(title: "Last 8 Weeks")
                     CardContainer {
