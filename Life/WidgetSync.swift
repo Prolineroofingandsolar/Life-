@@ -59,12 +59,24 @@ enum WidgetSync {
     }
 
     // MARK: - Habit Shape
+    // Field names MUST match the widget's `WidgetHabit` decoder
+    // (LifeTasksWidget/SharedHabitStore.swift) or decoding fails and the widget
+    // falls back to placeholder data.
 
     struct WidgetHabit: Codable {
         let id: String
         let name: String
         let emoji: String
-        let completedToday: Bool
+        let category: String
+        let kind: String          // "build" | "break"
+        let targetType: String
+        let targetCount: Int
+        let targetUnit: String
+        let currentCount: Int
+        let isCompleted: Bool
+        let isSlipped: Bool
+        let streak: Int
+        let progress: Double
     }
 
     private static let habitsDefaultsKey = "life_widget_habits"
@@ -72,16 +84,35 @@ enum WidgetSync {
 
     // MARK: - Sync Habits
 
-    static func syncHabits(habits: [Habit], todayKey: String) {
-        let widgetHabits = habits.filter { !$0.isArchived }.map { habit in
+    static func syncHabits(habits: [Habit], todayKey: String, streakFor: (Habit) -> Int) {
+        let widgetHabits = habits.filter { !$0.isArchived }.map { habit -> WidgetHabit in
             let todayLog = habit.logs.first { $0.dayKey == todayKey }
-            let completedToday: Bool
+            let currentCount = todayLog?.count ?? 0
+            let isSlipped = todayLog?.slipped == true
+            let isCompleted: Bool
             if habit.kind == .break {
-                completedToday = todayLog?.slipped != true
+                isCompleted = !isSlipped
             } else {
-                completedToday = todayLog.map { !$0.slipped && $0.count >= habit.targetCount } ?? false
+                isCompleted = !isSlipped && currentCount >= habit.targetCount
             }
-            return WidgetHabit(id: habit.id, name: habit.name, emoji: habit.emoji, completedToday: completedToday)
+            let progress: Double = habit.targetCount > 0
+                ? min(1.0, Double(currentCount) / Double(habit.targetCount))
+                : (isCompleted ? 1.0 : 0.0)
+            return WidgetHabit(
+                id: habit.id,
+                name: habit.name,
+                emoji: habit.emoji,
+                category: habit.category.rawValue,
+                kind: habit.kind.rawValue,
+                targetType: habit.targetType.rawValue,
+                targetCount: habit.targetCount,
+                targetUnit: habit.targetUnit,
+                currentCount: currentCount,
+                isCompleted: isCompleted,
+                isSlipped: isSlipped,
+                streak: streakFor(habit),
+                progress: progress
+            )
         }
 
         guard let data = try? JSONEncoder().encode(widgetHabits) else { return }

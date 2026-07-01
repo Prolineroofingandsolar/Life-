@@ -144,7 +144,7 @@ final class AppState {
             UserDefaults.standard.set(data, forKey: PersistenceKey.appState)
         }
         WidgetSync.sync(tasks: tasks)
-        WidgetSync.syncHabits(habits: habits, todayKey: todayKey)
+        WidgetSync.syncHabits(habits: habits, todayKey: todayKey, streakFor: streakFor)
         if let uid = cloudUserId {
             syncState = .syncing
             FirestoreSync.shared.scheduleUpload(snapshot, userId: uid)
@@ -568,6 +568,42 @@ final class AppState {
             habits[idx].logs.append(HabitLogEntry(dayKey: key, count: 1))
         }
         save()
+    }
+
+    /// Mark a habit complete for today (idempotent). Used to apply completions
+    /// queued by the widget's interactive button.
+    func completeHabitToday(id: String) {
+        guard let idx = habits.firstIndex(where: { $0.id == id }) else { return }
+        let key = todayKey
+        if habits[idx].kind == .break {
+            if let logIdx = habits[idx].logs.firstIndex(where: { $0.dayKey == key }) {
+                habits[idx].logs[logIdx].slipped = false
+            }
+            // No log for a break habit already counts as maintained.
+        } else {
+            let target = max(1, habits[idx].targetCount)
+            if let logIdx = habits[idx].logs.firstIndex(where: { $0.dayKey == key }) {
+                habits[idx].logs[logIdx].slipped = false
+                if habits[idx].logs[logIdx].count < target {
+                    habits[idx].logs[logIdx].count = target
+                }
+            } else {
+                habits[idx].logs.append(HabitLogEntry(dayKey: key, count: target))
+            }
+        }
+        save()
+    }
+
+    /// Apply any habit completions the widget queued (its interactive button
+    /// writes ids to the App Group; the app logs them next time it's active).
+    func drainPendingHabitCompletions() {
+        let appGroup = "group.uk.co.prolineroofingandsolar.life"
+        guard let defaults = UserDefaults(suiteName: appGroup),
+              defaults.string(forKey: "life_pending_completions_date") == todayKey else { return }
+        let pending = (defaults.array(forKey: "life_pending_completions_v1") as? [String]) ?? []
+        guard !pending.isEmpty else { return }
+        defaults.set([String](), forKey: "life_pending_completions_v1")
+        for id in pending { completeHabitToday(id: id) }
     }
 
     func incHabitToday(id: String) {

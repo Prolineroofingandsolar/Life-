@@ -70,7 +70,7 @@ private struct SmallHabitsView: View {
                     .stroke(Color.white.opacity(0.1), lineWidth: 8)
                 Circle()
                     .trim(from: 0, to: progress)
-                    .stroke(Color(red: 0.19, green: 0.82, blue: 0.35), style: StrokeStyle(lineWidth: 8, lineCap: .round))
+                    .stroke(Color(red: 0.184, green: 0.831, blue: 0.753), style: StrokeStyle(lineWidth: 8, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                 VStack(spacing: 0) {
                     Text("\(entry.completed)")
@@ -126,9 +126,18 @@ private struct MediumHabitsView: View {
                             .font(.system(size: 13))
                             .lineLimit(1)
                         Spacer()
-                        Image(systemName: habit.isCompleted ? "checkmark.circle.fill" : "circle")
-                            .foregroundColor(habit.isCompleted ? Color(red: 0.19, green: 0.82, blue: 0.35) : Color.secondary.opacity(0.4))
-                            .font(.system(size: 16))
+                        if #available(iOS 17.0, *), !habit.isCompleted {
+                            Button(intent: CompleteHabitIntent(habitId: habit.id)) {
+                                Image(systemName: "circle")
+                                    .foregroundColor(Color.secondary.opacity(0.4))
+                                    .font(.system(size: 16))
+                            }
+                            .buttonStyle(.plain)
+                        } else {
+                            Image(systemName: habit.isCompleted ? "checkmark.circle.fill" : "circle")
+                                .foregroundColor(habit.isCompleted ? Color(red: 0.184, green: 0.831, blue: 0.753) : Color.secondary.opacity(0.4))
+                                .font(.system(size: 16))
+                        }
                     }
                     .padding(.vertical, 4)
                     if habit.id != entry.habits.prefix(4).last?.id {
