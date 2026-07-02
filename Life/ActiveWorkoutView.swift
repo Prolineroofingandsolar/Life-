@@ -306,14 +306,12 @@ struct ActiveWorkoutView: View {
             ExercisePickerSheet(sessionId: sessionId)
         }
         .sheet(isPresented: $showTimeEditor) {
-            if let session = session {
-                WorkoutTimeEditorSheet(
-                    date: session.finishedAt ?? session.startedAt,
-                    durationSeconds: session.durationSeconds
-                ) { newDate, newDuration in
-                    appState.setSessionTimes(sessionId: sessionId, date: newDate, durationSeconds: newDuration)
-                    elapsedSeconds = newDuration
-                }
+            WorkoutTimeEditorSheet(
+                date: session.finishedAt ?? session.startedAt,
+                durationSeconds: session.durationSeconds
+            ) { newDate, newDuration in
+                appState.setSessionTimes(sessionId: sessionId, date: newDate, durationSeconds: newDuration)
+                elapsedSeconds = newDuration
             }
         }
         .fullScreenCover(isPresented: $showSummary) {
