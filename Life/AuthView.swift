@@ -22,6 +22,11 @@ struct AuthView: View {
 
     private enum Field { case email, password, confirm }
 
+    /// Sign in with Apple requires a paid Apple Developer account (personal
+    /// teams can't provision the capability). Flip to `true` once enrolled and
+    /// re-add the `com.apple.developer.applesignin` entitlement.
+    private static let appleSignInEnabled = false
+
     /// Minimum password length for sign-up. Above the Firebase default of 6
     /// to give the user's data a sensible baseline of protection.
     private static let minPasswordLength = 10
@@ -32,7 +37,7 @@ struct AuthView: View {
                 Spacer().frame(height: 60)
                 logo
                 fields
-                appleButton
+                if Self.appleSignInEnabled { appleButton }
                 modeSwitch
                 forgotPasswordButton
                 Spacer().frame(height: 60)
