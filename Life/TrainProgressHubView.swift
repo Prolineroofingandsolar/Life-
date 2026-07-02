@@ -584,6 +584,8 @@ private struct BodyTab: View {
                     let minV = values.min() ?? 0
                     let maxV = values.max() ?? 0
                     let pad = Swift.max(0.5, (maxV - minV) * 0.25)
+                    let now = Date()
+                    let rangeStart = Calendar.current.date(byAdding: .day, value: -weightRange.days, to: now) ?? now
                     CardContainer {
                         let selected = nearest(trend, to: selectedDate)
                         let shown = selected ?? trend.last
@@ -638,6 +640,7 @@ private struct BodyTab: View {
                             }
                         }
                         .chartXSelection(value: $selectedDate)
+                        .chartXScale(domain: rangeStart...now)
                         .chartYScale(domain: (minV - pad)...(maxV + pad))
                         .chartYAxis {
                             AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { value in
