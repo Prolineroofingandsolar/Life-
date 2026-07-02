@@ -520,6 +520,21 @@ private struct BodyTab: View {
     @Environment(AppState.self) private var appState
     @State private var showPhotos = false
     @State private var hk = HealthKitManager()
+    @State private var weightRange: WeightRange = .threeMonth
+
+    enum WeightRange: String, CaseIterable {
+        case week = "W", month = "1M", threeMonth = "3M", sixMonth = "6M", year = "1Y"
+        var days: Int {
+            switch self {
+            case .week: return 7
+            case .month: return 30
+            case .threeMonth: return 90
+            case .sixMonth: return 180
+            case .year: return 365
+            }
+        }
+        var label: String { rawValue }
+    }
 
     private var columns: [GridItem] { [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)] }
     private var unit: String { appState.workoutSettings.weightUnit.label }
@@ -547,8 +562,14 @@ private struct BodyTab: View {
             }
 
             VStack(spacing: 12) {
-                SectionHeader(title: "Weight Trend", trailing: "3 Months")
-                let trend = appState.weightTrend(days: 90)
+                SectionHeader(title: "Weight Trend")
+                Picker("Range", selection: $weightRange) {
+                    ForEach(WeightRange.allCases, id: \.self) { r in
+                        Text(r.label).tag(r)
+                    }
+                }
+                .pickerStyle(.segmented)
+                let trend = appState.weightTrend(days: weightRange.days)
                 if trend.count >= 2 {
                     CardContainer {
                         Chart(trend) { point in
