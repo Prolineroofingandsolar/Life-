@@ -521,6 +521,12 @@ private struct BodyTab: View {
     @State private var showPhotos = false
     @State private var hk = HealthKitManager()
     @State private var weightRange: WeightRange = .threeMonth
+    @State private var selectedDate: Date?
+
+    private func nearest(_ trend: [(date: Date, value: Double)], to date: Date?) -> (date: Date, value: Double)? {
+        guard let date else { return nil }
+        return trend.min { abs($0.date.timeIntervalSince(date)) < abs($1.date.timeIntervalSince(date)) }
+    }
 
     enum WeightRange: String, CaseIterable {
         case week = "W", month = "1M", threeMonth = "3M", sixMonth = "6M", year = "1Y"
@@ -579,6 +585,7 @@ private struct BodyTab: View {
                     let maxV = values.max() ?? 0
                     let pad = Swift.max(0.5, (maxV - minV) * 0.25)
                     CardContainer {
+                        let selected = nearest(trend, to: selectedDate)
                         Chart {
                             ForEach(Array(trend.enumerated()), id: \.offset) { _, point in
                                 AreaMark(x: .value("Date", point.date), y: .value("Weight", point.value))
@@ -594,7 +601,32 @@ private struct BodyTab: View {
                                     .foregroundStyle(PColor.accent)
                                     .symbolSize(22)
                             }
+                            if let selected {
+                                RuleMark(x: .value("Date", selected.date))
+                                    .foregroundStyle(PColor.textSecondary.opacity(0.4))
+                                    .annotation(position: .top, spacing: 0,
+                                                overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
+                                        VStack(spacing: 1) {
+                                            Text("\(selected.value, specifier: "%.1f") \(unit)")
+                                                .font(.system(size: 14, weight: .bold))
+                                                .foregroundColor(PColor.textPrimary)
+                                            Text(selected.date, format: .dateTime.month(.abbreviated).day().year())
+                                                .font(.system(size: 11))
+                                                .foregroundColor(PColor.textSecondary)
+                                        }
+                                        .padding(.horizontal, 10).padding(.vertical, 6)
+                                        .background(RoundedRectangle(cornerRadius: 8).fill(PColor.card)
+                                            .shadow(color: .black.opacity(0.12), radius: 6, y: 2))
+                                    }
+                                PointMark(x: .value("Date", selected.date), y: .value("Weight", selected.value))
+                                    .foregroundStyle(.white)
+                                    .symbolSize(120)
+                                PointMark(x: .value("Date", selected.date), y: .value("Weight", selected.value))
+                                    .foregroundStyle(PColor.accent)
+                                    .symbolSize(60)
+                            }
                         }
+                        .chartXSelection(value: $selectedDate)
                         .chartYScale(domain: (minV - pad)...(maxV + pad))
                         .chartYAxis {
                             AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { value in
