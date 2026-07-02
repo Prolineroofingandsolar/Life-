@@ -586,6 +586,26 @@ private struct BodyTab: View {
                     let pad = Swift.max(0.5, (maxV - minV) * 0.25)
                     CardContainer {
                         let selected = nearest(trend, to: selectedDate)
+                        let shown = selected ?? trend.last
+
+                        // Fixed callout above the chart (never clips) — shows the
+                        // selected point's weight + date, like Apple Health.
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text(shown.map { String(format: "%.1f", $0.value) } ?? "—")
+                                .font(.system(size: 26, weight: .bold, design: .rounded))
+                                .foregroundColor(PColor.textPrimary)
+                            Text(unit)
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(PColor.textSecondary)
+                            Spacer()
+                            if let shown {
+                                Text(shown.date, format: .dateTime.weekday(.abbreviated).month(.abbreviated).day().year())
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundColor(selected != nil ? PColor.accent : PColor.textSecondary)
+                            }
+                        }
+                        .padding(.bottom, 4)
+
                         Chart {
                             ForEach(Array(trend.enumerated()), id: \.offset) { _, point in
                                 AreaMark(x: .value("Date", point.date), y: .value("Weight", point.value))
@@ -597,33 +617,24 @@ private struct BodyTab: View {
                                     .interpolationMethod(.catmullRom)
                                     .foregroundStyle(PColor.accent)
                                     .lineStyle(StrokeStyle(lineWidth: 2.5))
+                                // White-ringed dots so each entry reads clearly.
+                                PointMark(x: .value("Date", point.date), y: .value("Weight", point.value))
+                                    .foregroundStyle(.white)
+                                    .symbolSize(48)
                                 PointMark(x: .value("Date", point.date), y: .value("Weight", point.value))
                                     .foregroundStyle(PColor.accent)
-                                    .symbolSize(22)
+                                    .symbolSize(24)
                             }
                             if let selected {
                                 RuleMark(x: .value("Date", selected.date))
-                                    .foregroundStyle(PColor.textSecondary.opacity(0.4))
-                                    .annotation(position: .top, spacing: 0,
-                                                overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
-                                        VStack(spacing: 1) {
-                                            Text("\(selected.value, specifier: "%.1f") \(unit)")
-                                                .font(.system(size: 14, weight: .bold))
-                                                .foregroundColor(PColor.textPrimary)
-                                            Text(selected.date, format: .dateTime.month(.abbreviated).day().year())
-                                                .font(.system(size: 11))
-                                                .foregroundColor(PColor.textSecondary)
-                                        }
-                                        .padding(.horizontal, 10).padding(.vertical, 6)
-                                        .background(RoundedRectangle(cornerRadius: 8).fill(PColor.card)
-                                            .shadow(color: .black.opacity(0.12), radius: 6, y: 2))
-                                    }
+                                    .foregroundStyle(PColor.accent.opacity(0.5))
+                                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
                                 PointMark(x: .value("Date", selected.date), y: .value("Weight", selected.value))
                                     .foregroundStyle(.white)
-                                    .symbolSize(120)
+                                    .symbolSize(150)
                                 PointMark(x: .value("Date", selected.date), y: .value("Weight", selected.value))
                                     .foregroundStyle(PColor.accent)
-                                    .symbolSize(60)
+                                    .symbolSize(80)
                             }
                         }
                         .chartXSelection(value: $selectedDate)
