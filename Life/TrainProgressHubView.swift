@@ -562,28 +562,57 @@ private struct BodyTab: View {
             }
 
             VStack(spacing: 12) {
-                SectionHeader(title: "Weight Trend")
+                SectionHeader(title: "Weight Trend", trailing: unit)
                 Picker("Range", selection: $weightRange) {
                     ForEach(WeightRange.allCases, id: \.self) { r in
                         Text(r.label).tag(r)
                     }
                 }
                 .pickerStyle(.segmented)
-                let trend = appState.weightTrend(days: weightRange.days)
+                let unitEnum = appState.workoutSettings.weightUnit
+                let trend = appState.weightTrend(days: weightRange.days).map {
+                    (date: $0.date, value: WeightUnit.kg.convert($0.value, to: unitEnum))
+                }
                 if trend.count >= 2 {
+                    let values = trend.map(\.value)
+                    let minV = values.min() ?? 0
+                    let maxV = values.max() ?? 0
+                    let pad = Swift.max(0.5, (maxV - minV) * 0.25)
                     CardContainer {
-                        Chart(trend) { point in
-                            LineMark(x: .value("Date", point.date), y: .value("Weight", point.value))
-                                .interpolationMethod(.catmullRom)
-                                .foregroundStyle(PColor.accent)
-                            AreaMark(x: .value("Date", point.date), y: .value("Weight", point.value))
-                                .interpolationMethod(.catmullRom)
-                                .foregroundStyle(LinearGradient(
-                                    colors: [PColor.accent.opacity(0.25), PColor.accent.opacity(0.0)],
-                                    startPoint: .top, endPoint: .bottom))
+                        Chart {
+                            ForEach(Array(trend.enumerated()), id: \.offset) { _, point in
+                                AreaMark(x: .value("Date", point.date), y: .value("Weight", point.value))
+                                    .interpolationMethod(.catmullRom)
+                                    .foregroundStyle(LinearGradient(
+                                        colors: [PColor.accent.opacity(0.22), PColor.accent.opacity(0.0)],
+                                        startPoint: .top, endPoint: .bottom))
+                                LineMark(x: .value("Date", point.date), y: .value("Weight", point.value))
+                                    .interpolationMethod(.catmullRom)
+                                    .foregroundStyle(PColor.accent)
+                                    .lineStyle(StrokeStyle(lineWidth: 2.5))
+                                PointMark(x: .value("Date", point.date), y: .value("Weight", point.value))
+                                    .foregroundStyle(PColor.accent)
+                                    .symbolSize(22)
+                            }
                         }
-                        .chartYAxis { AxisMarks(position: .leading) }
-                        .frame(height: 180)
+                        .chartYScale(domain: (minV - pad)...(maxV + pad))
+                        .chartYAxis {
+                            AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { value in
+                                AxisGridLine().foregroundStyle(Color.gray.opacity(0.15))
+                                AxisValueLabel {
+                                    if let v = value.as(Double.self) {
+                                        Text("\(v, specifier: "%.1f")")
+                                    }
+                                }
+                            }
+                        }
+                        .chartXAxis {
+                            AxisMarks(values: .automatic(desiredCount: 4)) { _ in
+                                AxisGridLine().foregroundStyle(Color.gray.opacity(0.15))
+                                AxisValueLabel(format: .dateTime.month(.abbreviated).day())
+                            }
+                        }
+                        .frame(height: 200)
                     }
                 } else {
                     EmptyHint(text: "Log your weight to see the trend")
