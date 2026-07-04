@@ -1817,6 +1817,7 @@ private struct SessionSetRow: View {
 
 struct MuscleRecoverySection: View {
     @Environment(AppState.self) private var appState
+    @State private var showMap = false
 
     private var muscles: [String] {
         Array(Set(appState.exercises.filter { $0.kind != .cardio }.map(\.muscle))).sorted()
@@ -1824,10 +1825,24 @@ struct MuscleRecoverySection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("MUSCLE RECOVERY")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(Color(hex: "#A0A0B0"))
+            Button {
+                showMap = true
+            } label: {
+                HStack {
+                    Text("MUSCLE RECOVERY")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(Color(hex: "#A0A0B0"))
+                    Spacer()
+                    HStack(spacing: 3) {
+                        Text("Body map")
+                        Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
+                    }
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(AppTheme.primary)
+                }
                 .padding(.horizontal, 16)
+            }
+            .buttonStyle(.plain)
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
@@ -1866,6 +1881,9 @@ struct MuscleRecoverySection: View {
                 }
             }
             .padding(.horizontal, 16)
+        }
+        .sheet(isPresented: $showMap) {
+            MuscleRecoveryMapView()
         }
     }
 }
