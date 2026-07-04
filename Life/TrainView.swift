@@ -16,6 +16,7 @@ struct TrainView: View {
     @State private var showBrowsePrograms = false
     @State private var showPrograms = false
     @State private var hubTab: TrainProgressHubView.HubTab? = nil
+    @State private var showMuscleMap = false
     @State private var pulseResume = false
     @State private var planDate: Date? = nil
     @State private var sessionForDetail: WorkoutSession? = nil
@@ -157,6 +158,10 @@ struct TrainView: View {
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
+                    Button { showMuscleMap = true } label: {
+                        Image(systemName: "figure.arms.open")
+                            .foregroundColor(AppTheme.trainAccent)
+                    }
                     Button { hubTab = .activity } label: {
                         Image(systemName: "chart.xyaxis.line")
                             .foregroundColor(AppTheme.trainAccent)
@@ -177,6 +182,7 @@ struct TrainView: View {
                     ActiveWorkoutView(isPresented: $showActiveWorkout, sessionId: id)
                 }
             }
+            .sheet(isPresented: $showMuscleMap) { MuscleRecoveryMapView() }
             .sheet(isPresented: $showExerciseLibrary) { ExerciseLibraryView() }
             .sheet(isPresented: $showAddRoutine) { AddRoutineSheet() }
             .sheet(isPresented: $showAIRoutine) { AIRoutineSheet() }
