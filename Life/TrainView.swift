@@ -918,21 +918,40 @@ private struct PRCardView: View {
 private struct MuscleVolumeSection: View {
     @Environment(AppState.self) private var appState
 
-    private var volumeData: [(muscle: String, volumeKg: Double)] {
-        appState.volumeThisWeekByMuscle()
+    private struct MuscleWeek {
+        let muscle: String
+        let sets: Int
+        let volumeKg: Double
+        let target: (min: Int, max: Int)
+    }
+
+    private var weeklyData: [MuscleWeek] {
+        let setsMap = Dictionary(uniqueKeysWithValues: appState.setsThisWeekByMuscle().map { ($0.muscle, $0.sets) })
+        let volMap = Dictionary(uniqueKeysWithValues: appState.volumeThisWeekByMuscle().map { ($0.muscle, $0.volumeKg) })
+        return setsMap.keys.map { m in
+            MuscleWeek(muscle: m, sets: setsMap[m] ?? 0, volumeKg: volMap[m] ?? 0, target: appState.weeklySetTarget(forMuscle: m))
+        }.sorted { $0.sets > $1.sets }
+    }
+
+    /// Muted while under the minimum effective volume, the muscle's own
+    /// color once inside its research-backed weekly range, amber past the
+    /// top of that range.
+    private func barColor(_ item: MuscleWeek) -> Color {
+        if item.sets < item.target.min { return item.muscle.muscleColor.opacity(0.4) }
+        if item.sets > item.target.max { return .orange }
+        return item.muscle.muscleColor
     }
 
     var body: some View {
-        if !volumeData.isEmpty {
+        if !weeklyData.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
-                Text("THIS WEEK'S VOLUME")
+                Text("THIS WEEK'S SETS")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(Color(hex: "#A0A0B0"))
                     .padding(.horizontal, 16)
 
                 VStack(spacing: 8) {
-                    ForEach(volumeData.prefix(7), id: \.muscle) { item in
-                        let maxVol = volumeData.first?.volumeKg ?? 1
+                    ForEach(weeklyData.prefix(9), id: \.muscle) { item in
                         HStack(spacing: 10) {
                             HStack(spacing: 5) {
                                 Circle()
@@ -945,22 +964,22 @@ private struct MuscleVolumeSection: View {
                             .frame(width: 80, alignment: .leading)
 
                             GeometryReader { geo in
-                                let ratio = maxVol > 0 ? item.volumeKg / maxVol : 0
+                                let ratio = item.target.max > 0 ? Double(item.sets) / Double(item.target.max) : 0
                                 ZStack(alignment: .leading) {
                                     RoundedRectangle(cornerRadius: 4)
                                         .fill(Color.primary.opacity(0.07))
                                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                                     RoundedRectangle(cornerRadius: 4)
-                                        .fill(item.muscle.muscleColor.opacity(0.75))
-                                        .frame(width: max(4, geo.size.width * ratio))
+                                        .fill(barColor(item))
+                                        .frame(width: item.sets > 0 ? max(4, geo.size.width * min(1.2, ratio)) : 0)
                                 }
                             }
                             .frame(height: 14)
 
-                            Text("\(Int(item.volumeKg))kg")
+                            Text("\(item.sets)/\(item.target.max)")
                                 .font(.caption2.monospacedDigit())
                                 .foregroundColor(Color(hex: "#A0A0B0"))
-                                .frame(width: 52, alignment: .trailing)
+                                .frame(width: 44, alignment: .trailing)
                         }
                     }
                 }
@@ -968,6 +987,11 @@ private struct MuscleVolumeSection: View {
                 .background(AppTheme.trainCard)
                 .cornerRadius(14)
                 .padding(.horizontal, 16)
+
+                Text("Target range shown is per-muscle weekly sets (min–max) for hypertrophy.")
+                    .font(.caption2)
+                    .foregroundColor(Color(hex: "#A0A0B0"))
+                    .padding(.horizontal, 16)
             }
         }
     }

@@ -115,6 +115,16 @@ struct MuscleRecoveryMapView: View {
         trainingInfo(g)?.exerciseBreakdown ?? []
     }
 
+    private func weeklySets(_ g: MuscleGroup) -> Int {
+        guard let m = g.appMuscle else { return 0 }
+        return appState.setsThisWeekByMuscle().first { $0.muscle == m }?.sets ?? 0
+    }
+
+    private func weeklyTarget(_ g: MuscleGroup) -> (min: Int, max: Int) {
+        guard let m = g.appMuscle else { return (8, 16) }
+        return appState.weeklySetTarget(forMuscle: m)
+    }
+
     /// "Bicep Curls · 2 sets · 60kg" — the weight figure is omitted for
     /// bodyweight/cardio exercises, where volume is a rep-count proxy rather
     /// than an actual load moved.
@@ -349,6 +359,27 @@ struct MuscleRecoveryMapView: View {
                 miniStat("FRESH IN", freshIn(g), freshIn(g) == "Ready" ? green : .primary)
             }
             .padding(.top, 16)
+
+            let weekSets = weeklySets(g)
+            let target = weeklyTarget(g)
+            let weekColor: Color = weekSets < target.min ? subtext : (weekSets > target.max ? orange : green)
+            HStack {
+                Text("THIS WEEK").font(.system(size: 12, weight: .medium)).tracking(1.5).foregroundColor(dim)
+                Spacer()
+                Text("\(weekSets) / \(target.min)–\(target.max) sets")
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundColor(weekColor)
+            }
+            .padding(.top, 16).padding(.bottom, 7)
+            GeometryReader { geo in
+                let ratio = target.max > 0 ? Swift.min(1.2, Double(weekSets) / Double(target.max)) : 0
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 6).fill(bg).frame(height: 9)
+                    RoundedRectangle(cornerRadius: 6).fill(weekColor)
+                        .frame(width: geo.size.width * CGFloat(ratio), height: 9)
+                }
+            }
+            .frame(height: 9)
 
             if !trained.isEmpty {
                 Text("LAST SESSION").font(.system(size: 11, weight: .medium)).tracking(1.5).foregroundColor(dim)

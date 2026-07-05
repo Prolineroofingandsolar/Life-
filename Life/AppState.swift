@@ -1279,6 +1279,49 @@ final class AppState {
             .sorted { $0.volumeKg > $1.volumeKg }
     }
 
+    /// Completed sets per muscle so far this (calendar) week.
+    func setsThisWeekByMuscle() -> [(muscle: String, sets: Int)] {
+        let cal = Calendar.current
+        let weekStart = cal.date(from: cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date())) ?? Date()
+        let thisWeek = sessions.filter {
+            guard let fin = $0.finishedAt else { return false }
+            return fin >= weekStart
+        }
+        var map: [String: Int] = [:]
+        for session in thisWeek {
+            for ex in session.exercises {
+                guard let exercise = exercises.first(where: { $0.id == ex.exerciseId }) else { continue }
+                let sets = ex.sets.filter(\.done).count
+                guard sets > 0 else { continue }
+                map[exercise.muscle, default: 0] += sets
+            }
+        }
+        return map.map { (muscle: $0.key, sets: $0.value) }
+            .sorted { $0.sets > $1.sets }
+    }
+
+    /// Weekly set-volume landmarks per muscle group for hypertrophy —
+    /// roughly minimum-effective to near-maximum-recoverable volume, per
+    /// commonly cited strength & conditioning volume landmarks (e.g.
+    /// Renaissance Periodization / Schoenfeld-style guidance). "Legs" here
+    /// covers both quads and hamstrings, so its range sits higher than a
+    /// single-muscle target would.
+    private static let weeklySetTargets: [String: (min: Int, max: Int)] = [
+        "Chest":     (10, 20),
+        "Back":      (10, 20),
+        "Shoulders": (8, 16),
+        "Biceps":    (8, 14),
+        "Triceps":   (8, 14),
+        "Legs":      (12, 20),
+        "Glutes":    (6, 16),
+        "Calves":    (8, 16),
+        "Core":      (0, 15),
+    ]
+
+    func weeklySetTarget(forMuscle muscle: String) -> (min: Int, max: Int) {
+        Self.weeklySetTargets[muscle] ?? (8, 16)
+    }
+
     // MARK: - Progressive Overload
 
     enum OverloadSuggestion: Equatable {
