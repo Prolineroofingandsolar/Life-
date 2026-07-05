@@ -32,15 +32,15 @@ struct MuscleRecoveryMapView: View {
         return appState.lastTrainingInfo(muscle: m)
     }
 
-    /// Scales fatigue by how much was actually done — a couple of light sets
-    /// shouldn't read the same as a full session's worth of volume.
-    private func volumeMultiplier(_ sets: Int) -> Double {
-        switch sets {
-        case ..<3:   return 0.4
-        case 3..<6:  return 0.65
-        case 6..<10: return 0.85
-        default:     return 1.0
-        }
+    /// This session's volume (sets × weight moved) as a fraction of the best
+    /// single session ever recorded for this muscle — i.e. how much of a
+    /// full effort this was, used to scale fatigue instead of just counting
+    /// sets. A muscle trained for the first time counts as a full effort.
+    private func intensity(_ g: MuscleGroup, info: AppState.MuscleTrainingInfo) -> Double {
+        guard let m = g.appMuscle else { return 1.0 }
+        let best = appState.personalBestVolume(muscle: m)
+        guard best > 0 else { return 1.0 }
+        return Swift.min(1.0, info.volume / best)
     }
 
     private func fatigue(_ g: MuscleGroup) -> Int {
@@ -53,7 +53,7 @@ struct MuscleRecoveryMapView: View {
         case 3: base = 15
         default: base = 8
         }
-        return Int((base * volumeMultiplier(info.completedSets)).rounded())
+        return Int((base * intensity(g, info: info)).rounded())
     }
 
     private func color(_ fat: Int) -> Color {
@@ -86,11 +86,22 @@ struct MuscleRecoveryMapView: View {
         return "~\(remaining)d"
     }
 
-    /// The actual exercises + set counts from the muscle's most recent
-    /// trained session (e.g. "Bicep Curls · 2 sets"), not just the static
-    /// list of exercises that target it.
-    private func trainedExercises(_ g: MuscleGroup) -> [(name: String, sets: Int)] {
+    /// The actual exercises, set counts, and weight moved from the muscle's
+    /// most recent trained session (e.g. "Bicep Curls · 2 sets · 60kg"), not
+    /// just the static list of exercises that target it.
+    private func trainedExercises(_ g: MuscleGroup) -> [(name: String, sets: Int, volume: Double, kind: ExerciseKind)] {
         trainingInfo(g)?.exerciseBreakdown ?? []
+    }
+
+    /// "Bicep Curls · 2 sets · 60kg" — the weight figure is omitted for
+    /// bodyweight/cardio exercises, where volume is a rep-count proxy rather
+    /// than an actual load moved.
+    private func chipLabel(_ ex: (name: String, sets: Int, volume: Double, kind: ExerciseKind)) -> String {
+        let setsPart = "\(ex.sets) set\(ex.sets == 1 ? "" : "s")"
+        guard ex.kind == .weight, ex.volume > 0 else { return "\(ex.name) · \(setsPart)" }
+        let unit = appState.workoutSettings.weightUnit
+        let displayVolume = WeightUnit.kg.convert(ex.volume, to: unit)
+        return "\(ex.name) · \(setsPart) · \(Int(displayVolume))\(unit.label.lowercased())"
     }
 
     private var readiness: Int {
@@ -320,10 +331,7 @@ struct MuscleRecoveryMapView: View {
             if !trained.isEmpty {
                 Text("LAST SESSION").font(.system(size: 11, weight: .medium)).tracking(1.5).foregroundColor(dim)
                     .padding(.top, 16).padding(.bottom, 9)
-                FlowChips(
-                    items: trained.map { "\($0.name) · \($0.sets) set\($0.sets == 1 ? "" : "s")" },
-                    textColor: Color.primary, bg: bg, border: stroke
-                )
+                FlowChips(items: trained.map(chipLabel), textColor: Color.primary, bg: bg, border: stroke)
             }
         }
         .padding(18)
