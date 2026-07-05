@@ -164,6 +164,7 @@ private struct EmptyHint: View {
 private struct ActivityTab: View {
     @Environment(AppState.self) private var appState
     @State private var detailSession: WorkoutSession?
+    @State private var planDate: Date?
 
     private var trainingTime: String {
         let s = appState.trainingSecondsThisWeek
@@ -191,7 +192,10 @@ private struct ActivityTab: View {
 
             VStack(spacing: 12) {
                 SectionHeader(title: "Calendar")
-                WorkoutCalendarCard(onPlanDate: { _ in }, onTapSession: { _ in })
+                WorkoutCalendarCard(
+                    onPlanDate: { date in planDate = date },
+                    onTapSession: { session in detailSession = session }
+                )
             }
 
             VStack(spacing: 12) {
@@ -250,6 +254,11 @@ private struct ActivityTab: View {
         .padding(.horizontal, 20)
         .sheet(item: $detailSession) { session in
             NavigationStack { SessionDetailView(session: session) }
+        }
+        .sheet(isPresented: Binding(get: { planDate != nil }, set: { if !$0 { planDate = nil } })) {
+            if let date = planDate {
+                PlanSessionSheet(date: date) { planDate = nil }
+            }
         }
     }
 }

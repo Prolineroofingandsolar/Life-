@@ -597,7 +597,7 @@ private struct WeekDayCell: View {
 
 // MARK: - Plan Session Sheet
 
-private struct PlanSessionSheet: View {
+struct PlanSessionSheet: View {
     @Environment(AppState.self) private var appState
     @Environment(\.dismiss) private var dismiss
 

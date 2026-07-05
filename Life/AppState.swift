@@ -283,9 +283,9 @@ final class AppState {
     private func seedDefaults() {
         taskLists = Self.defaultTaskLists
         tasks = [
-            AppTask(title: "Reply to client email", category: .work, dueDate: .today),
-            AppTask(title: "Push session — legs", category: .gym, dueDate: .today),
-            AppTask(title: "Refill water bottle", category: .personal, dueDate: .today),
+            AppTask(title: "Reply to client email", listId: "work", dueDate: .today),
+            AppTask(title: "Push session — legs", listId: "gym", dueDate: .today),
+            AppTask(title: "Refill water bottle", listId: "personal", dueDate: .today),
         ]
         bills = [
             Bill(name: "Rent", amount: 1200, dayOfMonth: 1),
