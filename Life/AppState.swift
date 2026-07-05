@@ -1381,8 +1381,14 @@ final class AppState {
         let today = cal.startOfDay(for: Date())
         for session in sessions.filter({ $0.finishedAt != nil })
             .sorted(by: { ($0.finishedAt ?? .distantPast) > ($1.finishedAt ?? .distantPast) }) {
+            // Starting a routine pre-populates every one of its exercises as a
+            // session entry, even ones never actually performed — only count
+            // it if at least one set was completed, or every muscle in that
+            // routine would register as "trained today" regardless of what
+            // was actually done.
             let hit = session.exercises.contains { ex in
-                exercises.first(where: { $0.id == ex.exerciseId })?.muscle == muscle
+                guard ex.sets.contains(where: \.done) else { return false }
+                return exercises.first(where: { $0.id == ex.exerciseId })?.muscle == muscle
             }
             if hit, let fin = session.finishedAt {
                 return cal.dateComponents([.day], from: cal.startOfDay(for: fin), to: today).day ?? 0
