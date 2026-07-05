@@ -45,6 +45,9 @@ struct StateSnapshot: Codable {
     var tasks: [AppTask] = []
     var taskLists: [TaskList] = []
     var bills: [Bill] = []
+    var incomes: [Income] = []
+    var oneOffExpenses: [OneOffExpense] = []
+    var moneySettings: MoneySettings = MoneySettings()
     var habits: [Habit] = []
     var exercises: [Exercise] = []
     var routines: [Routine] = []
@@ -75,6 +78,9 @@ final class AppState {
     var tasks: [AppTask] = []
     var taskLists: [TaskList] = []
     var bills: [Bill] = []
+    var incomes: [Income] = []
+    var oneOffExpenses: [OneOffExpense] = []
+    var moneySettings: MoneySettings = MoneySettings()
     var habits: [Habit] = []
     var exercises: [Exercise] = []
     var routines: [Routine] = []
@@ -171,6 +177,9 @@ final class AppState {
             tasks: tasks,
             taskLists: taskLists,
             bills: bills,
+            incomes: incomes,
+            oneOffExpenses: oneOffExpenses,
+            moneySettings: moneySettings,
             habits: habits,
             exercises: exercises,
             routines: routines,
@@ -194,6 +203,9 @@ final class AppState {
         tasks = snapshot.tasks
         taskLists = snapshot.taskLists.isEmpty ? Self.defaultTaskLists : snapshot.taskLists
         bills = snapshot.bills
+        incomes = snapshot.incomes
+        oneOffExpenses = snapshot.oneOffExpenses
+        moneySettings = snapshot.moneySettings
         habits = snapshot.habits
         supplements = snapshot.supplements
         exercises = WorkoutSeed.mergeExercises(into: snapshot.exercises)
@@ -462,6 +474,53 @@ final class AppState {
         if let amount = amount { bills[idx].amount = amount }
         if let day = dayOfMonth { bills[idx].dayOfMonth = day }
         if let notes = notes { bills[idx].notes = notes }
+        save()
+    }
+
+    // MARK: - Income Mutations
+
+    func addIncome(name: String, amount: Double, dayOfMonth: Int, notes: String = "") {
+        incomes.append(Income(name: name, amount: amount, dayOfMonth: dayOfMonth, notes: notes))
+        save()
+    }
+
+    func deleteIncome(id: String) {
+        incomes.removeAll { $0.id == id }
+        save()
+    }
+
+    func updateIncome(id: String, name: String? = nil, amount: Double? = nil, dayOfMonth: Int? = nil, notes: String? = nil) {
+        guard let idx = incomes.firstIndex(where: { $0.id == id }) else { return }
+        if let name = name { incomes[idx].name = name }
+        if let amount = amount { incomes[idx].amount = amount }
+        if let day = dayOfMonth { incomes[idx].dayOfMonth = day }
+        if let notes = notes { incomes[idx].notes = notes }
+        save()
+    }
+
+    // MARK: - One-Off Expense Mutations
+
+    func addOneOffExpense(name: String, amount: Double, date: Date = Date(), notes: String = "") {
+        oneOffExpenses.append(OneOffExpense(name: name, amount: amount, date: date, notes: notes))
+        save()
+    }
+
+    func deleteOneOffExpense(id: String) {
+        oneOffExpenses.removeAll { $0.id == id }
+        save()
+    }
+
+    func updateOneOffExpense(id: String, name: String? = nil, amount: Double? = nil, date: Date? = nil, notes: String? = nil) {
+        guard let idx = oneOffExpenses.firstIndex(where: { $0.id == id }) else { return }
+        if let name = name { oneOffExpenses[idx].name = name }
+        if let amount = amount { oneOffExpenses[idx].amount = amount }
+        if let date = date { oneOffExpenses[idx].date = date }
+        if let notes = notes { oneOffExpenses[idx].notes = notes }
+        save()
+    }
+
+    func setMoneySettings(_ settings: MoneySettings) {
+        moneySettings = settings
         save()
     }
 
@@ -1759,6 +1818,9 @@ final class AppState {
         disableCloudSync()
         tasks = []
         bills = []
+        incomes = []
+        oneOffExpenses = []
+        moneySettings = MoneySettings()
         habits = []
         exercises = WorkoutSeed.exercises
         routines = WorkoutSeed.routines

@@ -11,6 +11,7 @@ struct SettingsView: View {
     @State private var nameInput: String = ""
     @State private var careSettings: CareSettings = CareSettings()
     @State private var workoutSettings: WorkoutSettings = WorkoutSettings()
+    @State private var moneySettings: MoneySettings = MoneySettings()
     @State private var showResetConfirm = false
     @State private var showCalculators = false
     @State private var showShareSheet = false
@@ -51,6 +52,11 @@ struct SettingsView: View {
                     Picker("Weight Unit", selection: $workoutSettings.weightUnit) {
                         ForEach(WeightUnit.allCases) { unit in
                             Text(unit.label).tag(unit)
+                        }
+                    }
+                    Picker("Currency", selection: $moneySettings.currency) {
+                        ForEach(CurrencyCode.allCases) { currency in
+                            Text("\(currency.rawValue) (\(currency.symbol))").tag(currency)
                         }
                     }
                 }
@@ -220,9 +226,13 @@ struct SettingsView: View {
                 nameInput = appState.userName
                 careSettings = appState.careSettings
                 workoutSettings = appState.workoutSettings
+                moneySettings = appState.moneySettings
             }
             .onChange(of: workoutSettings.weightUnit) { _, _ in
                 appState.setWorkoutSettings(workoutSettings)
+            }
+            .onChange(of: moneySettings.currency) { _, _ in
+                appState.setMoneySettings(moneySettings)
             }
             .onChange(of: workoutSettings.restTimerEnabled) { _, _ in
                 appState.setWorkoutSettings(workoutSettings)

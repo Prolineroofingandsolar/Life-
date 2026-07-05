@@ -6,15 +6,33 @@ struct MoneyView: View {
 
     @Environment(AppState.self) private var appState
     @State private var showAddBill = false
+    @State private var showAddIncome = false
+    @State private var showAddOneOff = false
+    @State private var editingBill: Bill? = nil
+    @State private var editingIncome: Income? = nil
+    @State private var editingOneOff: OneOffExpense? = nil
 
-    private var monthlyTotal: Double {
+    private var currencySymbol: String { appState.moneySettings.currency.symbol }
+
+    private var monthlyBillsTotal: Double {
         appState.bills.reduce(0) { $0 + $1.amount }
     }
 
-    private var currentMonthDays: [Int] {
+    private var monthlyIncomeTotal: Double {
+        appState.incomes.reduce(0) { $0 + $1.amount }
+    }
+
+    private var oneOffThisMonth: [OneOffExpense] {
         let cal = Calendar.current
-        let range = cal.range(of: .day, in: .month, for: Date())
-        return Array(range ?? (1..<31))
+        return appState.oneOffExpenses.filter { cal.isDate($0.date, equalTo: Date(), toGranularity: .month) }
+    }
+
+    private var oneOffThisMonthTotal: Double {
+        oneOffThisMonth.reduce(0) { $0 + $1.amount }
+    }
+
+    private var netThisMonth: Double {
+        monthlyIncomeTotal - monthlyBillsTotal - oneOffThisMonthTotal
     }
 
     private var billsByDay: [Int: [Bill]] {
@@ -25,24 +43,37 @@ struct MoneyView: View {
         appState.bills.sorted { $0.dayOfMonth < $1.dayOfMonth }
     }
 
+    private var sortedIncomes: [Income] {
+        appState.incomes.sorted { $0.dayOfMonth < $1.dayOfMonth }
+    }
+
+    private var sortedOneOff: [OneOffExpense] {
+        appState.oneOffExpenses.sorted { $0.date > $1.date }
+    }
+
     var body: some View {
         List {
-                // Monthly total card
+                // Monthly summary card
                 Section {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Monthly Outgoings")
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Net This Month")
                             .font(.caption)
                             .foregroundColor(.secondary)
                         HStack(alignment: .lastTextBaseline, spacing: 2) {
-                            Text("£")
+                            Text(currencySymbol)
                                 .font(.title2)
                                 .foregroundColor(.secondary)
-                            Text(String(format: "%.2f", monthlyTotal))
+                            Text(String(format: "%.2f", netThisMonth))
                                 .font(.largeTitle.bold())
+                                .foregroundColor(netThisMonth >= 0 ? .primary : .red)
                         }
-                        Text("\(appState.bills.count) bills")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                        HStack(spacing: 16) {
+                            summaryStat(label: "Income", value: monthlyIncomeTotal, color: .green)
+                            summaryStat(label: "Bills", value: monthlyBillsTotal, color: .red)
+                            if oneOffThisMonthTotal > 0 {
+                                summaryStat(label: "One-Off", value: oneOffThisMonthTotal, color: .orange)
+                            }
+                        }
                     }
                     .padding(.vertical, 4)
                 }
@@ -55,19 +86,57 @@ struct MoneyView: View {
                 }
 
                 // Bills list
-                if sortedBills.isEmpty {
-                    Section {
-                        EmptyStateView(icon: "creditcard", title: "No bills yet", subtitle: "Tap + to add your first bill.")
+                Section("Bills") {
+                    if sortedBills.isEmpty {
+                        EmptyStateView(icon: "creditcard", title: "No bills yet", subtitle: "Add your first recurring bill.")
                             .listRowBackground(Color.clear)
-                    }
-                } else {
-                    Section("Bills") {
+                    } else {
                         ForEach(sortedBills) { bill in
-                            BillRow(bill: bill)
+                            BillRow(bill: bill, currencySymbol: currencySymbol)
+                                .contentShape(Rectangle())
+                                .onTapGesture { editingBill = bill }
                         }
                         .onDelete { indexSet in
                             for index in indexSet {
                                 appState.deleteBill(id: sortedBills[index].id)
+                            }
+                        }
+                    }
+                }
+
+                // Income list
+                Section("Income") {
+                    if sortedIncomes.isEmpty {
+                        EmptyStateView(icon: "banknote", title: "No income yet", subtitle: "Add your salary or other recurring income.")
+                            .listRowBackground(Color.clear)
+                    } else {
+                        ForEach(sortedIncomes) { income in
+                            IncomeRow(income: income, currencySymbol: currencySymbol)
+                                .contentShape(Rectangle())
+                                .onTapGesture { editingIncome = income }
+                        }
+                        .onDelete { indexSet in
+                            for index in indexSet {
+                                appState.deleteIncome(id: sortedIncomes[index].id)
+                            }
+                        }
+                    }
+                }
+
+                // One-off expenses
+                Section("One-Off Expenses") {
+                    if sortedOneOff.isEmpty {
+                        EmptyStateView(icon: "cart", title: "No one-off expenses", subtitle: "Log a purchase that isn't a recurring bill.")
+                            .listRowBackground(Color.clear)
+                    } else {
+                        ForEach(sortedOneOff) { expense in
+                            OneOffExpenseRow(expense: expense, currencySymbol: currencySymbol)
+                                .contentShape(Rectangle())
+                                .onTapGesture { editingOneOff = expense }
+                        }
+                        .onDelete { indexSet in
+                            for index in indexSet {
+                                appState.deleteOneOffExpense(id: sortedOneOff[index].id)
                             }
                         }
                     }
@@ -78,8 +147,10 @@ struct MoneyView: View {
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        showAddBill = true
+                    Menu {
+                        Button { showAddBill = true } label: { Label("Add Bill", systemImage: "creditcard") }
+                        Button { showAddIncome = true } label: { Label("Add Income", systemImage: "banknote") }
+                        Button { showAddOneOff = true } label: { Label("Add One-Off Expense", systemImage: "cart") }
                     } label: {
                         Image(systemName: "plus")
                     }
@@ -88,8 +159,22 @@ struct MoneyView: View {
                     EditButton()
                 }
             }
-        .sheet(isPresented: $showAddBill) {
-            AddBillSheet()
+        .sheet(isPresented: $showAddBill) { AddBillSheet() }
+        .sheet(isPresented: $showAddIncome) { AddIncomeSheet() }
+        .sheet(isPresented: $showAddOneOff) { AddOneOffExpenseSheet() }
+        .sheet(item: $editingBill) { bill in AddBillSheet(editing: bill) }
+        .sheet(item: $editingIncome) { income in AddIncomeSheet(editing: income) }
+        .sheet(item: $editingOneOff) { expense in AddOneOffExpenseSheet(editing: expense) }
+    }
+
+    private func summaryStat(label: String, value: Double, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.caption2)
+                .foregroundColor(.secondary)
+            Text("\(currencySymbol)\(String(format: "%.0f", value))")
+                .font(.subheadline.bold())
+                .foregroundColor(color)
         }
     }
 }
@@ -98,6 +183,7 @@ struct MoneyView: View {
 
 private struct BillRow: View {
     let bill: Bill
+    let currencySymbol: String
 
     private var daysUntilDue: Int {
         let cal = Calendar.current
@@ -155,8 +241,56 @@ private struct BillRow: View {
                 }
             }
             Spacer()
-            Text("£\(String(format: "%.2f", bill.amount))")
+            Text("\(currencySymbol)\(String(format: "%.2f", bill.amount))")
                 .font(.subheadline.bold())
+        }
+        .padding(.vertical, 2)
+    }
+}
+
+// MARK: - Income Row
+
+private struct IncomeRow: View {
+    let income: Income
+    let currencySymbol: String
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(income.name)
+                    .font(.subheadline)
+                Text("Day \(income.dayOfMonth)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            Spacer()
+            Text("\(currencySymbol)\(String(format: "%.2f", income.amount))")
+                .font(.subheadline.bold())
+                .foregroundColor(.green)
+        }
+        .padding(.vertical, 2)
+    }
+}
+
+// MARK: - One-Off Expense Row
+
+private struct OneOffExpenseRow: View {
+    let expense: OneOffExpense
+    let currencySymbol: String
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(expense.name)
+                    .font(.subheadline)
+                Text(expense.date.formatted(date: .abbreviated, time: .omitted))
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            Spacer()
+            Text("\(currencySymbol)\(String(format: "%.2f", expense.amount))")
+                .font(.subheadline.bold())
+                .foregroundColor(.orange)
         }
         .padding(.vertical, 2)
     }
@@ -268,11 +402,18 @@ struct AddBillSheet: View {
     @Environment(AppState.self) private var appState
     @Environment(\.dismiss) private var dismiss
 
+    var editing: Bill? = nil
+
     @State private var name = ""
     @State private var amountText = ""
     @State private var dayOfMonth = 1
     @State private var notes = ""
     @FocusState private var isNameFocused: Bool
+
+    private var isValid: Bool {
+        !name.trimmingCharacters(in: .whitespaces).isEmpty
+            && Double(amountText.replacingOccurrences(of: ",", with: ".")) != nil
+    }
 
     var body: some View {
         NavigationStack {
@@ -281,7 +422,7 @@ struct AddBillSheet: View {
                     TextField("Name (e.g. Rent)", text: $name)
                         .focused($isNameFocused)
                     HStack {
-                        Text("£")
+                        Text(appState.moneySettings.currency.symbol)
                             .foregroundColor(.secondary)
                         TextField("Amount", text: $amountText)
                             .keyboardType(.decimalPad)
@@ -295,24 +436,214 @@ struct AddBillSheet: View {
                 Section("Notes") {
                     TextField("Optional notes", text: $notes)
                 }
+
+                if let editing {
+                    Section {
+                        Button("Delete Bill", role: .destructive) {
+                            appState.deleteBill(id: editing.id)
+                            dismiss()
+                        }
+                    }
+                }
             }
-            .navigationTitle("New Bill")
+            .navigationTitle(editing == nil ? "New Bill" : "Edit Bill")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Add") {
-                        guard !name.trimmingCharacters(in: .whitespaces).isEmpty,
-                              let amount = Double(amountText.replacingOccurrences(of: ",", with: ".")) else { return }
-                        appState.addBill(name: name.trimmingCharacters(in: .whitespaces), amount: amount, dayOfMonth: dayOfMonth, notes: notes)
+                    Button(editing == nil ? "Add" : "Save") {
+                        guard let amount = Double(amountText.replacingOccurrences(of: ",", with: ".")) else { return }
+                        let trimmedName = name.trimmingCharacters(in: .whitespaces)
+                        if let editing {
+                            appState.updateBill(id: editing.id, name: trimmedName, amount: amount, dayOfMonth: dayOfMonth, notes: notes)
+                        } else {
+                            appState.addBill(name: trimmedName, amount: amount, dayOfMonth: dayOfMonth, notes: notes)
+                        }
                         dismiss()
                     }
-                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || Double(amountText.replacingOccurrences(of: ",", with: ".")) == nil)
+                    .disabled(!isValid)
                 }
             }
-            .onAppear { isNameFocused = true }
+            .onAppear {
+                if let editing {
+                    name = editing.name
+                    amountText = editing.amount.formatted1
+                    dayOfMonth = editing.dayOfMonth
+                    notes = editing.notes
+                } else {
+                    isNameFocused = true
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Add Income Sheet
+
+struct AddIncomeSheet: View {
+    @Environment(AppState.self) private var appState
+    @Environment(\.dismiss) private var dismiss
+
+    var editing: Income? = nil
+
+    @State private var name = ""
+    @State private var amountText = ""
+    @State private var dayOfMonth = 1
+    @State private var notes = ""
+    @FocusState private var isNameFocused: Bool
+
+    private var isValid: Bool {
+        !name.trimmingCharacters(in: .whitespaces).isEmpty
+            && Double(amountText.replacingOccurrences(of: ",", with: ".")) != nil
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Income") {
+                    TextField("Name (e.g. Salary)", text: $name)
+                        .focused($isNameFocused)
+                    HStack {
+                        Text(appState.moneySettings.currency.symbol)
+                            .foregroundColor(.secondary)
+                        TextField("Amount", text: $amountText)
+                            .keyboardType(.decimalPad)
+                    }
+                }
+
+                Section("Schedule") {
+                    Stepper("Day of month: \(dayOfMonth)", value: $dayOfMonth, in: 1...31)
+                }
+
+                Section("Notes") {
+                    TextField("Optional notes", text: $notes)
+                }
+
+                if let editing {
+                    Section {
+                        Button("Delete Income", role: .destructive) {
+                            appState.deleteIncome(id: editing.id)
+                            dismiss()
+                        }
+                    }
+                }
+            }
+            .navigationTitle(editing == nil ? "New Income" : "Edit Income")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(editing == nil ? "Add" : "Save") {
+                        guard let amount = Double(amountText.replacingOccurrences(of: ",", with: ".")) else { return }
+                        let trimmedName = name.trimmingCharacters(in: .whitespaces)
+                        if let editing {
+                            appState.updateIncome(id: editing.id, name: trimmedName, amount: amount, dayOfMonth: dayOfMonth, notes: notes)
+                        } else {
+                            appState.addIncome(name: trimmedName, amount: amount, dayOfMonth: dayOfMonth, notes: notes)
+                        }
+                        dismiss()
+                    }
+                    .disabled(!isValid)
+                }
+            }
+            .onAppear {
+                if let editing {
+                    name = editing.name
+                    amountText = editing.amount.formatted1
+                    dayOfMonth = editing.dayOfMonth
+                    notes = editing.notes
+                } else {
+                    isNameFocused = true
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Add One-Off Expense Sheet
+
+struct AddOneOffExpenseSheet: View {
+    @Environment(AppState.self) private var appState
+    @Environment(\.dismiss) private var dismiss
+
+    var editing: OneOffExpense? = nil
+
+    @State private var name = ""
+    @State private var amountText = ""
+    @State private var date = Date()
+    @State private var notes = ""
+    @FocusState private var isNameFocused: Bool
+
+    private var isValid: Bool {
+        !name.trimmingCharacters(in: .whitespaces).isEmpty
+            && Double(amountText.replacingOccurrences(of: ",", with: ".")) != nil
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Expense") {
+                    TextField("Name (e.g. New shoes)", text: $name)
+                        .focused($isNameFocused)
+                    HStack {
+                        Text(appState.moneySettings.currency.symbol)
+                            .foregroundColor(.secondary)
+                        TextField("Amount", text: $amountText)
+                            .keyboardType(.decimalPad)
+                    }
+                }
+
+                Section("Date") {
+                    DatePicker("Date", selection: $date, displayedComponents: .date)
+                }
+
+                Section("Notes") {
+                    TextField("Optional notes", text: $notes)
+                }
+
+                if let editing {
+                    Section {
+                        Button("Delete Expense", role: .destructive) {
+                            appState.deleteOneOffExpense(id: editing.id)
+                            dismiss()
+                        }
+                    }
+                }
+            }
+            .navigationTitle(editing == nil ? "New Expense" : "Edit Expense")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(editing == nil ? "Add" : "Save") {
+                        guard let amount = Double(amountText.replacingOccurrences(of: ",", with: ".")) else { return }
+                        let trimmedName = name.trimmingCharacters(in: .whitespaces)
+                        if let editing {
+                            appState.updateOneOffExpense(id: editing.id, name: trimmedName, amount: amount, date: date, notes: notes)
+                        } else {
+                            appState.addOneOffExpense(name: trimmedName, amount: amount, date: date, notes: notes)
+                        }
+                        dismiss()
+                    }
+                    .disabled(!isValid)
+                }
+            }
+            .onAppear {
+                if let editing {
+                    name = editing.name
+                    amountText = editing.amount.formatted1
+                    date = editing.date
+                    notes = editing.notes
+                } else {
+                    isNameFocused = true
+                }
+            }
         }
     }
 }

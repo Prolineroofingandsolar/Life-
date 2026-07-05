@@ -128,6 +128,47 @@ struct Bill: Codable, Identifiable {
     var notes: String = ""
 }
 
+/// Recurring monthly income (salary, etc.) — same shape as Bill, paid in rather than out.
+struct Income: Codable, Identifiable {
+    var id: String = UUID().uuidString
+    var name: String
+    var amount: Double
+    var dayOfMonth: Int
+    var notes: String = ""
+}
+
+/// A single non-recurring expense on a specific date.
+struct OneOffExpense: Codable, Identifiable {
+    var id: String = UUID().uuidString
+    var name: String
+    var amount: Double
+    var date: Date = Date()
+    var notes: String = ""
+}
+
+enum CurrencyCode: String, Codable, CaseIterable, Identifiable {
+    case gbp = "GBP"
+    case usd = "USD"
+    case eur = "EUR"
+    case cad = "CAD"
+    case aud = "AUD"
+    var id: String { rawValue }
+
+    var symbol: String {
+        switch self {
+        case .gbp: return "£"
+        case .usd: return "$"
+        case .eur: return "€"
+        case .cad: return "CA$"
+        case .aud: return "AU$"
+        }
+    }
+}
+
+struct MoneySettings: Codable {
+    var currency: CurrencyCode = .gbp
+}
+
 // MARK: - Habit Models
 
 enum HabitKind: String, Codable, CaseIterable, Identifiable {
