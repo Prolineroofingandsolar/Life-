@@ -1077,6 +1077,16 @@ final class AppState {
         save()
     }
 
+    func deleteBodyCompEntry(id: String) {
+        bodyCompEntries.removeAll { $0.id == id }
+        save()
+    }
+
+    func setGoalWeight(kg: Double?) {
+        workoutSettings.goalWeightKg = kg
+        save()
+    }
+
     // MARK: - Care Day Mutations
 
     func addWater() {
