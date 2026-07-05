@@ -1400,41 +1400,77 @@ final class AppState {
     struct MuscleTrainingInfo {
         let daysAgo: Int
         let completedSets: Int
-        /// Exercise name -> completed sets, in the order first encountered.
-        let exerciseBreakdown: [(name: String, sets: Int)]
+        /// Σ weight × reps across completed sets (Σ reps alone for bodyweight
+        /// exercises, where weight is 0) — the actual load moved for this
+        /// muscle in its most recent trained session.
+        let volume: Double
+        /// (completed sets, volume moved, exercise kind), in the order first encountered.
+        /// `kind` lets UI skip showing a weight figure for bodyweight/cardio exercises.
+        let exerciseBreakdown: [(name: String, sets: Int, volume: Double, kind: ExerciseKind)]
+    }
+
+    private func setVolume(_ set: LoggedSet) -> Double {
+        set.weight > 0 ? set.weight * Double(set.reps) : Double(set.reps)
+    }
+
+    /// Total volume (Σ weight × reps of completed sets) moved for `muscle`
+    /// in one session.
+    private func sessionVolume(_ session: WorkoutSession, muscle: String) -> Double {
+        session.exercises.reduce(0) { total, ex in
+            guard let exercise = exercises.first(where: { $0.id == ex.exerciseId }), exercise.muscle == muscle else { return total }
+            return total + ex.sets.filter(\.done).reduce(0) { $0 + setVolume($1) }
+        }
     }
 
     /// Like `daysSinceLastTrained`, but also reports how much was actually
-    /// done (completed sets per exercise) in that most recent session, so
-    /// recovery UI can show a real metric (e.g. "2 sets of Bicep Curls")
-    /// instead of just a day count, and scale fatigue by volume rather than
-    /// treating one light set the same as a full session.
+    /// done (sets + volume per exercise) in that most recent session, so
+    /// recovery UI can show a real metric (e.g. "2 sets of Bicep Curls · 60kg")
+    /// instead of just a day count, and scale fatigue by how much was moved
+    /// rather than treating one light set the same as a full session.
     func lastTrainingInfo(muscle: String) -> MuscleTrainingInfo? {
         let cal = Calendar.current
         let today = cal.startOfDay(for: Date())
         for session in sessions.filter({ $0.finishedAt != nil })
             .sorted(by: { ($0.finishedAt ?? .distantPast) > ($1.finishedAt ?? .distantPast) }) {
             var totalSets = 0
+            var totalVolume: Double = 0
             var setsByName: [String: Int] = [:]
+            var volumeByName: [String: Double] = [:]
+            var kindByName: [String: ExerciseKind] = [:]
             var order: [String] = []
             for ex in session.exercises {
                 guard let exercise = exercises.first(where: { $0.id == ex.exerciseId }),
                       exercise.muscle == muscle else { continue }
-                let done = ex.sets.filter(\.done).count
-                guard done > 0 else { continue }
-                totalSets += done
+                let doneSets = ex.sets.filter(\.done)
+                guard !doneSets.isEmpty else { continue }
+                totalSets += doneSets.count
+                let vol = doneSets.reduce(0) { $0 + setVolume($1) }
+                totalVolume += vol
                 if setsByName[exercise.name] == nil { order.append(exercise.name) }
-                setsByName[exercise.name, default: 0] += done
+                setsByName[exercise.name, default: 0] += doneSets.count
+                volumeByName[exercise.name, default: 0] += vol
+                kindByName[exercise.name] = exercise.kind
             }
             guard totalSets > 0, let fin = session.finishedAt else { continue }
             let days = cal.dateComponents([.day], from: cal.startOfDay(for: fin), to: today).day ?? 0
             return MuscleTrainingInfo(
                 daysAgo: days,
                 completedSets: totalSets,
-                exerciseBreakdown: order.map { ($0, setsByName[$0] ?? 0) }
+                volume: totalVolume,
+                exerciseBreakdown: order.map { ($0, setsByName[$0] ?? 0, volumeByName[$0] ?? 0, kindByName[$0] ?? .weight) }
             )
         }
         return nil
+    }
+
+    /// Highest single-session volume ever recorded for `muscle`, used to
+    /// express a session's intensity as "how much of your best effort was
+    /// this" rather than an arbitrary absolute threshold.
+    func personalBestVolume(muscle: String) -> Double {
+        sessions
+            .filter { $0.finishedAt != nil }
+            .map { sessionVolume($0, muscle: muscle) }
+            .max() ?? 0
     }
 
     func recoveryStatus(muscle: String) -> RecoveryStatus {
