@@ -98,7 +98,15 @@ final class FirestoreSync {
 
     // MARK: - Download
 
-    func download(userId: String) async throws -> StateSnapshot? {
+    /// A downloaded snapshot paired with the wall-clock time the uploading
+    /// device wrote it, so the caller can decide whether it's actually newer
+    /// than what's on disk locally before overwriting anything.
+    struct DownloadedSnapshot {
+        let snapshot: StateSnapshot
+        let updatedAt: Date
+    }
+
+    func download(userId: String) async throws -> DownloadedSnapshot? {
         let ref = db.collection("users").document(userId)
             .collection("state").document("snapshot")
 
@@ -111,7 +119,11 @@ final class FirestoreSync {
               let json = doc.data()?["json"] as? String,
               let data = json.data(using: .utf8) else { return nil }
 
-        return try Self.decoder.decode(StateSnapshot.self, from: data)
+        let snapshot = try Self.decoder.decode(StateSnapshot.self, from: data)
+        // `clientUpdatedAt` is written by the device that uploaded; fall back
+        // to distantPast (never wins a "who's newer" comparison) if missing.
+        let updatedAt = (doc.data()?["clientUpdatedAt"] as? Timestamp)?.dateValue() ?? .distantPast
+        return DownloadedSnapshot(snapshot: snapshot, updatedAt: updatedAt)
     }
 
     // MARK: - Private

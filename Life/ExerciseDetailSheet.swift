@@ -56,11 +56,11 @@ struct ExerciseDetailSheet: View {
                         }
                     }
 
-                    PRCard(prs: prs, kind: exercise?.kind ?? .weight)
+                    PRCard(prs: prs, kind: exercise?.kind ?? .weight, unit: appState.workoutSettings.weightUnit)
 
                     if !recentSessions.isEmpty {
-                        SessionHistoryCard(sessions: recentSessions, kind: exercise?.kind ?? .weight)
-                        StrengthChartCard(sessions: recentSessions)
+                        SessionHistoryCard(sessions: recentSessions, kind: exercise?.kind ?? .weight, unit: appState.workoutSettings.weightUnit)
+                        StrengthChartCard(sessions: recentSessions, unit: appState.workoutSettings.weightUnit)
                     }
 
                     Button { showAddToRoutine = true } label: {
@@ -202,6 +202,7 @@ private struct InstructionsCard: View {
 private struct PRCard: View {
     let prs: AppState.PRResult
     let kind: ExerciseKind
+    let unit: WeightUnit
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -211,9 +212,9 @@ private struct PRCard: View {
                 .padding(.horizontal)
 
             HStack(spacing: 8) {
-                PRStatCell(label: "Best Weight", value: prs.bestWeight > 0 ? "\(prs.bestWeight.formatted1) kg" : "—")
+                PRStatCell(label: "Best Weight", value: prs.bestWeight > 0 ? "\(WeightUnit.kg.convert(prs.bestWeight, to: unit).formatted1) \(unit.label.lowercased())" : "—")
                 PRStatCell(label: "Best Reps", value: prs.bestReps > 0 ? "\(prs.bestReps)" : "—")
-                PRStatCell(label: "Est. 1RM", value: prs.best1RM > 0 ? "\(prs.best1RM.formatted1) kg" : "—")
+                PRStatCell(label: "Est. 1RM", value: prs.best1RM > 0 ? "\(WeightUnit.kg.convert(prs.best1RM, to: unit).formatted1) \(unit.label.lowercased())" : "—")
             }
             .padding(.horizontal)
         }
@@ -250,6 +251,7 @@ private struct PRStatCell: View {
 private struct SessionHistoryCard: View {
     let sessions: [(date: Date, bestSet: LoggedSet)]
     let kind: ExerciseKind
+    let unit: WeightUnit
 
     private static let dateFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -275,7 +277,7 @@ private struct SessionHistoryCard: View {
                             Text(entry.bestSet.durationSec > 0 ? "\(entry.bestSet.durationSec / 60):\(String(format: "%02d", entry.bestSet.durationSec % 60))" : "—")
                                 .font(.subheadline.bold())
                         } else {
-                            Text(entry.bestSet.weight > 0 ? "\(entry.bestSet.weight.formatted1) kg" : "BW")
+                            Text(entry.bestSet.weight > 0 ? "\(WeightUnit.kg.convert(entry.bestSet.weight, to: unit).formatted1) \(unit.label.lowercased())" : "BW")
                                 .font(.subheadline.bold())
                             Text("×")
                                 .font(.subheadline)
@@ -301,15 +303,16 @@ private struct SessionHistoryCard: View {
 
 private struct StrengthChartCard: View {
     let sessions: [(date: Date, bestSet: LoggedSet)]
+    let unit: WeightUnit
     @State private var show1RM = false
 
     // sessions arrive newest-first; chart needs oldest-first
     private var chartData: [(date: Date, value: Double)] {
         sessions.reversed().map { entry in
-            let v: Double = show1RM
+            let kg: Double = show1RM
                 ? entry.bestSet.weight * (1 + Double(entry.bestSet.reps) / 30.0)
                 : entry.bestSet.weight
-            return (date: entry.date, value: v)
+            return (date: entry.date, value: WeightUnit.kg.convert(kg, to: unit))
         }
     }
 

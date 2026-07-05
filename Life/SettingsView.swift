@@ -85,7 +85,7 @@ struct SettingsView: View {
                                     }
                                 }
                             } else {
-                                NotificationsManager.shared.cancelAll()
+                                NotificationsManager.shared.cancelWaterReminder()
                             }
                         }
                     if careSettings.waterReminderEnabled {

@@ -1,6 +1,25 @@
 import Foundation
 import UserNotifications
 
+// MARK: - Authorization Helper
+
+extension UNUserNotificationCenter {
+    /// Requests notification authorization on first use, then adds the
+    /// request. Previously only the water-reminder toggle in Settings ever
+    /// called `requestAuthorization`, so task and habit reminders scheduled
+    /// elsewhere silently never surfaced for anyone who hadn't touched that
+    /// toggle — the system never showed the permission prompt.
+    func addRequestEnsuringAuthorization(_ request: UNNotificationRequest) {
+        Task {
+            let settings = await notificationSettings()
+            if settings.authorizationStatus == .notDetermined {
+                _ = try? await requestAuthorization(options: [.alert, .sound, .badge])
+            }
+            try? await add(request)
+        }
+    }
+}
+
 // MARK: - Notifications Manager
 
 final class NotificationsManager {
@@ -23,10 +42,13 @@ final class NotificationsManager {
 
     // MARK: - Water Reminder
 
-    func scheduleWaterReminder(intervalMinutes: Int) {
-        // Remove previous water reminders
+    func cancelWaterReminder() {
         center.removePendingNotificationRequests(withIdentifiers: ["water_reminder"])
         center.removeDeliveredNotifications(withIdentifiers: ["water_reminder"])
+    }
+
+    func scheduleWaterReminder(intervalMinutes: Int) {
+        cancelWaterReminder()
 
         guard intervalMinutes > 0 else { return }
 
@@ -45,7 +67,7 @@ final class NotificationsManager {
             trigger: trigger
         )
 
-        center.add(request)
+        center.addRequestEnsuringAuthorization(request)
     }
 
     // MARK: - Break Reminder
@@ -69,7 +91,7 @@ final class NotificationsManager {
             trigger: trigger
         )
 
-        center.add(request)
+        center.addRequestEnsuringAuthorization(request)
     }
 
     // MARK: - Rest Timer (one-shot)
@@ -90,7 +112,7 @@ final class NotificationsManager {
             content: content,
             trigger: trigger
         )
-        center.add(request)
+        center.addRequestEnsuringAuthorization(request)
     }
 
     func cancelRestTimer() {
@@ -112,7 +134,7 @@ final class NotificationsManager {
         let comps = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: date)
         let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
         let request = UNNotificationRequest(identifier: identifier, content: content, trigger: trigger)
-        center.add(request)
+        center.addRequestEnsuringAuthorization(request)
     }
 
     func cancelTaskReminder(taskId: String) {

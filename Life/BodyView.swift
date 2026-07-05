@@ -465,14 +465,17 @@ private struct LiftsTab: View {
 }
 
 private struct PRRow: View {
+    @Environment(AppState.self) private var appState
     let item: LiftPRItem
+
+    private var unit: WeightUnit { appState.workoutSettings.weightUnit }
 
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.exercise.name)
                     .font(.subheadline)
-                Text("\(item.pr.bestWeight.formatted1) kg × \(item.pr.bestReps)")
+                Text("\(WeightUnit.kg.convert(item.pr.bestWeight, to: unit).formatted1) \(unit.label.lowercased()) × \(item.pr.bestReps)")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
@@ -481,7 +484,7 @@ private struct PRRow: View {
                 Text("e1RM")
                     .font(.caption2)
                     .foregroundColor(.secondary)
-                Text("\(item.pr.best1RM.formatted1) kg")
+                Text("\(WeightUnit.kg.convert(item.pr.best1RM, to: unit).formatted1) \(unit.label.lowercased())")
                     .font(.subheadline.bold())
                     .foregroundColor(AppTheme.primary)
             }

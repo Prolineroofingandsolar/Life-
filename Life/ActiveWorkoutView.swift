@@ -811,22 +811,40 @@ private struct SetRow: View {
     @FocusState private var weightFocused: Bool
     @FocusState private var repsFocused: Bool
 
+    /// `LoggedSet.weight` is always stored in kg; this is only the unit the
+    /// field displays/accepts input in, so lbs entries must be converted
+    /// before being written back to the model.
+    private var unit: WeightUnit { appState.workoutSettings.weightUnit }
+    private var weightIncrement: Double { unit == .kg ? 2.5 : 5 }
+
+    private func displayWeight(_ kg: Double) -> Double {
+        WeightUnit.kg.convert(kg, to: unit)
+    }
+
     private func adjustWeight(_ delta: Double) {
-        let current = Double(weightText.replacingOccurrences(of: ",", with: ".")) ?? set.weight
-        let newWeight = max(0, current + delta)
-        weightText = newWeight.formatted1
-        appState.updateSet(sessionId: sessionId, exerciseId: exerciseId, setId: set.id, weight: newWeight)
+        let current = Double(weightText.replacingOccurrences(of: ",", with: ".")) ?? displayWeight(set.weight)
+        let newDisplayWeight = max(0, current + delta)
+        weightText = newDisplayWeight.formatted1
+        let newWeightKg = unit.convert(newDisplayWeight, to: .kg)
+        appState.updateSet(sessionId: sessionId, exerciseId: exerciseId, setId: set.id, weight: newWeightKg)
     }
 
     private var prevLabel: String? {
         guard let prev = prevSet, (prev.weight > 0 || prev.reps > 0) else { return nil }
-        if prev.weight > 0 && prev.reps > 0 { return "\(prev.weight.formatted1) × \(prev.reps)" }
+        let prevDisplay = displayWeight(prev.weight)
+        if prev.weight > 0 && prev.reps > 0 { return "\(prevDisplay.formatted1) × \(prev.reps)" }
         if prev.reps > 0 { return "\(prev.reps) reps" }
-        return "\(prev.weight.formatted1) kg"
+        return "\(prevDisplay.formatted1) \(unit.label)"
     }
 
+    /// The typed value, in the display unit (not necessarily kg).
     private var parsedWeight: Double {
         Double(weightText.replacingOccurrences(of: ",", with: ".")) ?? 0
+    }
+
+    /// The typed value converted to kg, for anything that needs the canonical unit (plate math, storage).
+    private var parsedWeightKg: Double {
+        unit.convert(parsedWeight, to: .kg)
     }
 
     var body: some View {
@@ -855,7 +873,7 @@ private struct SetRow: View {
                 } else {
                     // Weight: − field +
                     HStack(spacing: 4) {
-                        Button { adjustWeight(-2.5) } label: {
+                        Button { adjustWeight(-weightIncrement) } label: {
                             Image(systemName: "minus")
                                 .font(.system(size: 14, weight: .bold))
                                 .frame(width: 44, height: 44)
@@ -873,21 +891,21 @@ private struct SetRow: View {
                                 .focused($weightFocused)
                                 .onChange(of: weightText) { _, new in
                                     if let val = Double(new.replacingOccurrences(of: ",", with: ".")) {
-                                        appState.updateSet(sessionId: sessionId, exerciseId: exerciseId, setId: set.id, weight: val)
+                                        appState.updateSet(sessionId: sessionId, exerciseId: exerciseId, setId: set.id, weight: unit.convert(val, to: .kg))
                                     }
                                 }
                                 .onChange(of: weightFocused) { _, focused in
                                     if !focused { showPlates = false }
-                                    else if parsedWeight > 20 { showPlates = true }
+                                    else if parsedWeightKg > 20 { showPlates = true }
                                 }
-                            Text("kg")
+                            Text(unit.label.lowercased())
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
                                 .fixedSize()
                         }
                         .frame(width: 68)
 
-                        Button { adjustWeight(2.5) } label: {
+                        Button { adjustWeight(weightIncrement) } label: {
                             Image(systemName: "plus")
                                 .font(.system(size: 14, weight: .bold))
                                 .frame(width: 44, height: 44)
@@ -992,8 +1010,8 @@ private struct SetRow: View {
             }
 
             // Plate calculator (shown when weight field focused and weight > 20kg)
-            if showPlates && parsedWeight > 20 && exerciseKind != .cardio && !isDropSet {
-                PlateBreakdownView(totalKg: parsedWeight)
+            if showPlates && parsedWeightKg > 20 && exerciseKind != .cardio && !isDropSet {
+                PlateBreakdownView(totalKg: parsedWeightKg)
                     .padding(.horizontal, 8)
                     .padding(.bottom, 8)
                     .transition(.opacity.combined(with: .move(edge: .top)))
@@ -1010,7 +1028,7 @@ private struct SetRow: View {
             }
         }
         .onAppear {
-            weightText = set.weight == 0 ? "" : set.weight.formatted1
+            weightText = set.weight == 0 ? "" : displayWeight(set.weight).formatted1
             repsText = set.reps == 0 ? "" : "\(set.reps)"
         }
     }

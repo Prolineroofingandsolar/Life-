@@ -46,6 +46,12 @@
     <!-- App Group for widget sync -->
     <!-- App Group entitlement must be set in Entitlements file, not Info.plist -->
 
+    <!-- CRM (Supabase) -->
+    <key>CRMSupabaseURL</key>
+    <string>https://qzvdzzvkocmulcfujyea.supabase.co</string>
+    <key>CRMSupabaseAnonKey</key>
+    <string>eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF6dmR6enZrb2NtdWxjZnVqeWVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg4NzIxNjUsImV4cCI6MjA5NDQ0ODE2NX0.g42AvuElukfbpgbg9Y6XImnuHQ2Po5GEaVVGMz3Siu0</string>
+
     <!-- Background modes for notifications -->
     <key>UIBackgroundModes</key>
     <array>

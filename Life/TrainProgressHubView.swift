@@ -393,10 +393,14 @@ private struct LiftChartCard: View {
     @Environment(AppState.self) private var appState
     let exercise: Exercise
 
-    private var history: [AppState.DatedValue] { appState.oneRMHistory(for: exercise.id) }
+    /// `oneRMHistory`/`prDelta` return kg (the canonical storage unit) — convert to the display unit here.
+    private var unitEnum: WeightUnit { appState.workoutSettings.weightUnit }
+    private var history: [AppState.DatedValue] {
+        appState.oneRMHistory(for: exercise.id).map { .init(date: $0.date, value: WeightUnit.kg.convert($0.value, to: unitEnum)) }
+    }
     private var best1RM: Double { history.map(\.value).max() ?? 0 }
-    private var delta: Double { appState.prDelta(for: exercise.id) }
-    private var unit: String { appState.workoutSettings.weightUnit.label }
+    private var delta: Double { WeightUnit.kg.convert(appState.prDelta(for: exercise.id), to: unitEnum) }
+    private var unit: String { unitEnum.label }
 
     var body: some View {
         CardContainer {
@@ -451,8 +455,10 @@ private struct PRRow: View {
     @Environment(AppState.self) private var appState
     let exercise: Exercise
     private var pr: AppState.PRResult { appState.computePRs(for: exercise.id) }
-    private var delta: Double { appState.prDelta(for: exercise.id) }
-    private var unit: String { appState.workoutSettings.weightUnit.label }
+    private var unitEnum: WeightUnit { appState.workoutSettings.weightUnit }
+    private var bestWeightDisplay: Double { WeightUnit.kg.convert(pr.bestWeight, to: unitEnum) }
+    private var delta: Double { WeightUnit.kg.convert(appState.prDelta(for: exercise.id), to: unitEnum) }
+    private var unit: String { unitEnum.label }
     var body: some View {
         HStack(spacing: 12) {
             ZStack {
@@ -463,7 +469,7 @@ private struct PRRow: View {
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundColor(PColor.textPrimary)
             Spacer()
-            Text("\(Int(pr.bestWeight)) \(unit)")
+            Text("\(Int(bestWeightDisplay)) \(unit)")
                 .font(.system(size: 15, weight: .bold))
                 .foregroundColor(PColor.textPrimary)
             if delta > 0 {
@@ -543,9 +549,11 @@ private struct BodyTab: View {
     }
 
     private var columns: [GridItem] { [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)] }
-    private var unit: String { appState.workoutSettings.weightUnit.label }
+    private var unitEnum: WeightUnit { appState.workoutSettings.weightUnit }
+    private var unit: String { unitEnum.label }
 
     private func fmt(_ v: Double?) -> String { v.map { String(format: "%.1f", $0) } ?? "—" }
+    private func fmtKg(_ v: Double?) -> String { v.map { fmt(WeightUnit.kg.convert($0, to: unitEnum)) } ?? "—" }
 
     var body: some View {
         VStack(spacing: 22) {
@@ -553,16 +561,16 @@ private struct BodyTab: View {
                 SectionHeader(title: "Body Overview")
                 LazyVGrid(columns: columns, spacing: 12) {
                     StatCard(icon: "scalemass.fill", iconColor: PColor.accent,
-                             value: appState.latestWeightKg != nil ? "\(fmt(appState.latestWeightKg)) \(unit)" : "—",
+                             value: appState.latestWeightKg != nil ? "\(fmtKg(appState.latestWeightKg)) \(unit)" : "—",
                              label: weightSub)
                     StatCard(icon: "percent", iconColor: PColor.orange,
                              value: appState.latestBodyFatPct != nil ? "\(fmt(appState.latestBodyFatPct))%" : "—",
                              label: "Body Fat")
                     StatCard(icon: "figure.arms.open", iconColor: PColor.green,
-                             value: appState.latestLeanMassKg != nil ? "\(fmt(appState.latestLeanMassKg)) \(unit)" : "—",
+                             value: appState.latestLeanMassKg != nil ? "\(fmtKg(appState.latestLeanMassKg)) \(unit)" : "—",
                              label: "Lean Mass")
                     StatCard(icon: "target", iconColor: PColor.blue,
-                             value: appState.workoutSettings.goalWeightKg != nil ? "\(fmt(appState.workoutSettings.goalWeightKg)) \(unit)" : "—",
+                             value: appState.workoutSettings.goalWeightKg != nil ? "\(fmtKg(appState.workoutSettings.goalWeightKg)) \(unit)" : "—",
                              label: goalSub)
                 }
             }
@@ -575,7 +583,6 @@ private struct BodyTab: View {
                     }
                 }
                 .pickerStyle(.segmented)
-                let unitEnum = appState.workoutSettings.weightUnit
                 let trend = appState.weightTrend(days: weightRange.days).map {
                     (date: $0.date, value: WeightUnit.kg.convert($0.value, to: unitEnum))
                 }
