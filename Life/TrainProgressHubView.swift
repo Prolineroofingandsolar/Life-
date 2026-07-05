@@ -2,15 +2,18 @@ import SwiftUI
 import Charts
 
 // MARK: - Progress Hub
-// A polished, light-theme Progress screen with three segmented tabs:
-// Activity, Progress, and Body. Wired to real AppState workout & body data.
+// A polished Progress screen with three segmented tabs: Activity, Progress,
+// and Body. Wired to real AppState workout & body data.
 
+// Routed through AppTheme's shared tokens (and dynamic system colors) so this
+// screen picks up the app's brand accent and adapts to Dark Mode instead of
+// carrying its own hardcoded, light-only palette.
 private enum PColor {
-    static let accent        = Color(hex: "#7C5CFC")
-    static let bg            = Color(hex: "#F2F2F7")
-    static let card          = Color.white
-    static let textPrimary   = Color(hex: "#1C1C1E")
-    static let textSecondary = Color(hex: "#8E8E93")
+    static let accent        = AppTheme.primary
+    static let bg            = AppTheme.pageBg
+    static let card          = AppTheme.cardBg
+    static let textPrimary   = Color(.label)
+    static let textSecondary = Color(.secondaryLabel)
     static let green         = Color(hex: "#34C759")
     static let orange        = Color(hex: "#FF9500")
     static let blue          = Color(hex: "#5E9BF0")
@@ -110,7 +113,7 @@ private struct CardContainer<Content: View>: View {
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(PColor.card)
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: AppTheme.cardRadius, style: .continuous))
             .shadow(color: .black.opacity(0.04), radius: 8, x: 0, y: 2)
     }
 }

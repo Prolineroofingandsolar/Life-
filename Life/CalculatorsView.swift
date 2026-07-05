@@ -50,8 +50,8 @@ private struct CardStyle: ViewModifier {
     func body(content: Content) -> some View {
         content
             .padding()
-            .background(Color(.secondarySystemGroupedBackground))
-            .cornerRadius(12)
+            .background(AppTheme.cardBg)
+            .cornerRadius(AppTheme.cardRadius)
             .padding(.horizontal)
     }
 }

@@ -29,3 +29,42 @@ enum AppTheme {
     static let trainCard   = Color(.secondarySystemBackground)
     static let trainBg     = Color(.systemGroupedBackground)
 }
+
+// MARK: - Shared Empty State
+
+/// A consistent icon + title + subtitle (+ optional action) placeholder for
+/// empty lists, used in place of each screen hand-rolling its own spacing,
+/// icon size, and font weights.
+struct EmptyStateView: View {
+    let icon: String
+    let title: String
+    var subtitle: String? = nil
+    var actionLabel: String? = nil
+    var action: (() -> Void)? = nil
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 40))
+                .foregroundColor(.secondary)
+            Text(title)
+                .font(.headline)
+            if let subtitle {
+                Text(subtitle)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            if let actionLabel, let action {
+                Button(action: action) {
+                    Text(actionLabel)
+                        .font(.subheadline.bold())
+                        .foregroundColor(AppTheme.primary)
+                }
+                .padding(.top, 2)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 24)
+    }
+}

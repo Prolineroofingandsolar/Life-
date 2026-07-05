@@ -124,12 +124,6 @@ extension RecurrenceType {
         self = RecurrenceType(rawValue: raw) ?? .weekly
     }
 }
-extension TaskCategory {
-    init(from decoder: Decoder) throws {
-        let raw = try decoder.singleValueContainer().decode(String.self)
-        self = TaskCategory(rawValue: raw) ?? .personal
-    }
-}
 extension DueDate {
     init(from decoder: Decoder) throws {
         let raw = try decoder.singleValueContainer().decode(String.self)

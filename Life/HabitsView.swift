@@ -154,21 +154,9 @@ struct HabitsView: View {
     private var habitsList: some View {
         Group {
             if activeHabits.isEmpty {
-                VStack(spacing: 14) {
-                    Image(systemName: "chart.bar")
-                        .font(.system(size: 44))
-                        .foregroundColor(.secondary)
-                    Text("No habits yet")
-                        .font(.headline)
-                    Text("Tap + to start tracking your first habit.")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(40)
-                .background(Color(.secondarySystemGroupedBackground))
-                .cornerRadius(16)
+                EmptyStateView(icon: "chart.bar", title: "No habits yet", subtitle: "Tap + to start tracking your first habit.")
+                    .background(Color(.secondarySystemGroupedBackground))
+                    .cornerRadius(AppTheme.cardRadius)
             } else {
                 VStack(spacing: 10) {
                     ForEach(activeHabits) { habit in

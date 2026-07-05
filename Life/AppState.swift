@@ -153,7 +153,7 @@ final class AppState {
             UserDefaults.standard.set(data, forKey: PersistenceKey.appState)
         }
         localLastModified = Date()
-        WidgetSync.sync(tasks: tasks)
+        WidgetSync.sync(tasks: tasks, taskLists: taskLists)
         WidgetSync.syncHabits(habits: habits, todayKey: todayKey, streakFor: streakFor)
         if let uid = cloudUserId {
             syncState = .syncing
@@ -304,8 +304,8 @@ final class AppState {
 
     // MARK: - Task Mutations
 
-    func addTask(title: String, category: TaskCategory, dueDate: DueDate, priority: TaskPriority = .none, notes: String = "", dueDateOverride: Date? = nil) {
-        var task = AppTask(title: title, category: category, dueDate: dueDate)
+    func addTask(title: String, listId: String = "personal", dueDate: DueDate, priority: TaskPriority = .none, notes: String = "", dueDateOverride: Date? = nil) {
+        var task = AppTask(title: title, listId: listId, dueDate: dueDate)
         task.priority = priority
         task.notes = notes
         task.dueDateOverride = dueDateOverride
@@ -362,13 +362,12 @@ final class AppState {
         save()
     }
 
-    func updateTask(id: String, title: String? = nil, category: TaskCategory? = nil, dueDate: DueDate?? = nil, priority: TaskPriority? = nil, notes: String? = nil, listId: String? = nil, dueDateOverride: Date?? = nil, reminderDate: Date?? = nil, scheduledTime: Date?? = nil, estimatedMinutes: Int?? = nil, isRecurring: Bool? = nil, recurrenceType: RecurrenceType?? = nil) {
+    func updateTask(id: String, title: String? = nil, dueDate: DueDate?? = nil, priority: TaskPriority? = nil, notes: String? = nil, listId: String? = nil, dueDateOverride: Date?? = nil, reminderDate: Date?? = nil, scheduledTime: Date?? = nil, estimatedMinutes: Int?? = nil, isRecurring: Bool? = nil, recurrenceType: RecurrenceType?? = nil) {
         guard let idx = tasks.firstIndex(where: { $0.id == id }) else { return }
         // Track whether this update is text-only (title/notes) to debounce disk writes.
         let isTextOnly = title != nil || notes != nil
         var otherFieldsChanged = false
         if let title = title { tasks[idx].title = title }
-        if let category = category { tasks[idx].category = category; otherFieldsChanged = true }
         if let dueDate = dueDate { tasks[idx].dueDate = dueDate; otherFieldsChanged = true }
         if let priority = priority { tasks[idx].priority = priority; otherFieldsChanged = true }
         if let notes = notes { tasks[idx].notes = notes }

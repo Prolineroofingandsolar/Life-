@@ -57,19 +57,8 @@ struct MoneyView: View {
                 // Bills list
                 if sortedBills.isEmpty {
                     Section {
-                        VStack(spacing: 12) {
-                            Image(systemName: "creditcard")
-                                .font(.system(size: 36))
-                                .foregroundColor(.secondary)
-                            Text("No bills yet")
-                                .font(.headline)
-                            Text("Tap + to add your first bill.")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 20)
-                        .listRowBackground(Color.clear)
+                        EmptyStateView(icon: "creditcard", title: "No bills yet", subtitle: "Tap + to add your first bill.")
+                            .listRowBackground(Color.clear)
                     }
                 } else {
                     Section("Bills") {

@@ -114,21 +114,12 @@ struct TrainView: View {
                         .padding(.horizontal, 16)
 
                         if appState.routines.isEmpty {
-                            VStack(spacing: 10) {
-                                Image(systemName: "dumbbell")
-                                    .font(.system(size: 36))
-                                    .foregroundColor(.secondary)
-                                Text("No routines yet")
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                                Button { showAddRoutine = true } label: {
-                                    Text("Create your first routine")
-                                        .font(.subheadline.bold())
-                                        .foregroundColor(AppTheme.trainAccent)
-                                }
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 30)
+                            EmptyStateView(
+                                icon: "dumbbell",
+                                title: "No routines yet",
+                                actionLabel: "Create your first routine",
+                                action: { showAddRoutine = true }
+                            )
                         } else {
                             LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
                                 ForEach(appState.routines) { routine in
