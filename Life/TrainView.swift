@@ -1339,7 +1339,7 @@ struct AddRoutineSheet: View {
                         guard !trimmed.isEmpty else { return }
                         let routineExercises = exercises.map { d in
                             RoutineExercise(exerciseId: d.exerciseId, defaultSets: d.sets,
-                                           defaultReps: d.reps, defaultWeight: d.weight)
+                                           defaultReps: d.reps, defaultWeight: d.weight, restSeconds: d.restSeconds)
                         }
                         var routine = Routine(name: trimmed, exercises: routineExercises)
                         routine.emoji = emoji
@@ -1390,7 +1390,7 @@ struct EditRoutineSheet: View {
         _photoData = State(initialValue: routine.photoData)
         _exercises = State(initialValue: routine.exercises.map { re in
             DraftRoutineExercise(exerciseId: re.exerciseId, sets: re.defaultSets,
-                                 reps: re.defaultReps, weight: re.defaultWeight)
+                                 reps: re.defaultReps, weight: re.defaultWeight, restSeconds: re.restSeconds)
         })
     }
 
@@ -1493,7 +1493,7 @@ struct EditRoutineSheet: View {
                         guard !trimmed.isEmpty else { return }
                         let routineExercises = exercises.map { d in
                             RoutineExercise(exerciseId: d.exerciseId, defaultSets: d.sets,
-                                           defaultReps: d.reps, defaultWeight: d.weight)
+                                           defaultReps: d.reps, defaultWeight: d.weight, restSeconds: d.restSeconds)
                         }
                         appState.updateRoutine(
                             id: routine.id, name: trimmed, exercises: routineExercises,
@@ -1534,6 +1534,7 @@ struct DraftRoutineExercise: Identifiable {
     var sets: Int = 3
     var reps: Int = 10
     var weight: Double = 0
+    var restSeconds: Int = 90
 }
 
 private struct DraftExerciseRow: View {
@@ -1588,6 +1589,8 @@ private struct DraftExerciseRow: View {
                 }
                 Spacer()
             }
+            Stepper("Rest: \(draft.restSeconds)s", value: $draft.restSeconds, in: 15...300, step: 15)
+                .font(.caption)
         }
         .padding(.vertical, 4)
         .onAppear {
@@ -1713,6 +1716,7 @@ struct SessionDetailView: View {
 
     @State private var showEditSheet = false
     @State private var showDeleteConfirm = false
+    @State private var showShareSheet = false
 
     var body: some View {
         List {
@@ -1726,6 +1730,9 @@ struct SessionDetailView: View {
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
             ToolbarItemGroup(placement: .navigationBarTrailing) {
+                Button { showShareSheet = true } label: {
+                    Image(systemName: "square.and.arrow.up")
+                }
                 Button { showEditSheet = true } label: {
                     Image(systemName: "pencil")
                 }
@@ -1734,6 +1741,9 @@ struct SessionDetailView: View {
                         .foregroundColor(.red)
                 }
             }
+        }
+        .sheet(isPresented: $showShareSheet) {
+            ShareSheet(activityItems: [session.shareText(exercises: appState.exercises, unit: appState.workoutSettings.weightUnit)])
         }
         .fullScreenCover(isPresented: $showEditSheet) {
             ActiveWorkoutView(isPresented: $showEditSheet, sessionId: session.id, mode: .editFinished)

@@ -216,6 +216,41 @@ extension Int {
     }
 }
 
+// MARK: - Workout Share Text
+
+extension WorkoutSession {
+    /// Plain-text summary suitable for sharing (Messages, Notes, etc.).
+    func shareText(exercises: [Exercise], unit: WeightUnit) -> String {
+        var lines: [String] = []
+        lines.append("💪 \(name)")
+        lines.append(startedAt.formatted(date: .abbreviated, time: .omitted))
+        lines.append("")
+        lines.append("Duration: \(durationSeconds.formattedDuration)")
+        lines.append("Sets: \(totalSets)")
+        let volume = totalVolumeKg
+        lines.append("Volume: \(volume >= 1000 ? String(format: "%.1fT", volume / 1000) : "\(Int(volume))kg")")
+
+        for ex in self.exercises {
+            let doneSets = ex.sets.filter(\.done)
+            guard !doneSets.isEmpty, let exercise = exercises.first(where: { $0.id == ex.exerciseId }) else { continue }
+            lines.append("")
+            lines.append(exercise.name)
+            for set in doneSets {
+                if exercise.kind == .cardio {
+                    var parts: [String] = []
+                    if set.durationSec > 0 { parts.append("\(set.durationSec / 60) min") }
+                    if set.distanceKm > 0 { parts.append("\(set.distanceKm.formatted1) km") }
+                    lines.append("  " + parts.joined(separator: ", "))
+                } else {
+                    let w = WeightUnit.kg.convert(set.weight, to: unit)
+                    lines.append("  \(w.formatted1)\(unit.label.lowercased()) × \(set.reps)")
+                }
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+}
+
 // MARK: - Haptic Manager
 
 enum HapticManager {

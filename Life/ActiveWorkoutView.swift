@@ -346,11 +346,26 @@ struct ActiveWorkoutView: View {
         session?.exercises.reduce(0) { $0 + $1.sets.filter { $0.done }.count } ?? 0
     }
 
+    /// The routine's per-exercise rest time for whichever exercise owns
+    /// `setId`, falling back to the global default for freeform sessions or
+    /// exercises not found in the originating routine.
+    private func restSeconds(forSetId setId: String) -> Int {
+        guard let session,
+              let sessionExercise = session.exercises.first(where: { $0.sets.contains { $0.id == setId } }),
+              let routineId = session.routineId,
+              let routine = appState.routines.first(where: { $0.id == routineId }),
+              let routineExercise = routine.exercises.first(where: { $0.exerciseId == sessionExercise.exerciseId })
+        else {
+            return appState.workoutSettings.defaultRestSeconds
+        }
+        return routineExercise.restSeconds
+    }
+
     private func handleSetDone(_ setId: String) {
         // No rest timer / Live Activity / PR banner while editing a past workout.
         guard mode == .active else { return }
         if appState.workoutSettings.restTimerEnabled {
-            startRestTimer(seconds: appState.workoutSettings.defaultRestSeconds)
+            startRestTimer(seconds: restSeconds(forSetId: setId))
         } else if #available(iOS 16.2, *) {
             WorkoutLiveActivityManager.shared.update(restEndsAt: nil, setsCompleted: setsCompletedCount)
         }
@@ -807,9 +822,12 @@ private struct SetRow: View {
 
     @State private var weightText: String = ""
     @State private var repsText: String = ""
+    @State private var durationText: String = ""
+    @State private var distanceText: String = ""
     @State private var showPlates: Bool = false
     @FocusState private var weightFocused: Bool
     @FocusState private var repsFocused: Bool
+    @FocusState private var distanceFocused: Bool
 
     /// `LoggedSet.weight` is always stored in kg; this is only the unit the
     /// field displays/accepts input in, so lbs entries must be converted
@@ -830,7 +848,15 @@ private struct SetRow: View {
     }
 
     private var prevLabel: String? {
-        guard let prev = prevSet, (prev.weight > 0 || prev.reps > 0) else { return nil }
+        guard let prev = prevSet else { return nil }
+        if exerciseKind == .cardio {
+            guard prev.durationSec > 0 || prev.distanceKm > 0 else { return nil }
+            var parts: [String] = []
+            if prev.durationSec > 0 { parts.append("\(prev.durationSec / 60) min") }
+            if prev.distanceKm > 0 { parts.append("\(prev.distanceKm.formatted1) km") }
+            return parts.joined(separator: ", ")
+        }
+        guard prev.weight > 0 || prev.reps > 0 else { return nil }
         let prevDisplay = displayWeight(prev.weight)
         if prev.weight > 0 && prev.reps > 0 { return "\(prevDisplay.formatted1) × \(prev.reps)" }
         if prev.reps > 0 { return "\(prev.reps) reps" }
@@ -858,18 +884,42 @@ private struct SetRow: View {
                     .padding(.leading, isDropSet ? 0 : 4)
 
                 if exerciseKind == .cardio {
-                    // Cardio: duration field
-                    TextField("min", text: $weightText)
-                        .keyboardType(.numberPad)
-                        .multilineTextAlignment(.center)
-                        .font(.system(size: 20, weight: .semibold, design: .monospaced))
-                        .frame(maxWidth: .infinity)
-                        .focused($weightFocused)
-                        .onChange(of: weightText) { _, new in
-                            if let val = Int(new) {
-                                appState.updateSet(sessionId: sessionId, exerciseId: exerciseId, setId: set.id, durationSec: val * 60)
-                            }
+                    // Cardio: duration + distance fields
+                    HStack(spacing: 8) {
+                        VStack(spacing: 2) {
+                            TextField("0", text: $durationText)
+                                .keyboardType(.numberPad)
+                                .multilineTextAlignment(.center)
+                                .font(.system(size: 20, weight: .semibold, design: .monospaced))
+                                .frame(maxWidth: .infinity)
+                                .focused($weightFocused)
+                                .onChange(of: durationText) { _, new in
+                                    if let val = Int(new) {
+                                        appState.updateSet(sessionId: sessionId, exerciseId: exerciseId, setId: set.id, durationSec: val * 60)
+                                    }
+                                }
+                            Text("min")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
                         }
+                        VStack(spacing: 2) {
+                            TextField("0", text: $distanceText)
+                                .keyboardType(.decimalPad)
+                                .multilineTextAlignment(.center)
+                                .font(.system(size: 20, weight: .semibold, design: .monospaced))
+                                .frame(maxWidth: .infinity)
+                                .focused($distanceFocused)
+                                .onChange(of: distanceText) { _, new in
+                                    if let val = Double(new.replacingOccurrences(of: ",", with: ".")) {
+                                        appState.updateSet(sessionId: sessionId, exerciseId: exerciseId, setId: set.id, distanceKm: val)
+                                    }
+                                }
+                            Text("km")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
                 } else {
                     // Weight: − field +
                     HStack(spacing: 4) {
@@ -1030,6 +1080,8 @@ private struct SetRow: View {
         .onAppear {
             weightText = set.weight == 0 ? "" : displayWeight(set.weight).formatted1
             repsText = set.reps == 0 ? "" : "\(set.reps)"
+            durationText = set.durationSec == 0 ? "" : "\(set.durationSec / 60)"
+            distanceText = set.distanceKm == 0 ? "" : set.distanceKm.formatted1
         }
     }
 }
