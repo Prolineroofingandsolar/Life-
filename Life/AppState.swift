@@ -1398,6 +1398,7 @@ final class AppState {
     }
 
     struct MuscleTrainingInfo {
+        let sessionId: String
         let daysAgo: Int
         let completedSets: Int
         /// Σ weight × reps across completed sets (Σ reps alone for bodyweight
@@ -1454,6 +1455,7 @@ final class AppState {
             guard totalSets > 0, let fin = session.finishedAt else { continue }
             let days = cal.dateComponents([.day], from: cal.startOfDay(for: fin), to: today).day ?? 0
             return MuscleTrainingInfo(
+                sessionId: session.id,
                 daysAgo: days,
                 completedSets: totalSets,
                 volume: totalVolume,
@@ -1465,10 +1467,12 @@ final class AppState {
 
     /// Highest single-session volume ever recorded for `muscle`, used to
     /// express a session's intensity as "how much of your best effort was
-    /// this" rather than an arbitrary absolute threshold.
-    func personalBestVolume(muscle: String) -> Double {
+    /// this" rather than an arbitrary absolute threshold. Excludes
+    /// `excludingSessionId` (the session currently being evaluated) so it's a
+    /// genuine comparison against prior history rather than including itself.
+    func personalBestVolume(muscle: String, excludingSessionId: String? = nil) -> Double {
         sessions
-            .filter { $0.finishedAt != nil }
+            .filter { $0.finishedAt != nil && $0.id != excludingSessionId }
             .map { sessionVolume($0, muscle: muscle) }
             .max() ?? 0
     }
