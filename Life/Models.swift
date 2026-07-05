@@ -317,6 +317,23 @@ enum AchievementKind: String, Codable, CaseIterable {
         case .totalSessions10, .totalSessions50, .totalSessions100: return "#BF5AF2"
         }
     }
+
+    /// How to unlock this achievement, shown while it's still locked.
+    var unlockHint: String {
+        switch self {
+        case .firstWorkout:     return "Finish your first workout"
+        case .streak7:          return "Reach a 7-day workout streak"
+        case .streak30:         return "Reach a 30-day workout streak"
+        case .totalSets100:     return "Log 100 sets total"
+        case .totalSets1000:    return "Log 1,000 sets total"
+        case .volumePR:         return "Beat your best session's total volume"
+        case .weightPR:         return "Set a new weight PR on any exercise"
+        case .consistency4Weeks: return "Work out in 3 of the last 4 weeks"
+        case .totalSessions10:  return "Complete 10 workouts"
+        case .totalSessions50:  return "Complete 50 workouts"
+        case .totalSessions100: return "Complete 100 workouts"
+        }
+    }
 }
 
 enum MovementType: String, Codable, CaseIterable, Identifiable {
