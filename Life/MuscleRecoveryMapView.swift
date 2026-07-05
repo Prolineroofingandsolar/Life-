@@ -12,12 +12,12 @@ struct MuscleRecoveryMapView: View {
     @State private var showBack = false
     @State private var selected: MuscleGroup?
 
-    // Palette (from the design)
-    private let bg      = Color(hex: "#0E1116")
-    private let card    = Color(hex: "#171A21")
-    private let stroke  = Color(hex: "#262B34")
-    private let subtext = Color(hex: "#8B919C")
-    private let dim     = Color(hex: "#6A7080")
+    // Palette — adapts to the system appearance instead of forcing dark mode.
+    private let bg      = Color(.systemGroupedBackground)
+    private let card    = Color(.secondarySystemGroupedBackground)
+    private let stroke  = Color(.separator)
+    private let subtext = Color(.secondaryLabel)
+    private let dim     = Color(.tertiaryLabel)
     private let green   = Color(hex: "#2FB36B")
     private let gold    = Color(hex: "#E8C84A")
     private let orange  = Color(hex: "#F2933C")
@@ -130,9 +130,7 @@ struct MuscleRecoveryMapView: View {
                 }
             }
             .toolbarBackground(bg, for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
         }
-        .preferredColorScheme(.dark)
     }
 
     // MARK: Header
@@ -146,7 +144,7 @@ struct MuscleRecoveryMapView: View {
                     .foregroundColor(dim)
                 Text("Recovery")
                     .font(.system(size: 34, weight: .bold))
-                    .foregroundColor(.white)
+                    .foregroundColor(.primary)
                 Text(subtitle)
                     .font(.system(size: 14))
                     .foregroundColor(subtext)
@@ -154,7 +152,7 @@ struct MuscleRecoveryMapView: View {
             Spacer()
             VStack(spacing: 3) {
                 ZStack {
-                    Circle().stroke(Color(hex: "#23272F"), lineWidth: 6).frame(width: 58, height: 58)
+                    Circle().stroke(stroke, lineWidth: 6).frame(width: 58, height: 58)
                     Circle()
                         .trim(from: 0, to: CGFloat(readiness) / 100)
                         .stroke(ringColor, style: StrokeStyle(lineWidth: 6, lineCap: .round))
@@ -162,7 +160,7 @@ struct MuscleRecoveryMapView: View {
                         .frame(width: 58, height: 58)
                     Text("\(readiness)")
                         .font(.system(size: 19, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
+                        .foregroundColor(.primary)
                 }
                 Text("RECOVERED")
                     .font(.system(size: 10, weight: .semibold))
@@ -181,7 +179,7 @@ struct MuscleRecoveryMapView: View {
         }
         .padding(4)
         .background(card)
-        .overlay(RoundedRectangle(cornerRadius: 13).stroke(Color(hex: "#23272F"), lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: 13).stroke(stroke, lineWidth: 1))
         .cornerRadius(13)
     }
 
@@ -190,10 +188,10 @@ struct MuscleRecoveryMapView: View {
             Text(title)
                 .font(.system(size: 15, weight: .semibold))
                 .tracking(1)
-                .foregroundColor(active ? .white : Color(hex: "#7A808C"))
+                .foregroundColor(active ? .white : .secondary)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 9)
-                .background(active ? Color(hex: "#2A2F3A") : Color.clear)
+                .background(active ? AppTheme.primary : Color.clear)
                 .cornerRadius(9)
         }
         .buttonStyle(.plain)
@@ -258,7 +256,7 @@ struct MuscleRecoveryMapView: View {
         return VStack(alignment: .leading, spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(g.name).font(.system(size: 24, weight: .bold)).foregroundColor(.white)
+                    Text(g.name).font(.system(size: 24, weight: .bold)).foregroundColor(.primary)
                     Text(exs.isEmpty ? "No exercises logged" : "Worked by \(exs.count) exercise\(exs.count == 1 ? "" : "s")")
                         .font(.system(size: 13)).foregroundColor(subtext)
                 }
@@ -271,7 +269,7 @@ struct MuscleRecoveryMapView: View {
                 Button { withAnimation { selected = nil } } label: {
                     Image(systemName: "xmark").font(.system(size: 13)).foregroundColor(subtext)
                         .frame(width: 30, height: 30)
-                        .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color(hex: "#2A2F3A"), lineWidth: 1))
+                        .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color(.tertiarySystemFill), lineWidth: 1))
                 }
                 .buttonStyle(.plain)
                 .padding(.leading, 4)
@@ -301,7 +299,7 @@ struct MuscleRecoveryMapView: View {
             if !exs.isEmpty {
                 Text("WORKED BY").font(.system(size: 11, weight: .medium)).tracking(1.5).foregroundColor(dim)
                     .padding(.top, 16).padding(.bottom, 9)
-                FlowChips(items: exs, textColor: Color(hex: "#C7CCD4"), bg: bg, border: stroke)
+                FlowChips(items: exs, textColor: Color.primary, bg: bg, border: stroke)
             }
         }
         .padding(18)
@@ -325,7 +323,7 @@ struct MuscleRecoveryMapView: View {
     private var needsRecoveryPanel: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Needs recovery").font(.system(size: 17, weight: .semibold)).foregroundColor(.white)
+                Text("Needs recovery").font(.system(size: 17, weight: .semibold)).foregroundColor(.primary)
                 Spacer()
                 Text("Tap a muscle ↑").font(.system(size: 13)).foregroundColor(dim)
             }
@@ -340,14 +338,14 @@ struct MuscleRecoveryMapView: View {
                     let fat = fatigue(g)
                     HStack(spacing: 11) {
                         Circle().fill(color(fat)).frame(width: 10, height: 10)
-                        Text(g.name).font(.system(size: 15, weight: .medium)).foregroundColor(.white)
+                        Text(g.name).font(.system(size: 15, weight: .medium)).foregroundColor(.primary)
                         Spacer()
                         Text(statusLabel(fat)).font(.system(size: 13)).foregroundColor(subtext)
                         Text("\(fat)%").font(.system(size: 16, weight: .semibold, design: .rounded))
                             .foregroundColor(color(fat)).frame(minWidth: 38, alignment: .trailing)
                     }
                     .padding(.vertical, 9)
-                    .overlay(Rectangle().fill(Color(hex: "#21262E")).frame(height: 1), alignment: .top)
+                    .overlay(Rectangle().fill(stroke).frame(height: 1), alignment: .top)
                 }
             }
 
@@ -357,7 +355,7 @@ struct MuscleRecoveryMapView: View {
                  + Text("fresh & ready to train").foregroundColor(subtext).font(.system(size: 14)))
             }
             .padding(.top, 14)
-            .overlay(Rectangle().fill(Color(hex: "#21262E")).frame(height: 1), alignment: .top)
+            .overlay(Rectangle().fill(stroke).frame(height: 1), alignment: .top)
             .padding(.top, 14)
         }
         .padding(18)
