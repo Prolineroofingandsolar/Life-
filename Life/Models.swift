@@ -494,6 +494,9 @@ struct CareSettings: Codable {
     var waterReminderEnabled: Bool = false
     var waterReminderIntervalMinutes: Int = 60
     var stepGoal: Int = 10000
+    var breakReminderEnabled: Bool = false
+    var morningSummaryEnabled: Bool = false
+    var eveningNudgeEnabled: Bool = false
 }
 
 struct WorkoutSettings: Codable {

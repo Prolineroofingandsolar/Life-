@@ -155,6 +155,7 @@ final class AppState {
         localLastModified = Date()
         WidgetSync.sync(tasks: tasks, taskLists: taskLists)
         WidgetSync.syncHabits(habits: habits, todayKey: todayKey, streakFor: streakFor)
+        syncHabitReminderSummaries()
         if let uid = cloudUserId {
             syncState = .syncing
             FirestoreSync.shared.scheduleUpload(snapshot, userId: uid)
@@ -269,8 +270,36 @@ final class AppState {
         loadPhotos()
         // Defer notification scheduling off the synchronous launch path.
         let habitsSnapshot = habits
-        DispatchQueue.main.async {
+        DispatchQueue.main.async { [weak self] in
             HabitReminderManager.shared.syncReminders(for: habitsSnapshot)
+            self?.syncHabitReminderSummaries()
+        }
+    }
+
+    /// Schedules (or cancels) the daily morning-summary and evening-nudge
+    /// habit notifications based on CareSettings and today's completion
+    /// state. Uses the same "is this habit done today" rule as the widget
+    /// (WidgetSync.syncHabits) so the notification and widget agree.
+    private func syncHabitReminderSummaries() {
+        let unfinishedToday = habits.filter { habit in
+            guard !habit.isArchived else { return false }
+            let todayLog = habit.logs.first { $0.dayKey == todayKey }
+            let count = todayLog?.count ?? 0
+            let slipped = todayLog?.slipped == true
+            let isCompleted = habit.kind == .break ? !slipped : (!slipped && count >= habit.targetCount)
+            return !isCompleted
+        }
+
+        if careSettings.morningSummaryEnabled {
+            HabitReminderManager.shared.scheduleMorningSummary(activeCount: unfinishedToday.count)
+        } else {
+            HabitReminderManager.shared.cancelMorningSummary()
+        }
+
+        if careSettings.eveningNudgeEnabled {
+            HabitReminderManager.shared.scheduleEveningNudge(unfinishedNames: unfinishedToday.map(\.name))
+        } else {
+            HabitReminderManager.shared.cancelEveningNudge()
         }
     }
 

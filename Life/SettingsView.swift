@@ -96,6 +96,42 @@ struct SettingsView: View {
                             step: 15
                         )
                     }
+
+                    Toggle("Break Reminder", isOn: $careSettings.breakReminderEnabled)
+                        .onChange(of: careSettings.breakReminderEnabled) { _, enabled in
+                            if enabled {
+                                Task {
+                                    let granted = await NotificationsManager.shared.requestPermission()
+                                    if granted {
+                                        NotificationsManager.shared.scheduleBreakReminder(intervalMinutes: careSettings.breakIntervalMinutes)
+                                    } else {
+                                        careSettings.breakReminderEnabled = false
+                                    }
+                                }
+                            } else {
+                                NotificationsManager.shared.cancelBreakReminder()
+                            }
+                        }
+                    if careSettings.breakReminderEnabled {
+                        Stepper(
+                            "Every \(careSettings.breakIntervalMinutes) min",
+                            value: $careSettings.breakIntervalMinutes,
+                            in: 15...240,
+                            step: 15
+                        )
+                        .onChange(of: careSettings.breakIntervalMinutes) { _, minutes in
+                            NotificationsManager.shared.scheduleBreakReminder(intervalMinutes: minutes)
+                        }
+                    }
+                }
+
+                // Habit Reminders
+                Section("Habit Reminders") {
+                    Toggle("Morning Summary", isOn: $careSettings.morningSummaryEnabled)
+                    Toggle("Evening Nudge", isOn: $careSettings.eveningNudgeEnabled)
+                    Text("Morning Summary lists today's habits at 8am. Evening Nudge lists what's still unfinished at 9pm.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
 
                 // Tools
@@ -204,6 +240,18 @@ struct SettingsView: View {
                 appState.setCareSettings(careSettings)
             }
             .onChange(of: careSettings.waterReminderIntervalMinutes) { _, _ in
+                appState.setCareSettings(careSettings)
+            }
+            .onChange(of: careSettings.breakReminderEnabled) { _, _ in
+                appState.setCareSettings(careSettings)
+            }
+            .onChange(of: careSettings.breakIntervalMinutes) { _, _ in
+                appState.setCareSettings(careSettings)
+            }
+            .onChange(of: careSettings.morningSummaryEnabled) { _, _ in
+                appState.setCareSettings(careSettings)
+            }
+            .onChange(of: careSettings.eveningNudgeEnabled) { _, _ in
                 appState.setCareSettings(careSettings)
             }
             .alert("Reset All Data?", isPresented: $showResetConfirm) {
