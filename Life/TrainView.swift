@@ -16,7 +16,6 @@ struct TrainView: View {
     @State private var showBrowsePrograms = false
     @State private var showPrograms = false
     @State private var hubTab: TrainProgressHubView.HubTab? = nil
-    @State private var showMuscleMap = false
     @State private var pulseResume = false
     @State private var planDate: Date? = nil
     @State private var sessionForDetail: WorkoutSession? = nil
@@ -149,10 +148,6 @@ struct TrainView: View {
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
-                    Button { showMuscleMap = true } label: {
-                        Image(systemName: "figure.arms.open")
-                            .foregroundColor(AppTheme.trainAccent)
-                    }
                     Button { hubTab = .activity } label: {
                         Image(systemName: "chart.xyaxis.line")
                             .foregroundColor(AppTheme.trainAccent)
@@ -173,7 +168,6 @@ struct TrainView: View {
                     ActiveWorkoutView(isPresented: $showActiveWorkout, sessionId: id)
                 }
             }
-            .sheet(isPresented: $showMuscleMap) { MuscleRecoveryMapView() }
             .sheet(isPresented: $showExerciseLibrary) { ExerciseLibraryView() }
             .sheet(isPresented: $showAddRoutine) { AddRoutineSheet() }
             .sheet(isPresented: $showAIRoutine) { AIRoutineSheet() }
@@ -304,11 +298,14 @@ struct WorkoutCalendarCard: View {
         return days
     }
 
+    // Bucketed by startedAt (not finishedAt) so this agrees with the week
+    // strip on the main Train page, which matches sessions by their start
+    // day — a workout that finishes after midnight would otherwise show as
+    // "done" on a different day between the two calendars.
     private var sessionDayMap: [Date: [WorkoutSession]] {
         var map: [Date: [WorkoutSession]] = [:]
         for s in appState.sessions.filter({ $0.finishedAt != nil }) {
-            guard let fin = s.finishedAt else { continue }
-            let day = cal.startOfDay(for: fin)
+            let day = cal.startOfDay(for: s.startedAt)
             map[day, default: []].append(s)
         }
         return map
@@ -410,10 +407,10 @@ struct WorkoutCalendarCard: View {
 
         Button {
             HapticManager.selection()
-            if isFuture || isToday {
-                onPlanDate(date)
-            } else if let session = sessions.first {
+            if let session = sessions.first {
                 onTapSession(session)
+            } else if isFuture || isToday {
+                onPlanDate(date)
             }
         } label: {
             ZStack {
@@ -525,10 +522,10 @@ private struct WeekStripView: View {
                         sessionName: session?.name
                     ) {
                         let today = Calendar.current.startOfDay(for: Date())
-                        if date >= today {
-                            onPlanDate(date)
-                        } else if let s = session {
+                        if let s = session {
                             onTapSession(s)
+                        } else if date >= today {
+                            onPlanDate(date)
                         }
                     }
                 }
