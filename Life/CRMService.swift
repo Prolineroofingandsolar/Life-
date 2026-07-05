@@ -85,19 +85,14 @@ private struct RawGeneralTask: Decodable {
 @Observable
 final class CRMService {
 
-    private let supabaseURL: String = {
-        guard let url = Bundle.main.object(forInfoDictionaryKey: "CRMSupabaseURL") as? String else {
-            fatalError("CRMSupabaseURL missing from Info.plist")
-        }
-        return url
-    }()
-
-    private let anonKey: String = {
-        guard let key = Bundle.main.object(forInfoDictionaryKey: "CRMSupabaseAnonKey") as? String else {
-            fatalError("CRMSupabaseAnonKey missing from Info.plist")
-        }
-        return key
-    }()
+    // Missing config disables CRM features (surfaced via `error`) rather than
+    // crashing the whole app — this integration is optional infrastructure,
+    // not something a misconfigured build setting should take the app down for.
+    private let rawSupabaseURL = Bundle.main.object(forInfoDictionaryKey: "CRMSupabaseURL") as? String
+    private let rawAnonKey = Bundle.main.object(forInfoDictionaryKey: "CRMSupabaseAnonKey") as? String
+    private var supabaseURL: String { rawSupabaseURL ?? "" }
+    private var anonKey: String { rawAnonKey ?? "" }
+    private var isConfigured: Bool { rawSupabaseURL != nil && rawAnonKey != nil }
 
     var jobTasks: [CRMJobTask] = []
     var generalTasks: [CRMGeneralTask] = []
@@ -111,6 +106,10 @@ final class CRMService {
     // MARK: - Fetch
 
     func fetchAll() async {
+        guard isConfigured else {
+            await MainActor.run { self.error = "CRM is not configured" }
+            return
+        }
         await MainActor.run { isLoading = true; error = nil }
         async let jobs: Void = fetchJobTasks()
         async let general: Void = fetchGeneralTasks()
