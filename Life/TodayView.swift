@@ -334,8 +334,9 @@ private struct CareSection: View {
                 TodayStatBox(
                     icon: "fork.knife", iconColor: .orange,
                     value: "\(today.meals.count)/\(settings.mealGoal)", label: "Meals",
-                    done: today.meals.count >= settings.mealGoal
-                ) { showMealSheet = true }
+                    done: today.meals.count >= settings.mealGoal,
+                    action: { showMealSheet = true }
+                )
 
                 TodayStatBox(
                     icon: "figure.walk", iconColor: AppTheme.primary,
@@ -438,6 +439,23 @@ private struct MealLogSheet: View {
     }
 }
 
+private struct LongPressActionModifier: ViewModifier {
+    let action: (() -> Void)?
+
+    func body(content: Content) -> some View {
+        if let action {
+            content.simultaneousGesture(
+                LongPressGesture(minimumDuration: 0.4).onEnded { _ in
+                    HapticManager.impact(.rigid)
+                    action()
+                }
+            )
+        } else {
+            content
+        }
+    }
+}
+
 // MARK: - Today Stat Box
 
 private struct TodayStatBox: View {
@@ -454,16 +472,9 @@ private struct TodayStatBox: View {
             Button {
                 HapticManager.impact(done ? .light : .medium)
                 action()
-            } label: { content }
+            } label: { content.contentShape(Rectangle()) }
             .buttonStyle(PressableButtonStyle())
-            .simultaneousGesture(
-                secondaryAction.map { secondary in
-                    LongPressGesture(minimumDuration: 0.4).onEnded { _ in
-                        HapticManager.impact(.rigid)
-                        secondary()
-                    }
-                }
-            )
+            .modifier(LongPressActionModifier(action: secondaryAction))
         } else {
             content
         }
