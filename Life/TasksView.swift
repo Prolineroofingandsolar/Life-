@@ -555,8 +555,11 @@ private struct WorkView: View {
             if crm.isLoading {
                 HStack { Spacer(); ProgressView(); Spacer() }
                     .listRowBackground(Color.clear)
-            } else if crm.error != nil {
-                Text("Could not load CRM tasks")
+            } else if let crmError = crm.error {
+                Text(crmError)
+                    .font(.caption).foregroundColor(.secondary)
+            } else if visibleGeneralTasks.isEmpty && jobGroups.isEmpty {
+                Text("No CRM tasks found")
                     .font(.caption).foregroundColor(.secondary)
             } else {
                 // CRM General Tasks
