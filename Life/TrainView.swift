@@ -298,11 +298,14 @@ struct WorkoutCalendarCard: View {
         return days
     }
 
+    // Bucketed by startedAt (not finishedAt) so this agrees with the week
+    // strip on the main Train page, which matches sessions by their start
+    // day — a workout that finishes after midnight would otherwise show as
+    // "done" on a different day between the two calendars.
     private var sessionDayMap: [Date: [WorkoutSession]] {
         var map: [Date: [WorkoutSession]] = [:]
         for s in appState.sessions.filter({ $0.finishedAt != nil }) {
-            guard let fin = s.finishedAt else { continue }
-            let day = cal.startOfDay(for: fin)
+            let day = cal.startOfDay(for: s.startedAt)
             map[day, default: []].append(s)
         }
         return map
