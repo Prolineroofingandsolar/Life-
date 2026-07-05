@@ -61,16 +61,20 @@ struct MuscleRecoveryMapView: View {
         return (bySets + byVolume) / 2
     }
 
+    /// Day-based fatigue for a muscle with the given full-recovery window:
+    /// always high right after training, then tapers to a small residual
+    /// floor by the time that muscle's own recovery window has elapsed —
+    /// so a 1.5-day muscle (biceps) is back to baseline well before a
+    /// 3-day one (legs, back).
+    private func dayFatigue(daysAgo: Int, recoveryDays: Double) -> Double {
+        guard daysAgo > 0 else { return 85 }
+        let remaining = Swift.max(0, 1 - Double(daysAgo) / recoveryDays)
+        return 8 + remaining * 77
+    }
+
     private func fatigue(_ g: MuscleGroup) -> Int {
-        guard let info = trainingInfo(g) else { return 0 }
-        let base: Double
-        switch info.daysAgo {
-        case 0: base = 85
-        case 1: base = 55
-        case 2: base = 30
-        case 3: base = 15
-        default: base = 8
-        }
+        guard let m = g.appMuscle, let info = trainingInfo(g) else { return 0 }
+        let base = dayFatigue(daysAgo: info.daysAgo, recoveryDays: appState.recoveryDays(forMuscle: m))
         return Int((base * intensity(g, info: info)).rounded())
     }
 
@@ -99,8 +103,8 @@ struct MuscleRecoveryMapView: View {
 
     private func freshIn(_ g: MuscleGroup) -> String {
         let fat = fatigue(g)
-        guard fat >= 25, let info = trainingInfo(g) else { return "Ready" }
-        let remaining = Swift.max(1, 2 - info.daysAgo)
+        guard fat >= 25, let m = g.appMuscle, let info = trainingInfo(g) else { return "Ready" }
+        let remaining = Swift.max(1, Int(appState.recoveryDays(forMuscle: m).rounded(.up)) - info.daysAgo)
         return "~\(remaining)d"
     }
 
