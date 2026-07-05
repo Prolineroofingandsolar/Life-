@@ -407,10 +407,10 @@ struct WorkoutCalendarCard: View {
 
         Button {
             HapticManager.selection()
-            if isFuture || isToday {
-                onPlanDate(date)
-            } else if let session = sessions.first {
+            if let session = sessions.first {
                 onTapSession(session)
+            } else if isFuture || isToday {
+                onPlanDate(date)
             }
         } label: {
             ZStack {
@@ -522,10 +522,10 @@ private struct WeekStripView: View {
                         sessionName: session?.name
                     ) {
                         let today = Calendar.current.startOfDay(for: Date())
-                        if date >= today {
-                            onPlanDate(date)
-                        } else if let s = session {
+                        if let s = session {
                             onTapSession(s)
+                        } else if date >= today {
+                            onPlanDate(date)
                         }
                     }
                 }
