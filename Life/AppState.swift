@@ -1477,13 +1477,31 @@ final class AppState {
             .max() ?? 0
     }
 
+    /// Typical full-recovery time (days) per muscle group. Smaller/isolation
+    /// muscles (biceps, triceps, calves, core) bounce back faster than large
+    /// compound groups (back, legs) that take more systemic recovery,
+    /// per common strength & conditioning / DOMS recovery guidance. Any
+    /// muscle not listed falls back to a 2-day default.
+    private static let muscleRecoveryDays: [String: Double] = [
+        "Biceps":    1.5,
+        "Triceps":   1.5,
+        "Calves":    1.5,
+        "Core":      1.5,
+        "Shoulders": 2.0,
+        "Chest":     2.5,
+        "Glutes":    2.5,
+        "Back":      3.0,
+        "Legs":      3.0,
+    ]
+
+    func recoveryDays(forMuscle muscle: String) -> Double {
+        Self.muscleRecoveryDays[muscle] ?? 2.0
+    }
+
     func recoveryStatus(muscle: String) -> RecoveryStatus {
         guard let days = daysSinceLastTrained(muscle: muscle) else { return .fresh }
-        switch days {
-        case 0:  return .fatigued
-        case 1:  return .recovering
-        default: return .recovered
-        }
+        if days == 0 { return .fatigued }
+        return Double(days) < recoveryDays(forMuscle: muscle) ? .recovering : .recovered
     }
 
     // MARK: - Weekly Sessions Calendar
