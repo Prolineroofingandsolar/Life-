@@ -2,15 +2,18 @@ import SwiftUI
 import Charts
 
 // MARK: - Progress Hub
-// A polished, light-theme Progress screen with three segmented tabs:
-// Activity, Progress, and Body. Wired to real AppState workout & body data.
+// A polished Progress screen with three segmented tabs: Activity, Progress,
+// and Body. Wired to real AppState workout & body data.
 
+// Routed through AppTheme's shared tokens (and dynamic system colors) so this
+// screen picks up the app's brand accent and adapts to Dark Mode instead of
+// carrying its own hardcoded, light-only palette.
 private enum PColor {
-    static let accent        = Color(hex: "#7C5CFC")
-    static let bg            = Color(hex: "#F2F2F7")
-    static let card          = Color.white
-    static let textPrimary   = Color(hex: "#1C1C1E")
-    static let textSecondary = Color(hex: "#8E8E93")
+    static let accent        = AppTheme.primary
+    static let bg            = AppTheme.pageBg
+    static let card          = AppTheme.cardBg
+    static let textPrimary   = Color(.label)
+    static let textSecondary = Color(.secondaryLabel)
     static let green         = Color(hex: "#34C759")
     static let orange        = Color(hex: "#FF9500")
     static let blue          = Color(hex: "#5E9BF0")
@@ -110,7 +113,7 @@ private struct CardContainer<Content: View>: View {
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(PColor.card)
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: AppTheme.cardRadius, style: .continuous))
             .shadow(color: .black.opacity(0.04), radius: 8, x: 0, y: 2)
     }
 }
@@ -393,10 +396,14 @@ private struct LiftChartCard: View {
     @Environment(AppState.self) private var appState
     let exercise: Exercise
 
-    private var history: [AppState.DatedValue] { appState.oneRMHistory(for: exercise.id) }
+    /// `oneRMHistory`/`prDelta` return kg (the canonical storage unit) — convert to the display unit here.
+    private var unitEnum: WeightUnit { appState.workoutSettings.weightUnit }
+    private var history: [AppState.DatedValue] {
+        appState.oneRMHistory(for: exercise.id).map { .init(date: $0.date, value: WeightUnit.kg.convert($0.value, to: unitEnum)) }
+    }
     private var best1RM: Double { history.map(\.value).max() ?? 0 }
-    private var delta: Double { appState.prDelta(for: exercise.id) }
-    private var unit: String { appState.workoutSettings.weightUnit.label }
+    private var delta: Double { WeightUnit.kg.convert(appState.prDelta(for: exercise.id), to: unitEnum) }
+    private var unit: String { unitEnum.label }
 
     var body: some View {
         CardContainer {
@@ -451,8 +458,10 @@ private struct PRRow: View {
     @Environment(AppState.self) private var appState
     let exercise: Exercise
     private var pr: AppState.PRResult { appState.computePRs(for: exercise.id) }
-    private var delta: Double { appState.prDelta(for: exercise.id) }
-    private var unit: String { appState.workoutSettings.weightUnit.label }
+    private var unitEnum: WeightUnit { appState.workoutSettings.weightUnit }
+    private var bestWeightDisplay: Double { WeightUnit.kg.convert(pr.bestWeight, to: unitEnum) }
+    private var delta: Double { WeightUnit.kg.convert(appState.prDelta(for: exercise.id), to: unitEnum) }
+    private var unit: String { unitEnum.label }
     var body: some View {
         HStack(spacing: 12) {
             ZStack {
@@ -463,7 +472,7 @@ private struct PRRow: View {
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundColor(PColor.textPrimary)
             Spacer()
-            Text("\(Int(pr.bestWeight)) \(unit)")
+            Text("\(Int(bestWeightDisplay)) \(unit)")
                 .font(.system(size: 15, weight: .bold))
                 .foregroundColor(PColor.textPrimary)
             if delta > 0 {
@@ -543,9 +552,11 @@ private struct BodyTab: View {
     }
 
     private var columns: [GridItem] { [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)] }
-    private var unit: String { appState.workoutSettings.weightUnit.label }
+    private var unitEnum: WeightUnit { appState.workoutSettings.weightUnit }
+    private var unit: String { unitEnum.label }
 
     private func fmt(_ v: Double?) -> String { v.map { String(format: "%.1f", $0) } ?? "—" }
+    private func fmtKg(_ v: Double?) -> String { v.map { fmt(WeightUnit.kg.convert($0, to: unitEnum)) } ?? "—" }
 
     var body: some View {
         VStack(spacing: 22) {
@@ -553,16 +564,16 @@ private struct BodyTab: View {
                 SectionHeader(title: "Body Overview")
                 LazyVGrid(columns: columns, spacing: 12) {
                     StatCard(icon: "scalemass.fill", iconColor: PColor.accent,
-                             value: appState.latestWeightKg != nil ? "\(fmt(appState.latestWeightKg)) \(unit)" : "—",
+                             value: appState.latestWeightKg != nil ? "\(fmtKg(appState.latestWeightKg)) \(unit)" : "—",
                              label: weightSub)
                     StatCard(icon: "percent", iconColor: PColor.orange,
                              value: appState.latestBodyFatPct != nil ? "\(fmt(appState.latestBodyFatPct))%" : "—",
                              label: "Body Fat")
                     StatCard(icon: "figure.arms.open", iconColor: PColor.green,
-                             value: appState.latestLeanMassKg != nil ? "\(fmt(appState.latestLeanMassKg)) \(unit)" : "—",
+                             value: appState.latestLeanMassKg != nil ? "\(fmtKg(appState.latestLeanMassKg)) \(unit)" : "—",
                              label: "Lean Mass")
                     StatCard(icon: "target", iconColor: PColor.blue,
-                             value: appState.workoutSettings.goalWeightKg != nil ? "\(fmt(appState.workoutSettings.goalWeightKg)) \(unit)" : "—",
+                             value: appState.workoutSettings.goalWeightKg != nil ? "\(fmtKg(appState.workoutSettings.goalWeightKg)) \(unit)" : "—",
                              label: goalSub)
                 }
             }
@@ -575,7 +586,6 @@ private struct BodyTab: View {
                     }
                 }
                 .pickerStyle(.segmented)
-                let unitEnum = appState.workoutSettings.weightUnit
                 let trend = appState.weightTrend(days: weightRange.days).map {
                     (date: $0.date, value: WeightUnit.kg.convert($0.value, to: unitEnum))
                 }

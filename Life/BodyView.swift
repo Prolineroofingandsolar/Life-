@@ -430,20 +430,8 @@ private struct LiftsTab: View {
         List {
             if prItems.isEmpty {
                 Section {
-                    VStack(spacing: 12) {
-                        Image(systemName: "dumbbell")
-                            .font(.system(size: 40))
-                            .foregroundColor(.secondary)
-                        Text("No lift records yet")
-                            .font(.headline)
-                        Text("Complete workouts to see your PRs here.")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 24)
-                    .listRowBackground(Color.clear)
+                    EmptyStateView(icon: "dumbbell", title: "No lift records yet", subtitle: "Complete workouts to see your PRs here.")
+                        .listRowBackground(Color.clear)
                 }
             } else {
                 ForEach(muscles, id: \.self) { muscle in
@@ -465,14 +453,17 @@ private struct LiftsTab: View {
 }
 
 private struct PRRow: View {
+    @Environment(AppState.self) private var appState
     let item: LiftPRItem
+
+    private var unit: WeightUnit { appState.workoutSettings.weightUnit }
 
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.exercise.name)
                     .font(.subheadline)
-                Text("\(item.pr.bestWeight.formatted1) kg × \(item.pr.bestReps)")
+                Text("\(WeightUnit.kg.convert(item.pr.bestWeight, to: unit).formatted1) \(unit.label.lowercased()) × \(item.pr.bestReps)")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
@@ -481,7 +472,7 @@ private struct PRRow: View {
                 Text("e1RM")
                     .font(.caption2)
                     .foregroundColor(.secondary)
-                Text("\(item.pr.best1RM.formatted1) kg")
+                Text("\(WeightUnit.kg.convert(item.pr.best1RM, to: unit).formatted1) \(unit.label.lowercased())")
                     .font(.subheadline.bold())
                     .foregroundColor(AppTheme.primary)
             }

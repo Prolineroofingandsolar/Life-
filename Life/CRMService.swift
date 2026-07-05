@@ -85,8 +85,19 @@ private struct RawGeneralTask: Decodable {
 @Observable
 final class CRMService {
 
-    private let supabaseURL = "https://qzvdzzvkocmulcfujyea.supabase.co"
-    private let anonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF6dmR6enZrb2NtdWxjZnVqeWVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg4NzIxNjUsImV4cCI6MjA5NDQ0ODE2NX0.g42AvuElukfbpgbg9Y6XImnuHQ2Po5GEaVVGMz3Siu0"
+    private let supabaseURL: String = {
+        guard let url = Bundle.main.object(forInfoDictionaryKey: "CRMSupabaseURL") as? String else {
+            fatalError("CRMSupabaseURL missing from Info.plist")
+        }
+        return url
+    }()
+
+    private let anonKey: String = {
+        guard let key = Bundle.main.object(forInfoDictionaryKey: "CRMSupabaseAnonKey") as? String else {
+            fatalError("CRMSupabaseAnonKey missing from Info.plist")
+        }
+        return key
+    }()
 
     var jobTasks: [CRMJobTask] = []
     var generalTasks: [CRMGeneralTask] = []
@@ -117,7 +128,6 @@ final class CRMService {
             headers.forEach { req.setValue($1, forHTTPHeaderField: $0) }
             req.httpBody = "{}".data(using: .utf8)
             let (data, resp) = try await URLSession.shared.data(for: req)
-            print("[CRM] job tasks raw:", String(data: data, encoding: .utf8) ?? "nil")
 
             // If RPC fails, fall back to direct table query with no stage filter
             if let http = resp as? HTTPURLResponse, http.statusCode != 200 {
@@ -148,7 +158,6 @@ final class CRMService {
             }
             await MainActor.run { self.jobTasks = tasks }
         } catch {
-            print("[CRM] job tasks error:", error)
             await fetchJobTasksDirect()
         }
     }
@@ -165,7 +174,6 @@ final class CRMService {
             var req = URLRequest(url: url)
             headers.forEach { req.setValue($1, forHTTPHeaderField: $0) }
             let (data, _) = try await URLSession.shared.data(for: req)
-            print("[CRM] job tasks direct raw:", String(data: data, encoding: .utf8) ?? "nil")
             let rows = try JSONDecoder().decode([LeadRow].self, from: data)
             let tasks = rows.flatMap { lead -> [CRMJobTask] in
                 (lead.tasks ?? [])
@@ -184,8 +192,7 @@ final class CRMService {
             }
             await MainActor.run { self.jobTasks = tasks }
         } catch {
-            print("[CRM] job tasks direct error:", error)
-            await MainActor.run { self.error = "Failed to load job tasks" }
+            await MainActor.run { self.error = "Failed to load job tasks: \(error.localizedDescription)" }
         }
     }
 
@@ -200,7 +207,6 @@ final class CRMService {
             var req = URLRequest(url: url)
             headers.forEach { req.setValue($1, forHTTPHeaderField: $0) }
             let (data, _) = try await URLSession.shared.data(for: req)
-            print("[CRM] general tasks raw:", String(data: data, encoding: .utf8) ?? "nil")
             let rows = try JSONDecoder().decode([RawGeneralTask].self, from: data)
             let tasks = rows.map { r in
                 CRMGeneralTask(
@@ -215,8 +221,7 @@ final class CRMService {
             }
             await MainActor.run { self.generalTasks = tasks }
         } catch {
-            print("[CRM] general tasks error:", error)
-            await MainActor.run { self.error = "Failed to load general tasks" }
+            await MainActor.run { self.error = "Failed to load general tasks: \(error.localizedDescription)" }
         }
     }
 
@@ -255,7 +260,9 @@ final class CRMService {
             patchReq.setValue("return=minimal", forHTTPHeaderField: "Prefer")
             patchReq.httpBody = patchBody
             _ = try await URLSession.shared.data(for: patchReq)
-        } catch {}
+        } catch {
+            await MainActor.run { self.error = "Failed to save job task: \(error.localizedDescription)" }
+        }
     }
 
     // MARK: - Complete General Task
@@ -277,6 +284,8 @@ final class CRMService {
             req.setValue("return=minimal", forHTTPHeaderField: "Prefer")
             req.httpBody = body
             _ = try await URLSession.shared.data(for: req)
-        } catch {}
+        } catch {
+            await MainActor.run { self.error = "Failed to save task: \(error.localizedDescription)" }
+        }
     }
 }

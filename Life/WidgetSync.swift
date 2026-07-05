@@ -25,12 +25,21 @@ enum WidgetSync {
 
     // MARK: - Sync
 
-    static func sync(tasks: [AppTask]) {
-        let widgetTasks = tasks.map { task in
-            WidgetTask(
+    /// The widget only has bespoke color/emoji for these three default list
+    /// ids (see LifeTasksWidget's `categoryColor`/`categoryEmoji`); a custom
+    /// user-created list falls back to its own name so it's still
+    /// recognizable instead of silently showing as "personal".
+    private static let widgetKnownListIds: Set<String> = ["work", "gym", "personal"]
+
+    static func sync(tasks: [AppTask], taskLists: [TaskList]) {
+        let listsById = Dictionary(uniqueKeysWithValues: taskLists.map { ($0.id, $0) })
+        let widgetTasks = tasks.map { task -> WidgetTask in
+            let list = listsById[task.listId]
+            let category = list.map { widgetKnownListIds.contains($0.id) ? $0.id : $0.name } ?? "personal"
+            return WidgetTask(
                 id: task.id,
                 title: task.title,
-                category: task.category.rawValue,
+                category: category,
                 done: task.done,
                 dueDate: task.dueDate?.rawValue,
                 priority: task.priority.rawValue

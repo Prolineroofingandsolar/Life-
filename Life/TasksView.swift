@@ -43,9 +43,9 @@ struct TasksView: View {
                     guard let resolved = task.resolvedDate else { return false }
                     return Calendar.current.startOfDay(for: resolved) == todayStart
                 }
-            case .work:     base = appState.tasks.filter { $0.category == .work }
-            case .gym:      base = appState.tasks.filter { $0.category == .gym }
-            case .personal: base = appState.tasks.filter { $0.category == .personal }
+            case .work:     base = appState.tasks.filter { $0.listId == "work" }
+            case .gym:      base = appState.tasks.filter { $0.listId == "gym" }
+            case .personal: base = appState.tasks.filter { $0.listId == "personal" }
             }
         }
         return base
@@ -212,6 +212,8 @@ private struct TaskRow: View {
     @State private var draftNotes: String = ""
     @State private var newSubtaskText: String = ""
 
+    private var list: TaskList? { appState.taskList(for: task) }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Main row
@@ -229,7 +231,7 @@ private struct TaskRow: View {
                     appState.toggleTask(id: task.id)
                 } label: {
                     Image(systemName: task.done ? "checkmark.circle.fill" : "circle")
-                        .foregroundColor(task.done ? .green : task.category.color)
+                        .foregroundColor(task.done ? .green : (list?.color ?? .secondary))
                         .font(.title3)
                         .scaleEffect(task.done ? 1.1 : 1.0)
                         .animation(.spring(response: 0.3, dampingFraction: 0.5), value: task.done)
@@ -244,8 +246,8 @@ private struct TaskRow: View {
                             .foregroundColor(task.done ? .secondary : .primary)
 
                         HStack(spacing: 6) {
-                            Circle().fill(task.category.color).frame(width: 6, height: 6)
-                            Text(task.category.label).font(.caption).foregroundColor(.secondary)
+                            Circle().fill(list?.color ?? .secondary).frame(width: 6, height: 6)
+                            Text(list?.name ?? "").font(.caption).foregroundColor(.secondary)
                             Text("·").foregroundColor(.secondary).font(.caption)
                             Text(task.dueDate?.label ?? "")
                                 .font(.caption)
@@ -286,19 +288,19 @@ private struct TaskRow: View {
                         .onSubmit { appState.updateTask(id: task.id, title: draftTitle) }
                         .onChange(of: draftTitle) { _, v in appState.updateTask(id: task.id, title: v) }
 
-                    // Category picker
+                    // List picker
                     HStack(spacing: 8) {
-                        Text("Category").font(.caption).foregroundColor(.secondary)
-                        ForEach(TaskCategory.allCases) { cat in
+                        Text("List").font(.caption).foregroundColor(.secondary)
+                        ForEach(appState.taskLists) { l in
                             Button {
-                                appState.updateTask(id: task.id, category: cat)
+                                appState.updateTask(id: task.id, listId: l.id)
                                 HapticManager.selection()
                             } label: {
                                 Circle()
-                                    .fill(cat.color)
+                                    .fill(l.color)
                                     .frame(width: 22, height: 22)
                                     .overlay(
-                                        task.category == cat ?
+                                        task.listId == l.id ?
                                         Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)).foregroundColor(.white) : nil
                                     )
                             }
@@ -698,7 +700,7 @@ struct AddTaskSheet: View {
     var presetDate: Date? = nil
 
     @State private var title = ""
-    @State private var category: TaskCategory = .personal
+    @State private var listId: String = "personal"
     @State private var dueDate: DueDate = .today
     @State private var priority: TaskPriority = .none
     @State private var notes = ""
@@ -715,11 +717,11 @@ struct AddTaskSheet: View {
                 }
 
                 Section("Details") {
-                    Picker("Category", selection: $category) {
-                        ForEach(TaskCategory.allCases) { cat in
-                            Label(cat.label, systemImage: "circle.fill")
-                                .foregroundColor(cat.color)
-                                .tag(cat)
+                    Picker("List", selection: $listId) {
+                        ForEach(appState.taskLists) { l in
+                            Label(l.name, systemImage: "circle.fill")
+                                .foregroundColor(l.color)
+                                .tag(l.id)
                         }
                     }
 
@@ -753,7 +755,7 @@ struct AddTaskSheet: View {
                         guard !title.trimmingCharacters(in: .whitespaces).isEmpty else { return }
                         appState.addTask(
                             title: title.trimmingCharacters(in: .whitespaces),
-                            category: category,
+                            listId: listId,
                             dueDate: dueDate,
                             priority: priority,
                             notes: notes,

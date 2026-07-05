@@ -695,6 +695,8 @@ private struct TodayTaskRow: View {
         return f
     }()
 
+    private var list: TaskList? { appState.taskList(for: task) }
+
     var body: some View {
         HStack(spacing: 12) {
             // Toggle (independent of navigation)
@@ -703,7 +705,7 @@ private struct TodayTaskRow: View {
                 appState.toggleTask(id: task.id)
             } label: {
                 Image(systemName: task.done ? "checkmark.circle.fill" : "circle")
-                    .foregroundColor(task.done ? .green : task.category.color)
+                    .foregroundColor(task.done ? .green : (list?.color ?? .secondary))
                     .font(.title3)
             }
             .buttonStyle(.plain)
@@ -726,7 +728,7 @@ private struct TodayTaskRow: View {
                             .foregroundColor(task.done ? .secondary : .primary)
 
                         HStack(spacing: 6) {
-                            Text(task.category.emoji + " " + task.category.label)
+                            if let list { Text(list.emoji + " " + list.name) }
                             if let time = task.scheduledTime {
                                 Text("·")
                                 Label(Self.timeFmt.string(from: time), systemImage: "clock")

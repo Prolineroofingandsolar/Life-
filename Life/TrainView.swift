@@ -114,21 +114,12 @@ struct TrainView: View {
                         .padding(.horizontal, 16)
 
                         if appState.routines.isEmpty {
-                            VStack(spacing: 10) {
-                                Image(systemName: "dumbbell")
-                                    .font(.system(size: 36))
-                                    .foregroundColor(.secondary)
-                                Text("No routines yet")
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                                Button { showAddRoutine = true } label: {
-                                    Text("Create your first routine")
-                                        .font(.subheadline.bold())
-                                        .foregroundColor(AppTheme.trainAccent)
-                                }
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 30)
+                            EmptyStateView(
+                                icon: "dumbbell",
+                                title: "No routines yet",
+                                actionLabel: "Create your first routine",
+                                action: { showAddRoutine = true }
+                            )
                         } else {
                             LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
                                 ForEach(appState.routines) { routine in
@@ -870,6 +861,10 @@ private struct PRCardView: View {
     let prs: AppState.PRResult
     @State private var showDetail = false
 
+    private var unit: WeightUnit { appState.workoutSettings.weightUnit }
+    private var bestWeightDisplay: Double { WeightUnit.kg.convert(prs.bestWeight, to: unit) }
+    private var best1RMDisplay: Double { WeightUnit.kg.convert(prs.best1RM, to: unit) }
+
     var body: some View {
         Button { showDetail = true } label: {
             VStack(alignment: .leading, spacing: 8) {
@@ -893,14 +888,14 @@ private struct PRCardView: View {
 
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 4) {
-                        Text("\(prs.bestWeight.formatted1)kg")
+                        Text("\(bestWeightDisplay.formatted1)\(unit.label.lowercased())")
                             .font(.system(size: 18, weight: .bold))
                             .foregroundColor(AppTheme.trainAccent)
                         Text("×\(prs.bestReps)")
                             .font(.caption)
                             .foregroundColor(Color(hex: "#A0A0B0"))
                     }
-                    Text("Est. 1RM: \(prs.best1RM.formatted1)kg")
+                    Text("Est. 1RM: \(best1RMDisplay.formatted1)\(unit.label.lowercased())")
                         .font(.caption2)
                         .foregroundColor(Color(hex: "#A0A0B0"))
                 }
@@ -1789,9 +1784,12 @@ private struct SessionExerciseSection: View {
 }
 
 private struct SessionSetRow: View {
+    @Environment(AppState.self) private var appState
     let set: LoggedSet
     let index: Int
     let kind: ExerciseKind
+    private var unit: WeightUnit { appState.workoutSettings.weightUnit }
+    private var weightDisplay: Double { WeightUnit.kg.convert(set.weight, to: unit) }
     var body: some View {
         HStack {
             Group {
@@ -1806,7 +1804,7 @@ private struct SessionSetRow: View {
                      : "—")
                 if set.distanceKm > 0 { Text("· \(set.distanceKm.formatted1) km").foregroundColor(.secondary) }
             } else {
-                Text(set.weight > 0 ? "\(set.weight.formatted1) kg" : "BW")
+                Text(set.weight > 0 ? "\(weightDisplay.formatted1) \(unit.label.lowercased())" : "BW")
                 Text("×")
                 Text(set.reps > 0 ? "\(set.reps)" : "—")
             }

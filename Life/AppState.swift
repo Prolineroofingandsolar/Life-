@@ -7,6 +7,7 @@ import UIKit
 
 private enum PersistenceKey {
     static let appState = "life_app_state_v2"
+    static let lastModified = "life_app_state_last_modified_v1"
 }
 
 // MARK: - Planned Session
@@ -126,6 +127,14 @@ final class AppState {
 
     // MARK: Persistence
 
+    /// When this device's local data last changed. Compared against a cloud
+    /// snapshot's `clientUpdatedAt` on sign-in so a stale/empty second device
+    /// can't clobber newer local data — see `loadFromCloud`.
+    private var localLastModified: Date {
+        get { UserDefaults.standard.object(forKey: PersistenceKey.lastModified) as? Date ?? .distantPast }
+        set { UserDefaults.standard.set(newValue, forKey: PersistenceKey.lastModified) }
+    }
+
     private var pendingSaveWork: DispatchWorkItem?
 
     /// Debounced save — coalesces rapid text-field changes (title, notes) into a single disk write.
@@ -143,7 +152,8 @@ final class AppState {
         if let data = try? JSONEncoder().encode(snapshot) {
             UserDefaults.standard.set(data, forKey: PersistenceKey.appState)
         }
-        WidgetSync.sync(tasks: tasks)
+        localLastModified = Date()
+        WidgetSync.sync(tasks: tasks, taskLists: taskLists)
         WidgetSync.syncHabits(habits: habits, todayKey: todayKey, streakFor: streakFor)
         if let uid = cloudUserId {
             syncState = .syncing
@@ -207,10 +217,23 @@ final class AppState {
         cloudUserId = userId
         await MainActor.run { syncState = .syncing }
         do {
-            if let snapshot = try await FirestoreSync.shared.download(userId: userId) {
-                await MainActor.run {
-                    apply(snapshot: snapshot)
-                    syncState = .synced(Date())
+            if let downloaded = try await FirestoreSync.shared.download(userId: userId) {
+                if localLastModified > downloaded.updatedAt {
+                    // This device has changes the cloud doesn't know about yet
+                    // (e.g. made while offline, or after another device's last
+                    // sync) — applying the cloud snapshot here would silently
+                    // discard them. Keep local data and push it up instead so
+                    // the cloud catches up.
+                    await MainActor.run {
+                        syncState = .syncing
+                        FirestoreSync.shared.scheduleUpload(makeSnapshot(), userId: userId)
+                    }
+                } else {
+                    await MainActor.run {
+                        apply(snapshot: downloaded.snapshot)
+                        localLastModified = downloaded.updatedAt
+                        syncState = .synced(Date())
+                    }
                 }
             } else {
                 // First sign-in — upload existing local data to the cloud
@@ -281,8 +304,8 @@ final class AppState {
 
     // MARK: - Task Mutations
 
-    func addTask(title: String, category: TaskCategory, dueDate: DueDate, priority: TaskPriority = .none, notes: String = "", dueDateOverride: Date? = nil) {
-        var task = AppTask(title: title, category: category, dueDate: dueDate)
+    func addTask(title: String, listId: String = "personal", dueDate: DueDate, priority: TaskPriority = .none, notes: String = "", dueDateOverride: Date? = nil) {
+        var task = AppTask(title: title, listId: listId, dueDate: dueDate)
         task.priority = priority
         task.notes = notes
         task.dueDateOverride = dueDateOverride
@@ -339,13 +362,12 @@ final class AppState {
         save()
     }
 
-    func updateTask(id: String, title: String? = nil, category: TaskCategory? = nil, dueDate: DueDate?? = nil, priority: TaskPriority? = nil, notes: String? = nil, listId: String? = nil, dueDateOverride: Date?? = nil, reminderDate: Date?? = nil, scheduledTime: Date?? = nil, estimatedMinutes: Int?? = nil, isRecurring: Bool? = nil, recurrenceType: RecurrenceType?? = nil) {
+    func updateTask(id: String, title: String? = nil, dueDate: DueDate?? = nil, priority: TaskPriority? = nil, notes: String? = nil, listId: String? = nil, dueDateOverride: Date?? = nil, reminderDate: Date?? = nil, scheduledTime: Date?? = nil, estimatedMinutes: Int?? = nil, isRecurring: Bool? = nil, recurrenceType: RecurrenceType?? = nil) {
         guard let idx = tasks.firstIndex(where: { $0.id == id }) else { return }
         // Track whether this update is text-only (title/notes) to debounce disk writes.
         let isTextOnly = title != nil || notes != nil
         var otherFieldsChanged = false
         if let title = title { tasks[idx].title = title }
-        if let category = category { tasks[idx].category = category; otherFieldsChanged = true }
         if let dueDate = dueDate { tasks[idx].dueDate = dueDate; otherFieldsChanged = true }
         if let priority = priority { tasks[idx].priority = priority; otherFieldsChanged = true }
         if let notes = notes { tasks[idx].notes = notes }

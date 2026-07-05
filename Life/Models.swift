@@ -60,29 +60,6 @@ struct Subtask: Codable, Identifiable {
     var createdAt: Date = Date()
 }
 
-enum TaskCategory: String, Codable, CaseIterable, Identifiable {
-    case work, gym, personal
-    var id: String { rawValue }
-
-    var emoji: String {
-        switch self {
-        case .work:     return "💼"
-        case .gym:      return "🏋️"
-        case .personal: return "🌱"
-        }
-    }
-
-    var label: String { rawValue.capitalized }
-
-    var color: Color {
-        switch self {
-        case .work:     return Color(red: 0.37, green: 0.36, blue: 0.90)
-        case .gym:      return Color(red: 0.19, green: 0.82, blue: 0.35)
-        case .personal: return Color(red: 1.00, green: 0.62, blue: 0.04)
-        }
-    }
-}
-
 enum DueDate: String, Codable, CaseIterable, Identifiable {
     case today, tomorrow, thisWeek
     var id: String { rawValue }
@@ -108,7 +85,6 @@ enum DueDate: String, Codable, CaseIterable, Identifiable {
 struct AppTask: Codable, Identifiable {
     var id: String = UUID().uuidString
     var title: String
-    var category: TaskCategory = .personal
     var listId: String = "personal"
     var done: Bool = false
     var dueDate: DueDate? = .today

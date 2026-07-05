@@ -29,7 +29,7 @@ final class HabitReminderManager {
             content: content,
             trigger: trigger
         )
-        center.add(request)
+        center.addRequestEnsuringAuthorization(request)
     }
 
     func cancelReminder(habitId: String) {
@@ -65,7 +65,7 @@ final class HabitReminderManager {
         comps.minute = 0
         let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: true)
         let request = UNNotificationRequest(identifier: "habit_morning_summary", content: content, trigger: trigger)
-        center.add(request)
+        center.addRequestEnsuringAuthorization(request)
     }
 
     // MARK: - Evening Nudge (9 pm)
@@ -86,7 +86,7 @@ final class HabitReminderManager {
         comps.minute = 0
         let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: true)
         let request = UNNotificationRequest(identifier: "habit_evening_nudge", content: content, trigger: trigger)
-        center.add(request)
+        center.addRequestEnsuringAuthorization(request)
     }
 
     func cancelAll() {
