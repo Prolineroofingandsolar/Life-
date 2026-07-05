@@ -9,6 +9,7 @@ struct WorkoutSummaryView: View {
 
     @State private var rating: Int = 0
     @State private var appeared = false
+    @State private var showShareSheet = false
 
     private var session: WorkoutSession? {
         appState.sessions.first { $0.id == sessionId }
@@ -93,6 +94,11 @@ struct WorkoutSummaryView: View {
             .background(Color(.systemGroupedBackground).ignoresSafeArea())
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button { showShareSheet = true } label: {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
                         if rating > 0 {
@@ -109,6 +115,11 @@ struct WorkoutSummaryView: View {
                 HapticManager.success()
                 withAnimation { appeared = true }
                 if let r = session?.rating { rating = r }
+            }
+            .sheet(isPresented: $showShareSheet) {
+                if let session {
+                    ShareSheet(activityItems: [session.shareText(exercises: appState.exercises, unit: appState.workoutSettings.weightUnit)])
+                }
             }
         }
     }

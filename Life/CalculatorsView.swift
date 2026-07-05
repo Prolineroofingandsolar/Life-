@@ -6,6 +6,7 @@ private enum CalcTab: String, CaseIterable {
     case oneRM = "1RM"
     case plate = "Plate"
     case bmi = "BMI"
+    case macros = "Macros"
 }
 
 // MARK: - CalculatorsView
@@ -34,6 +35,8 @@ struct CalculatorsView: View {
                     PlateCalculatorView(unit: appState.workoutSettings.weightUnit)
                 case .bmi:
                     BMICalculatorView(unit: appState.workoutSettings.weightUnit)
+                case .macros:
+                    MacroCalculatorView(unit: appState.workoutSettings.weightUnit)
                 }
             }
             .padding(.vertical)
@@ -528,5 +531,281 @@ private struct BMICalculatorView: View {
                 .cardStyle()
             }
         }
+    }
+}
+
+// MARK: - Macro / Calorie Calculator
+
+private enum ActivityLevel: String, CaseIterable, Identifiable {
+    case sedentary = "Sedentary"
+    case light = "Light"
+    case moderate = "Moderate"
+    case active = "Active"
+    case veryActive = "Very Active"
+    var id: String { rawValue }
+
+    var multiplier: Double {
+        switch self {
+        case .sedentary:  return 1.2
+        case .light:      return 1.375
+        case .moderate:   return 1.55
+        case .active:     return 1.725
+        case .veryActive: return 1.9
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .sedentary:  return "Little to no exercise"
+        case .light:      return "1–3 workouts/week"
+        case .moderate:   return "3–5 workouts/week"
+        case .active:     return "6–7 workouts/week"
+        case .veryActive: return "Physical job or 2x/day training"
+        }
+    }
+}
+
+private enum MacroGoal: String, CaseIterable, Identifiable {
+    case lose = "Lose"
+    case maintain = "Maintain"
+    case gain = "Gain"
+    var id: String { rawValue }
+
+    /// Calorie adjustment applied to TDEE.
+    var calorieDelta: Double {
+        switch self {
+        case .lose:     return -500
+        case .maintain: return 0
+        case .gain:     return 300
+        }
+    }
+}
+
+private struct MacroCalculatorView: View {
+    let unit: WeightUnit
+
+    @State private var weightText: String = ""
+    @State private var selectedUnit: WeightUnit
+    @State private var ageText: String = "30"
+    @State private var isMale: Bool = true
+    @State private var heightCmText: String = ""
+    @State private var heightFtText: String = ""
+    @State private var heightInText: String = ""
+    @State private var heightMode: HeightInputMode = .cm
+    @State private var activityLevel: ActivityLevel = .moderate
+    @State private var goal: MacroGoal = .maintain
+
+    init(unit: WeightUnit) {
+        self.unit = unit
+        _selectedUnit = State(initialValue: unit)
+    }
+
+    private var weightKg: Double {
+        let w = Double(weightText) ?? 0
+        return selectedUnit == .kg ? w : w / 2.20462
+    }
+
+    private var heightCm: Double {
+        switch heightMode {
+        case .cm:
+            return Double(heightCmText) ?? 0
+        case .ftIn:
+            let ft = Double(heightFtText) ?? 0
+            let inches = Double(heightInText) ?? 0
+            return (ft * 12 + inches) * 2.54
+        }
+    }
+
+    private var age: Int { Int(ageText) ?? 0 }
+
+    /// Mifflin-St Jeor basal metabolic rate.
+    private var bmr: Double {
+        guard weightKg > 0, heightCm > 0, age > 0 else { return 0 }
+        let base = 10 * weightKg + 6.25 * heightCm - 5 * Double(age)
+        return isMale ? base + 5 : base - 161
+    }
+
+    private var tdee: Double { bmr * activityLevel.multiplier }
+    private var targetCalories: Double { max(0, tdee + goal.calorieDelta) }
+
+    /// 1.8g protein/kg bodyweight, 25% of calories from fat, remainder carbs.
+    private var proteinGrams: Double { weightKg * 1.8 }
+    private var fatGrams: Double { targetCalories * 0.25 / 9 }
+    private var carbGrams: Double {
+        max(0, (targetCalories - proteinGrams * 4 - fatGrams * 9) / 4)
+    }
+
+    var body: some View {
+        VStack(spacing: 16) {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Inputs")
+                    .font(.headline)
+
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Weight")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        TextField("0", text: $weightText)
+                            .keyboardType(.decimalPad)
+                            .textFieldStyle(.roundedBorder)
+                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Unit")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Picker("Unit", selection: $selectedUnit) {
+                            ForEach(WeightUnit.allCases) { u in
+                                Text(u.label).tag(u)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 100)
+                    }
+                }
+
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Age")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        TextField("30", text: $ageText)
+                            .keyboardType(.numberPad)
+                            .textFieldStyle(.roundedBorder)
+                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Sex")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Picker("Sex", selection: $isMale) {
+                            Text("Male").tag(true)
+                            Text("Female").tag(false)
+                        }
+                        .pickerStyle(.segmented)
+                        .onChange(of: isMale) { _, _ in HapticManager.selection() }
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Height")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Picker("Height Mode", selection: $heightMode) {
+                        ForEach(HeightInputMode.allCases, id: \.self) { m in
+                            Text(m.rawValue).tag(m)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .onChange(of: heightMode) { _, _ in HapticManager.selection() }
+                }
+
+                if heightMode == .cm {
+                    HStack {
+                        TextField("Height (cm)", text: $heightCmText)
+                            .keyboardType(.decimalPad)
+                            .textFieldStyle(.roundedBorder)
+                        Text("cm")
+                            .foregroundColor(.secondary)
+                    }
+                } else {
+                    HStack(spacing: 8) {
+                        TextField("ft", text: $heightFtText)
+                            .keyboardType(.decimalPad)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(maxWidth: .infinity)
+                        Text("ft")
+                            .foregroundColor(.secondary)
+                        TextField("in", text: $heightInText)
+                            .keyboardType(.decimalPad)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(maxWidth: .infinity)
+                        Text("in")
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Activity Level")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Picker("Activity Level", selection: $activityLevel) {
+                        ForEach(ActivityLevel.allCases) { level in
+                            Text(level.rawValue).tag(level)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .onChange(of: activityLevel) { _, _ in HapticManager.selection() }
+                    Text(activityLevel.subtitle)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Goal")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Picker("Goal", selection: $goal) {
+                        ForEach(MacroGoal.allCases) { g in
+                            Text(g.rawValue).tag(g)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .onChange(of: goal) { _, _ in HapticManager.selection() }
+                }
+            }
+            .cardStyle()
+
+            if targetCalories > 0 {
+                VStack(spacing: 6) {
+                    Text("Daily Calories")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    Text("\(Int(targetCalories))")
+                        .font(.system(size: 34, weight: .bold, design: .rounded))
+                        .foregroundColor(AppTheme.primary)
+                    Text("Maintenance (TDEE): \(Int(tdee)) kcal")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .cardStyle()
+
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Macros")
+                        .font(.headline)
+                        .padding(.bottom, 10)
+
+                    HStack(spacing: 8) {
+                        MacroStatCell(label: "Protein", grams: proteinGrams, color: AppTheme.primary)
+                        MacroStatCell(label: "Carbs", grams: carbGrams, color: .orange)
+                        MacroStatCell(label: "Fat", grams: fatGrams, color: .blue)
+                    }
+                }
+                .cardStyle()
+            }
+        }
+    }
+}
+
+private struct MacroStatCell: View {
+    let label: String
+    let grams: Double
+    let color: Color
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Text("\(Int(grams))g")
+                .font(.headline.bold())
+                .foregroundColor(color)
+                .minimumScaleFactor(0.7)
+                .lineLimit(1)
+            Text(label)
+                .font(.caption2)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 10)
+        .background(color.opacity(0.12))
+        .cornerRadius(10)
     }
 }

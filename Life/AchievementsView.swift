@@ -178,9 +178,12 @@ private struct AchievementCell: View {
                     .font(.caption2)
                     .foregroundColor(Color(hex: kind.color))
             } else if !unlocked {
-                Text("Locked")
+                Text(kind.unlockHint)
                     .font(.caption2)
                     .foregroundColor(Color(.tertiaryLabel))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .frame(maxWidth: .infinity)

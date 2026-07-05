@@ -51,8 +51,12 @@ final class HabitReminderManager {
 
     // MARK: - Morning Summary (8 am)
 
-    func scheduleMorningSummary(activeCount: Int) {
+    func cancelMorningSummary() {
         center.removePendingNotificationRequests(withIdentifiers: ["habit_morning_summary"])
+    }
+
+    func scheduleMorningSummary(activeCount: Int) {
+        cancelMorningSummary()
         guard activeCount > 0 else { return }
 
         let content = UNMutableNotificationContent()
@@ -70,8 +74,12 @@ final class HabitReminderManager {
 
     // MARK: - Evening Nudge (9 pm)
 
-    func scheduleEveningNudge(unfinishedNames: [String]) {
+    func cancelEveningNudge() {
         center.removePendingNotificationRequests(withIdentifiers: ["habit_evening_nudge"])
+    }
+
+    func scheduleEveningNudge(unfinishedNames: [String]) {
+        cancelEveningNudge()
         guard !unfinishedNames.isEmpty else { return }
 
         let content = UNMutableNotificationContent()

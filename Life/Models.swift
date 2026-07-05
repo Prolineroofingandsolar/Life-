@@ -128,6 +128,47 @@ struct Bill: Codable, Identifiable {
     var notes: String = ""
 }
 
+/// Recurring monthly income (salary, etc.) — same shape as Bill, paid in rather than out.
+struct Income: Codable, Identifiable {
+    var id: String = UUID().uuidString
+    var name: String
+    var amount: Double
+    var dayOfMonth: Int
+    var notes: String = ""
+}
+
+/// A single non-recurring expense on a specific date.
+struct OneOffExpense: Codable, Identifiable {
+    var id: String = UUID().uuidString
+    var name: String
+    var amount: Double
+    var date: Date = Date()
+    var notes: String = ""
+}
+
+enum CurrencyCode: String, Codable, CaseIterable, Identifiable {
+    case gbp = "GBP"
+    case usd = "USD"
+    case eur = "EUR"
+    case cad = "CAD"
+    case aud = "AUD"
+    var id: String { rawValue }
+
+    var symbol: String {
+        switch self {
+        case .gbp: return "£"
+        case .usd: return "$"
+        case .eur: return "€"
+        case .cad: return "CA$"
+        case .aud: return "AU$"
+        }
+    }
+}
+
+struct MoneySettings: Codable {
+    var currency: CurrencyCode = .gbp
+}
+
 // MARK: - Habit Models
 
 enum HabitKind: String, Codable, CaseIterable, Identifiable {
@@ -317,6 +358,23 @@ enum AchievementKind: String, Codable, CaseIterable {
         case .totalSessions10, .totalSessions50, .totalSessions100: return "#BF5AF2"
         }
     }
+
+    /// How to unlock this achievement, shown while it's still locked.
+    var unlockHint: String {
+        switch self {
+        case .firstWorkout:     return "Finish your first workout"
+        case .streak7:          return "Reach a 7-day workout streak"
+        case .streak30:         return "Reach a 30-day workout streak"
+        case .totalSets100:     return "Log 100 sets total"
+        case .totalSets1000:    return "Log 1,000 sets total"
+        case .volumePR:         return "Beat your best session's total volume"
+        case .weightPR:         return "Set a new weight PR on any exercise"
+        case .consistency4Weeks: return "Work out in 3 of the last 4 weeks"
+        case .totalSessions10:  return "Complete 10 workouts"
+        case .totalSessions50:  return "Complete 50 workouts"
+        case .totalSessions100: return "Complete 100 workouts"
+        }
+    }
 }
 
 enum MovementType: String, Codable, CaseIterable, Identifiable {
@@ -477,6 +535,9 @@ struct CareSettings: Codable {
     var waterReminderEnabled: Bool = false
     var waterReminderIntervalMinutes: Int = 60
     var stepGoal: Int = 10000
+    var breakReminderEnabled: Bool = false
+    var morningSummaryEnabled: Bool = false
+    var eveningNudgeEnabled: Bool = false
 }
 
 struct WorkoutSettings: Codable {

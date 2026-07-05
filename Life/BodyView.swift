@@ -49,6 +49,8 @@ private struct WeightTab: View {
     @State private var weightInput = ""
     @FocusState private var isWeightFocused: Bool
     @State private var chartRange: ChartRange = .month
+    @State private var goalInput = ""
+    @FocusState private var isGoalFocused: Bool
 
     enum ChartRange: String, CaseIterable {
         case week = "W"
@@ -83,6 +85,10 @@ private struct WeightTab: View {
 
     private var currentWeight: Double? {
         entries.map { unit == .kg ? $0.valueKg : WeightUnit.kg.convert($0.valueKg, to: .lbs) }.last
+    }
+
+    private var goalWeightDisplay: Double? {
+        appState.workoutSettings.goalWeightKg.map { WeightUnit.kg.convert($0, to: unit) }
     }
 
     private var xAxisStride: Calendar.Component {
@@ -151,6 +157,16 @@ private struct WeightTab: View {
                             .foregroundStyle(AppTheme.primary.opacity(0.1))
                             .interpolationMethod(.catmullRom)
                         }
+                        if let goal = goalWeightDisplay {
+                            RuleMark(y: .value("Goal", goal))
+                                .foregroundStyle(.orange)
+                                .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+                                .annotation(position: .top, alignment: .leading) {
+                                    Text("Goal: \(goal.formatted1) \(unit.label)")
+                                        .font(.caption2.bold())
+                                        .foregroundColor(.orange)
+                                }
+                        }
                     }
                     .frame(height: 200)
                     .chartXAxis {
@@ -178,6 +194,30 @@ private struct WeightTab: View {
                         isWeightFocused = false
                     }
                     .disabled(Double(weightInput.replacingOccurrences(of: ",", with: ".")) == nil)
+                }
+            }
+
+            // Goal weight
+            Section("Goal Weight") {
+                HStack {
+                    TextField(goalWeightDisplay != nil ? goalWeightDisplay!.formatted1 : "None set", text: $goalInput)
+                        .keyboardType(.decimalPad)
+                        .focused($isGoalFocused)
+                    Text(unit.label)
+                        .foregroundColor(.secondary)
+                    Button("Save") {
+                        let normalized = goalInput.replacingOccurrences(of: ",", with: ".")
+                        guard let value = Double(normalized) else { return }
+                        appState.setGoalWeight(kg: unit.convert(value, to: .kg))
+                        goalInput = ""
+                        isGoalFocused = false
+                    }
+                    .disabled(Double(goalInput.replacingOccurrences(of: ",", with: ".")) == nil)
+                }
+                if goalWeightDisplay != nil {
+                    Button("Clear Goal", role: .destructive) {
+                        appState.setGoalWeight(kg: nil)
+                    }
                 }
             }
 
@@ -223,6 +263,7 @@ private struct CompositionTab: View {
     @State private var isImporting = false
     @State private var importError: String? = nil
     @State private var selectedMetric: CompMetric = .bodyFat
+    @State private var showAddEntry = false
 
     @State private var healthKitManager = HealthKitManager()
 
@@ -285,6 +326,13 @@ private struct CompositionTab: View {
                         .font(.caption)
                         .foregroundColor(.red)
                 }
+
+                Button {
+                    showAddEntry = true
+                } label: {
+                    Label("Log Manually", systemImage: "pencil")
+                        .foregroundColor(AppTheme.primary)
+                }
             }
 
             // Chart
@@ -332,11 +380,19 @@ private struct CompositionTab: View {
                                 }
                             }
                         }
+                        .swipeActions(edge: .trailing) {
+                            Button(role: .destructive) {
+                                appState.deleteBodyCompEntry(id: entry.id)
+                            } label: { Label("Delete", systemImage: "trash") }
+                        }
                     }
                 }
             }
         }
         .listStyle(.insetGrouped)
+        .sheet(isPresented: $showAddEntry) {
+            AddBodyCompSheet()
+        }
     }
 
     private func importFromHealthKit() {
@@ -390,6 +446,72 @@ private struct CompositionTab: View {
             await MainActor.run {
                 appState.mergeBodyCompEntries(Array(newEntries))
                 isImporting = false
+            }
+        }
+    }
+}
+
+// MARK: - Add Body Composition Sheet
+
+private struct AddBodyCompSheet: View {
+    @Environment(AppState.self) private var appState
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var date = Date()
+    @State private var bodyFatText = ""
+    @State private var bmiText = ""
+
+    private var bodyFatPct: Double? {
+        guard let v = Double(bodyFatText) else { return nil }
+        return v / 100
+    }
+    private var bmi: Double? { Double(bmiText) }
+
+    private var canSave: Bool { bodyFatPct != nil || bmi != nil }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Date") {
+                    DatePicker("Date", selection: $date, displayedComponents: .date)
+                }
+                Section("Body Composition") {
+                    HStack {
+                        Text("Body Fat")
+                        Spacer()
+                        TextField("0", text: $bodyFatText)
+                            .keyboardType(.decimalPad)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 80)
+                        Text("%").foregroundColor(.secondary)
+                    }
+                    HStack {
+                        Text("BMI")
+                        Spacer()
+                        TextField("0", text: $bmiText)
+                            .keyboardType(.decimalPad)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 80)
+                    }
+                }
+            }
+            .navigationTitle("Log Body Composition")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        var entry = BodyCompEntry(date: date)
+                        entry.bodyFatPct = bodyFatPct
+                        entry.bmi = bmi
+                        entry.source = "manual"
+                        appState.mergeBodyCompEntries([entry])
+                        dismiss()
+                    }
+                    .disabled(!canSave)
+                }
             }
         }
     }
@@ -483,12 +605,49 @@ private struct PRRow: View {
 
 // MARK: - Measurements Tab (P3.2)
 
+private enum MeasurementMetric: String, CaseIterable, Identifiable {
+    case waist = "Waist"
+    case chest = "Chest"
+    case hips = "Hips"
+    case leftArm = "L. Arm"
+    case rightArm = "R. Arm"
+    case leftThigh = "L. Thigh"
+    case rightThigh = "R. Thigh"
+    case neck = "Neck"
+    case shoulders = "Shoulders"
+    var id: String { rawValue }
+
+    func value(from m: BodyMeasurement) -> Double? {
+        switch self {
+        case .waist:      return m.waistCm
+        case .chest:      return m.chestCm
+        case .hips:       return m.hipsCm
+        case .leftArm:    return m.leftArmCm
+        case .rightArm:   return m.rightArmCm
+        case .leftThigh:  return m.leftThighCm
+        case .rightThigh: return m.rightThighCm
+        case .neck:       return m.neckCm
+        case .shoulders:  return m.shouldersCm
+        }
+    }
+}
+
 private struct MeasurementsTab: View {
     @Environment(AppState.self) private var appState
     @State private var showAddMeasurement = false
+    @State private var selectedMetric: MeasurementMetric = .waist
 
     private var measurements: [BodyMeasurement] {
         appState.bodyMeasurements.sorted { $0.date > $1.date }
+    }
+
+    private var chartData: [(date: Date, value: Double)] {
+        appState.bodyMeasurements
+            .sorted { $0.date < $1.date }
+            .compactMap { m in
+                guard let v = selectedMetric.value(from: m) else { return nil }
+                return (m.date, v)
+            }
     }
 
     var body: some View {
@@ -513,6 +672,32 @@ private struct MeasurementsTab: View {
                 } label: {
                     Label("Log Measurements", systemImage: "ruler")
                         .foregroundColor(AppTheme.primary)
+                }
+            }
+
+            if measurements.count > 1 {
+                Section("Trend") {
+                    Picker("Metric", selection: $selectedMetric) {
+                        ForEach(MeasurementMetric.allCases) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.menu)
+
+                    if chartData.count > 1 {
+                        Chart {
+                            ForEach(Array(chartData.enumerated()), id: \.offset) { _, point in
+                                LineMark(x: .value("Date", point.date), y: .value(selectedMetric.rawValue, point.value))
+                                    .foregroundStyle(AppTheme.primary)
+                                    .interpolationMethod(.catmullRom)
+                                PointMark(x: .value("Date", point.date), y: .value(selectedMetric.rawValue, point.value))
+                                    .foregroundStyle(AppTheme.primary)
+                            }
+                        }
+                        .frame(height: 180)
+                    } else {
+                        Text("Not enough \(selectedMetric.rawValue.lowercased()) entries yet")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
 

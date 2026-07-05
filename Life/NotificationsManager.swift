@@ -72,8 +72,12 @@ final class NotificationsManager {
 
     // MARK: - Break Reminder
 
-    func scheduleBreakReminder(intervalMinutes: Int) {
+    func cancelBreakReminder() {
         center.removePendingNotificationRequests(withIdentifiers: ["break_reminder"])
+    }
+
+    func scheduleBreakReminder(intervalMinutes: Int) {
+        cancelBreakReminder()
 
         guard intervalMinutes > 0 else { return }
 
