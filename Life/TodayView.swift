@@ -479,17 +479,26 @@ private struct TodayStatBox: View {
                         .foregroundColor(iconColor)
                 }
                 Spacer()
-                if done {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 19))
-                        .foregroundColor(iconColor)
-                } else if action != nil {
+                if action != nil {
                     Image(systemName: "plus")
                         .font(.system(size: 14, weight: .bold))
                         .foregroundColor(iconColor)
                         .frame(width: 30, height: 30)
                         .background(iconColor.opacity(0.12))
                         .clipShape(Circle())
+                        .overlay(alignment: .topTrailing) {
+                            if done {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.system(size: 13))
+                                    .foregroundColor(.green)
+                                    .background(Circle().fill(Color(.systemBackground)))
+                                    .offset(x: 4, y: -4)
+                            }
+                        }
+                } else if done {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 19))
+                        .foregroundColor(iconColor)
                 }
             }
             Text(value)
