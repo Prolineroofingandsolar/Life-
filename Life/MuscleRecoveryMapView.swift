@@ -27,15 +27,33 @@ struct MuscleRecoveryMapView: View {
 
     // MARK: Recovery math (from real app data)
 
-    private func fatigue(_ g: MuscleGroup) -> Int {
-        guard let m = g.appMuscle, let days = appState.daysSinceLastTrained(muscle: m) else { return 0 }
-        switch days {
-        case 0: return 85
-        case 1: return 55
-        case 2: return 30
-        case 3: return 15
-        default: return 8
+    private func trainingInfo(_ g: MuscleGroup) -> AppState.MuscleTrainingInfo? {
+        guard let m = g.appMuscle else { return nil }
+        return appState.lastTrainingInfo(muscle: m)
+    }
+
+    /// Scales fatigue by how much was actually done — a couple of light sets
+    /// shouldn't read the same as a full session's worth of volume.
+    private func volumeMultiplier(_ sets: Int) -> Double {
+        switch sets {
+        case ..<3:   return 0.4
+        case 3..<6:  return 0.65
+        case 6..<10: return 0.85
+        default:     return 1.0
         }
+    }
+
+    private func fatigue(_ g: MuscleGroup) -> Int {
+        guard let info = trainingInfo(g) else { return 0 }
+        let base: Double
+        switch info.daysAgo {
+        case 0: base = 85
+        case 1: base = 55
+        case 2: base = 30
+        case 3: base = 15
+        default: base = 8
+        }
+        return Int((base * volumeMultiplier(info.completedSets)).rounded())
     }
 
     private func color(_ fat: Int) -> Color {
@@ -53,24 +71,26 @@ struct MuscleRecoveryMapView: View {
     }
 
     private func lastTrained(_ g: MuscleGroup) -> String {
-        guard let m = g.appMuscle, let d = appState.daysSinceLastTrained(muscle: m) else { return "—" }
-        switch d {
+        guard let info = trainingInfo(g) else { return "—" }
+        switch info.daysAgo {
         case 0: return "Today"
         case 1: return "Yesterday"
-        default: return "\(d)d ago"
+        default: return "\(info.daysAgo)d ago"
         }
     }
 
     private func freshIn(_ g: MuscleGroup) -> String {
         let fat = fatigue(g)
-        guard fat >= 25, let m = g.appMuscle, let d = appState.daysSinceLastTrained(muscle: m) else { return "Ready" }
-        let remaining = Swift.max(1, 2 - d)
+        guard fat >= 25, let info = trainingInfo(g) else { return "Ready" }
+        let remaining = Swift.max(1, 2 - info.daysAgo)
         return "~\(remaining)d"
     }
 
-    private func exercises(_ g: MuscleGroup) -> [String] {
-        guard let m = g.appMuscle else { return [] }
-        return appState.exercises.filter { $0.muscle == m }.prefix(6).map(\.name)
+    /// The actual exercises + set counts from the muscle's most recent
+    /// trained session (e.g. "Bicep Curls · 2 sets"), not just the static
+    /// list of exercises that target it.
+    private func trainedExercises(_ g: MuscleGroup) -> [(name: String, sets: Int)] {
+        trainingInfo(g)?.exerciseBreakdown ?? []
     }
 
     private var readiness: Int {
@@ -252,12 +272,13 @@ struct MuscleRecoveryMapView: View {
     private func detailPanel(_ g: MuscleGroup) -> some View {
         let fat = fatigue(g)
         let c = color(fat)
-        let exs = exercises(g)
+        let trained = trainedExercises(g)
+        let totalSets = trained.reduce(0) { $0 + $1.sets }
         return VStack(alignment: .leading, spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(g.name).font(.system(size: 24, weight: .bold)).foregroundColor(.primary)
-                    Text(exs.isEmpty ? "No exercises logged" : "Worked by \(exs.count) exercise\(exs.count == 1 ? "" : "s")")
+                    Text(trained.isEmpty ? "No sets logged yet" : "\(totalSets) set\(totalSets == 1 ? "" : "s") across \(trained.count) exercise\(trained.count == 1 ? "" : "s")")
                         .font(.system(size: 13)).foregroundColor(subtext)
                 }
                 Spacer()
@@ -291,15 +312,18 @@ struct MuscleRecoveryMapView: View {
             .frame(height: 9)
 
             HStack(spacing: 10) {
-                miniStat("LAST TRAINED", lastTrained(g), .white)
-                miniStat("FRESH IN", freshIn(g), freshIn(g) == "Ready" ? green : .white)
+                miniStat("LAST TRAINED", lastTrained(g), .primary)
+                miniStat("FRESH IN", freshIn(g), freshIn(g) == "Ready" ? green : .primary)
             }
             .padding(.top, 16)
 
-            if !exs.isEmpty {
-                Text("WORKED BY").font(.system(size: 11, weight: .medium)).tracking(1.5).foregroundColor(dim)
+            if !trained.isEmpty {
+                Text("LAST SESSION").font(.system(size: 11, weight: .medium)).tracking(1.5).foregroundColor(dim)
                     .padding(.top, 16).padding(.bottom, 9)
-                FlowChips(items: exs, textColor: Color.primary, bg: bg, border: stroke)
+                FlowChips(
+                    items: trained.map { "\($0.name) · \($0.sets) set\($0.sets == 1 ? "" : "s")" },
+                    textColor: Color.primary, bg: bg, border: stroke
+                )
             }
         }
         .padding(18)
