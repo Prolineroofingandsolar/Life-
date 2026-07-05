@@ -32,15 +32,33 @@ struct MuscleRecoveryMapView: View {
         return appState.lastTrainingInfo(muscle: m)
     }
 
-    /// This session's volume (sets × weight moved) as a fraction of the best
-    /// single session ever recorded for this muscle — i.e. how much of a
-    /// full effort this was, used to scale fatigue instead of just counting
-    /// sets. A muscle trained for the first time counts as a full effort.
+    /// Set-count baseline — meaningful from the very first session, with no
+    /// training history required (a personal-best comparison alone collapses
+    /// to "full effort" whenever the latest session happens to also be the
+    /// only/heaviest one on record, which is exactly the case for anyone who
+    /// hasn't logged much yet).
+    private func setIntensity(_ sets: Int) -> Double {
+        switch sets {
+        case ..<3:   return 0.35
+        case 3..<6:  return 0.6
+        case 6..<10: return 0.85
+        default:     return 1.0
+        }
+    }
+
+    /// Blends the set-count baseline with this session's volume (sets ×
+    /// weight moved) relative to the best single session ever recorded for
+    /// this muscle, once there's actually a prior session to compare
+    /// against. Falls back to the set-count baseline alone otherwise, so a
+    /// light session reads as light from day one instead of only after
+    /// enough history has built up.
     private func intensity(_ g: MuscleGroup, info: AppState.MuscleTrainingInfo) -> Double {
-        guard let m = g.appMuscle else { return 1.0 }
-        let best = appState.personalBestVolume(muscle: m)
-        guard best > 0 else { return 1.0 }
-        return Swift.min(1.0, info.volume / best)
+        let bySets = setIntensity(info.completedSets)
+        guard let m = g.appMuscle else { return bySets }
+        let best = appState.personalBestVolume(muscle: m, excludingSessionId: info.sessionId)
+        guard best > 0 else { return bySets }
+        let byVolume = Swift.min(1.0, info.volume / best)
+        return (bySets + byVolume) / 2
     }
 
     private func fatigue(_ g: MuscleGroup) -> Int {
