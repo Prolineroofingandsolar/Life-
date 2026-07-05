@@ -85,14 +85,13 @@ private struct RawGeneralTask: Decodable {
 @Observable
 final class CRMService {
 
-    // Missing config disables CRM features (surfaced via `error`) rather than
-    // crashing the whole app — this integration is optional infrastructure,
-    // not something a misconfigured build setting should take the app down for.
-    private let rawSupabaseURL = Bundle.main.object(forInfoDictionaryKey: "CRMSupabaseURL") as? String
-    private let rawAnonKey = Bundle.main.object(forInfoDictionaryKey: "CRMSupabaseAnonKey") as? String
-    private var supabaseURL: String { rawSupabaseURL ?? "" }
-    private var anonKey: String { rawAnonKey ?? "" }
-    private var isConfigured: Bool { rawSupabaseURL != nil && rawAnonKey != nil }
+    // Supabase's security model puts access control in Row Level Security
+    // policies server-side, not in hiding the anon key — it's meant to ship
+    // in client apps. Reading it via a build-setting-generated Info.plist
+    // entry proved unreliable (kept resolving to nil at runtime across
+    // multiple clean rebuilds), so it's a plain constant here instead.
+    private let supabaseURL = "https://qzvdzzvkocmulcfujyea.supabase.co"
+    private let anonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF6dmR6enZrb2NtdWxjZnVqeWVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg4NzIxNjUsImV4cCI6MjA5NDQ0ODE2NX0.g42AvuElukfbpgbg9Y6XImnuHQ2Po5GEaVVGMz3Siu0"
 
     var jobTasks: [CRMJobTask] = []
     var generalTasks: [CRMGeneralTask] = []
@@ -106,10 +105,6 @@ final class CRMService {
     // MARK: - Fetch
 
     func fetchAll() async {
-        guard isConfigured else {
-            await MainActor.run { self.error = "CRM is not configured" }
-            return
-        }
         await MainActor.run { isLoading = true; error = nil }
         async let jobs: Void = fetchJobTasks()
         async let general: Void = fetchGeneralTasks()
