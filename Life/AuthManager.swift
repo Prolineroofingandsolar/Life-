@@ -4,6 +4,65 @@ import AuthenticationServices
 import CryptoKit
 import SwiftUI
 
+// MARK: - Firebase Bootstrap
+
+/// Single entry point for configuring Firebase.
+///
+/// `FirebaseApp.configure()` used to live only in `LifeApp.init()`'s body, which
+/// is too late: Swift evaluates a struct's stored-property defaults *before* the
+/// init body runs, so `@State private var appState = AppState()` and
+/// `@StateObject private var authManager = AuthManager()` were both constructed
+/// while Firebase was still unconfigured. `AuthManager.init()` therefore saw
+/// `isFirebaseReady == false`, returned early, and never registered its auth
+/// state listener — so signing in succeeded but `user` never updated, the app
+/// stayed on the sign-in screen, and cloud sync was never enabled.
+///
+/// Routing every readiness check through `configureIfNeeded()` means whichever
+/// object is built first does the configuring, and declaration order stops
+/// mattering.
+///
+/// Call from the main thread only.
+enum FirebaseBootstrap {
+
+    private static var isConfigured = false
+    private static var didAttempt = false
+
+    /// Configures Firebase if it isn't already. Idempotent, and safe to call
+    /// from anywhere on the main thread.
+    ///
+    /// Returns false when there's no `GoogleService-Info.plist` in the bundle —
+    /// the app is designed to run local-only in that case rather than crash, so
+    /// this is a supported outcome, not an error.
+    @discardableResult
+    static func configureIfNeeded() -> Bool {
+        if isConfigured { return true }
+        // Only ever attempt once. A second attempt can't succeed (the plist is
+        // either in the bundle or it isn't) and `FirebaseApp.configure()` traps
+        // if called twice.
+        if didAttempt { return false }
+        didAttempt = true
+
+        guard Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist") != nil else {
+            // If you expected sync to work, the plist is missing from the app
+            // target — add it to the target's Copy Bundle Resources phase.
+            print("[Firebase] GoogleService-Info.plist not found in bundle — running local-only, no auth or cloud sync.")
+            return false
+        }
+
+        FirebaseApp.configure()
+        isConfigured = true
+        return true
+    }
+
+    /// Whether Firebase is usable, configuring it on first ask.
+    ///
+    /// Deliberately does not use `FirebaseApp.app() != nil` for the check: that
+    /// logs Firebase's "default app has not yet been configured" warning every
+    /// single time it's called while unconfigured, which is pure noise when
+    /// running without a plist on purpose.
+    static var isReady: Bool { configureIfNeeded() }
+}
+
 // MARK: - Auth Manager
 
 @MainActor
@@ -18,10 +77,12 @@ final class AuthManager: ObservableObject {
     private var currentAppleNonce: String?
 
     static var isFirebaseReady: Bool {
-        FirebaseApp.app() != nil
+        FirebaseBootstrap.isReady
     }
 
     init() {
+        // Configures Firebase if nothing has yet — this init often runs *before*
+        // `LifeApp.init()`'s body. See `FirebaseBootstrap`.
         guard Self.isFirebaseReady else { return }
         isLoading = true
         handle = Auth.auth().addStateDidChangeListener { [weak self] _, user in

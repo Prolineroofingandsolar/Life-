@@ -41,10 +41,13 @@ final class FirestoreSync {
     static let schemaVersion: Int = 1
 
     /// Lazy so the Firestore singleton isn't touched until the first actual
-    /// upload/download call. This matters because `FirestoreSync.shared` may
-    /// be referenced (e.g. from `AppState.init()` to wire the completion
-    /// callback) *before* `FirebaseApp.configure()` runs in `LifeApp.init()`.
-    /// `@State` default expressions initialise before the App's init body.
+    /// upload/download call. `FirestoreSync.shared` is referenced early — from
+    /// `AppState.init()`, to wire the completion callback — and Firestore must
+    /// not be built before Firebase is configured. Configuration now happens in
+    /// `FirebaseBootstrap` on first ask, so this is defence in depth rather than
+    /// the only thing holding the ordering together, and it still earns its
+    /// place: uploads only ever run for a signed-in user, which can't happen
+    /// until Firebase is up.
     private lazy var db: Firestore = Firestore.firestore()
 
     /// Serial queue protecting debounce state so callers from any thread

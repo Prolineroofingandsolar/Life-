@@ -1,5 +1,4 @@
 import SwiftUI
-import FirebaseCore
 
 @main
 struct LifeApp: App {
@@ -9,9 +8,11 @@ struct LifeApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
-        if Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist") != nil {
-            FirebaseApp.configure()
-        }
+        // Belt and braces. By the time this body runs the `@State`/`@StateObject`
+        // defaults above have already been constructed and one of them will have
+        // configured Firebase via `FirebaseBootstrap`. This call covers the case
+        // where neither of them touches Firebase, and is a no-op otherwise.
+        FirebaseBootstrap.configureIfNeeded()
     }
 
     var body: some Scene {
