@@ -371,14 +371,7 @@ private struct CareSection: View {
                     done: workedOutToday
                 )
 
-                if let night = lastNight, let minutes = night.sleepMin {
-                    TodayStatBox(
-                        icon: "bed.double.fill", iconColor: .indigo,
-                        value: "\(minutes / 60)h \(minutes % 60)m",
-                        label: "Sleep · \(sleepGoalLabel) goal",
-                        done: minutes >= healthSettings.sleepGoalMinutes
-                    )
-                }
+                sleepBox
 
                 if healthSettings.showRecoveryTile { recoveryBox }
             }
@@ -402,6 +395,21 @@ private struct CareSection: View {
             }
         }
         .onDisappear { healthSyncTask?.cancel() }
+    }
+
+    /// Last night's sleep against the goal. Kept out of the grid's ViewBuilder
+    /// like `recoveryBox` below — inline conditionals plus string interpolation
+    /// there is what pushes the Swift type-checker over its time limit.
+    @ViewBuilder
+    private var sleepBox: some View {
+        if let night = lastNight, let minutes = night.sleepMin {
+            TodayStatBox(
+                icon: "bed.double.fill", iconColor: .indigo,
+                value: "\(minutes / 60)h \(minutes % 60)m",
+                label: "Sleep · \(sleepGoalLabel) goal",
+                done: minutes >= healthSettings.sleepGoalMinutes
+            )
+        }
     }
 
     /// Resting HR with its drift from baseline. Informational, so no action —

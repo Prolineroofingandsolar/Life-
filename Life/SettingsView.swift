@@ -12,7 +12,6 @@ struct SettingsView: View {
     @State private var careSettings: CareSettings = CareSettings()
     @State private var workoutSettings: WorkoutSettings = WorkoutSettings()
     @State private var moneySettings: MoneySettings = MoneySettings()
-    @State private var healthSettings: HealthSettings = HealthSettings()
     @State private var showResetConfirm = false
     @State private var showCalculators = false
     @State private var showShareSheet = false
@@ -132,26 +131,7 @@ struct SettingsView: View {
                     }
                 }
 
-                // Health
-                Section {
-                    Stepper(
-                        "Sleep Goal: \(healthSettings.sleepGoalMinutes / 60)h \(healthSettings.sleepGoalMinutes % 60)m",
-                        value: $healthSettings.sleepGoalMinutes,
-                        in: 240...720,
-                        step: 15
-                    )
-                    Stepper(
-                        "Active Minutes Goal: \(healthSettings.exerciseGoalMinutes)",
-                        value: $healthSettings.exerciseGoalMinutes,
-                        in: 5...180,
-                        step: 5
-                    )
-                    Toggle("Recovery Tile on Today", isOn: $healthSettings.showRecoveryTile)
-                } header: {
-                    Text("Health")
-                } footer: {
-                    Text("Sleep, heart rate, HRV and activity are read from Apple Health. Anything your tracker writes there shows up under Body ▸ Vitals.")
-                }
+                HealthSettingsSection()
 
                 // Habit Reminders
                 Section("Habit Reminders") {
@@ -249,19 +229,6 @@ struct SettingsView: View {
                 careSettings = appState.careSettings
                 workoutSettings = appState.workoutSettings
                 moneySettings = appState.moneySettings
-                healthSettings = appState.healthSettings
-            }
-            // Only the fields this screen owns are written back. Assigning the
-            // whole struct would overwrite `hasBackfilled` with whatever this
-            // view loaded on appear, undoing a sync that finished in between.
-            .onChange(of: healthSettings.sleepGoalMinutes) { _, value in
-                appState.setHealthSettings { $0.sleepGoalMinutes = value }
-            }
-            .onChange(of: healthSettings.exerciseGoalMinutes) { _, value in
-                appState.setHealthSettings { $0.exerciseGoalMinutes = value }
-            }
-            .onChange(of: healthSettings.showRecoveryTile) { _, value in
-                appState.setHealthSettings { $0.showRecoveryTile = value }
             }
             .onChange(of: workoutSettings.weightUnit) { _, _ in
                 appState.setWorkoutSettings(workoutSettings)
@@ -361,6 +328,64 @@ struct SettingsView: View {
             }
         case .failure(let error):
             importErrorMessage = "Could not open file: \(error.localizedDescription)"
+        }
+    }
+}
+
+// MARK: - Health Settings Section
+
+/// Split out of `SettingsView` rather than inlined into its `Form`.
+///
+/// That body is already a long chain of sections and `onChange` handlers, and
+/// adding this to it tipped the Swift type-checker past "unable to type-check
+/// this expression in reasonable time". Anything further added to Settings is
+/// best written as its own small view for the same reason.
+///
+/// It also writes straight through to `AppState` instead of mirroring into
+/// `@State` and syncing back on change, which is what the rest of the screen
+/// does. Fewer moving parts, and no risk of a stale copy overwriting
+/// `hasBackfilled` behind a sync that finished while Settings was open.
+private struct HealthSettingsSection: View {
+
+    @Environment(AppState.self) private var appState
+
+    private var settings: HealthSettings { appState.healthSettings }
+
+    private var sleepGoalText: String {
+        let minutes = settings.sleepGoalMinutes
+        return minutes % 60 == 0 ? "\(minutes / 60)h" : "\(minutes / 60)h \(minutes % 60)m"
+    }
+
+    private var sleepGoal: Binding<Int> {
+        Binding(
+            get: { appState.healthSettings.sleepGoalMinutes },
+            set: { value in appState.setHealthSettings { $0.sleepGoalMinutes = value } }
+        )
+    }
+
+    private var exerciseGoal: Binding<Int> {
+        Binding(
+            get: { appState.healthSettings.exerciseGoalMinutes },
+            set: { value in appState.setHealthSettings { $0.exerciseGoalMinutes = value } }
+        )
+    }
+
+    private var showRecoveryTile: Binding<Bool> {
+        Binding(
+            get: { appState.healthSettings.showRecoveryTile },
+            set: { value in appState.setHealthSettings { $0.showRecoveryTile = value } }
+        )
+    }
+
+    var body: some View {
+        Section {
+            Stepper("Sleep Goal: \(sleepGoalText)", value: sleepGoal, in: 240...720, step: 15)
+            Stepper("Active Minutes Goal: \(settings.exerciseGoalMinutes)", value: exerciseGoal, in: 5...180, step: 5)
+            Toggle("Recovery Tile on Today", isOn: showRecoveryTile)
+        } header: {
+            Text("Health")
+        } footer: {
+            Text("Sleep, heart rate, HRV and activity are read from Apple Health. Anything your tracker writes there shows up under Body ▸ Vitals.")
         }
     }
 }
