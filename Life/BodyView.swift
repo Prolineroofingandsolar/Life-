@@ -10,7 +10,8 @@ struct BodyView: View {
 
     enum BodyTab: String, CaseIterable, Identifiable {
         case weight = "Weight"
-        case composition = "Composition"
+        case composition = "Comp"
+        case vitals = "Vitals"
         case measurements = "Measures"
         case lifts = "Lifts"
         var id: String { rawValue }
@@ -31,6 +32,7 @@ struct BodyView: View {
             switch selectedTab {
             case .weight:       WeightTab()
             case .composition:  CompositionTab()
+            case .vitals:       VitalsTab()
             case .measurements: MeasurementsTab()
             case .lifts:        LiftsTab()
             }
@@ -511,6 +513,407 @@ private struct AddBodyCompSheet: View {
                         dismiss()
                     }
                     .disabled(!canSave)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Vitals Tab
+
+/// The metrics Life reads out of Apple Health that aren't body composition —
+/// sleep and the recovery signals a wrist tracker records overnight.
+private enum VitalMetric: String, CaseIterable, Identifiable {
+    case sleep = "Sleep"
+    case restingHr = "Resting HR"
+    case hrv = "HRV"
+    case spo2 = "SpO₂"
+    case breathing = "Breathing"
+    case energy = "Energy"
+    case vo2Max = "VO₂ Max"
+
+    var id: String { rawValue }
+
+    var unit: String {
+        switch self {
+        case .sleep:     return "h"
+        case .restingHr: return "bpm"
+        case .hrv:       return "ms"
+        case .spo2:      return "%"
+        case .breathing: return "br/min"
+        case .energy:    return "kcal"
+        case .vo2Max:    return "ml/kg·min"
+        }
+    }
+
+    var colour: Color {
+        switch self {
+        case .sleep:     return .indigo
+        case .restingHr: return .pink
+        case .hrv:       return AppTheme.primary
+        case .spo2:      return .cyan
+        case .breathing: return .teal
+        case .energy:    return .orange
+        case .vo2Max:    return .green
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .sleep:     return "bed.double.fill"
+        case .restingHr: return "heart.fill"
+        case .hrv:       return "waveform.path.ecg"
+        case .spo2:      return "drop.fill"
+        case .breathing: return "lungs.fill"
+        case .energy:    return "flame.fill"
+        case .vo2Max:    return "figure.run"
+        }
+    }
+
+    /// Pulls this metric out of a day's record, in the unit shown above.
+    /// Sleep is converted from stored minutes to hours for charting.
+    func value(from day: HealthDay) -> Double? {
+        switch self {
+        case .sleep:     return day.sleepMin.map { Double($0) / 60 }
+        case .restingHr: return day.restingHr
+        case .hrv:       return day.hrvMs
+        case .spo2:      return day.spo2Pct
+        case .breathing: return day.respiratoryRate
+        case .energy:    return day.activeEnergyKcal
+        case .vo2Max:    return day.vo2Max
+        }
+    }
+
+    func format(_ value: Double) -> String {
+        switch self {
+        case .sleep:
+            let total = Int((value * 60).rounded())
+            return "\(total / 60)h \(total % 60)m"
+        case .restingHr, .energy:
+            return String(format: "%.0f", value)
+        case .spo2, .breathing, .vo2Max:
+            return String(format: "%.1f", value)
+        case .hrv:
+            return String(format: "%.0f", value)
+        }
+    }
+
+    /// Charts for these metrics shouldn't start at zero — a resting heart rate
+    /// axis running from 0 flattens the variation that matters.
+    var zeroBaseline: Bool {
+        switch self {
+        case .energy, .sleep: return true
+        default:              return false
+        }
+    }
+}
+
+/// One slice of a night's sleep, for the stacked stage bar.
+private struct SleepStageSlice: Identifiable {
+    let id: String
+    let minutes: Int
+    let colour: Color
+    var label: String { id }
+    var formatted: String { "\(minutes / 60)h \(minutes % 60)m" }
+}
+
+private struct VitalsTab: View {
+
+    @Environment(AppState.self) private var appState
+    @State private var selectedMetric: VitalMetric = .sleep
+    @State private var chartRange: VitalsRange = .month
+    @State private var isImporting = false
+    @State private var importError: String? = nil
+    @State private var healthKitManager = HealthKitManager()
+
+    enum VitalsRange: String, CaseIterable {
+        case week = "W"
+        case month = "1M"
+        case threeMonth = "3M"
+        case all = "All"
+
+        var days: Int? {
+            switch self {
+            case .week:       return 7
+            case .month:      return 30
+            case .threeMonth: return 90
+            case .all:        return nil
+            }
+        }
+    }
+
+    private var history: [HealthDay] { appState.healthHistory }
+
+    private var rangeDays: [HealthDay] {
+        guard let days = chartRange.days else { return history }
+        guard let cutoff = Calendar.current.date(byAdding: .day, value: -days, to: Date()) else {
+            return history
+        }
+        let cutoffKey = cutoff.dayKey
+        return history.filter { $0.dayKey >= cutoffKey }
+    }
+
+    private var chartData: [(date: Date, value: Double)] {
+        rangeDays.compactMap { day in
+            guard let value = selectedMetric.value(from: day),
+                  let date = _dayKeyFormatter.date(from: day.dayKey) else { return nil }
+            return (date, value)
+        }
+    }
+
+    /// Most recent reading for the selected metric, however long ago.
+    private var latest: (day: HealthDay, value: Double)? {
+        for day in history.reversed() {
+            if let value = selectedMetric.value(from: day) { return (day, value) }
+        }
+        return nil
+    }
+
+    private var average: Double? {
+        let values = chartData.map(\.value)
+        guard !values.isEmpty else { return nil }
+        return values.reduce(0, +) / Double(values.count)
+    }
+
+    private var lastNight: HealthDay? { appState.lastNightSleep }
+
+    var body: some View {
+        List {
+            latestSection
+            if selectedMetric == .sleep, let night = lastNight { sleepStageSection(night) }
+            metricPickerSection
+            chartSection
+            importSection
+        }
+        .listStyle(.insetGrouped)
+    }
+
+    // MARK: Sections
+
+    @ViewBuilder
+    private var latestSection: some View {
+        Section {
+            if let latest = latest {
+                VStack(alignment: .leading, spacing: 4) {
+                    Label(selectedMetric.rawValue, systemImage: selectedMetric.icon)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    HStack(alignment: .lastTextBaseline, spacing: 4) {
+                        Text(selectedMetric.format(latest.value))
+                            .font(.largeTitle.bold())
+                        if selectedMetric != .sleep {
+                            Text(selectedMetric.unit)
+                                .font(.title3)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    if let average = average, chartData.count > 1 {
+                        Text("\(chartRange.rawValue) average \(selectedMetric.format(average))")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    if let date = _dayKeyFormatter.date(from: latest.day.dayKey), !date.isToday {
+                        Text("Last reading \(date.formatted(date: .abbreviated, time: .omitted))")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("No \(selectedMetric.rawValue.lowercased()) data yet")
+                        .font(.subheadline)
+                    Text("Import from Apple Health below. If nothing appears, check your tracker is writing this metric into the Health app.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func sleepStageSection(_ night: HealthDay) -> some View {
+        let stages: [SleepStageSlice] = [
+            SleepStageSlice(id: "Deep",  minutes: night.deepMin ?? 0,  colour: .indigo),
+            SleepStageSlice(id: "REM",   minutes: night.remMin ?? 0,   colour: .purple),
+            SleepStageSlice(id: "Light", minutes: night.lightMin ?? 0, colour: .blue.opacity(0.6)),
+            SleepStageSlice(id: "Awake", minutes: night.awakeMin ?? 0, colour: .orange.opacity(0.7))
+        ].filter { $0.minutes > 0 }
+
+        Section {
+            if stages.isEmpty {
+                Text("Your tracker reported a total but no stage breakdown for this night.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } else {
+                Chart(stages) { stage in
+                    BarMark(
+                        x: .value("Minutes", stage.minutes),
+                        y: .value("Night", "stages")
+                    )
+                    .foregroundStyle(stage.colour)
+                    .annotation(position: .overlay) {
+                        if stage.minutes >= 45 {
+                            Text(stage.label)
+                                .font(.caption2.bold())
+                                .foregroundColor(.white)
+                        }
+                    }
+                }
+                .frame(height: 44)
+                .chartXAxis(.hidden)
+                .chartYAxis(.hidden)
+                .chartLegend(.hidden)
+
+                ForEach(stages) { stage in
+                    HStack {
+                        Circle().fill(stage.colour).frame(width: 8, height: 8)
+                        Text(stage.label)
+                        Spacer()
+                        Text(stage.formatted)
+                            .foregroundColor(.secondary)
+                    }
+                    .font(.subheadline)
+                }
+            }
+
+            if let efficiency = night.sleepEfficiency {
+                InfoRow(label: "Efficiency", value: String(format: "%.0f%%", efficiency * 100))
+            }
+            if let bedtime = night.bedtime, let wake = night.wakeTime {
+                InfoRow(
+                    label: "Asleep",
+                    value: "\(bedtime.formatted(date: .omitted, time: .shortened)) – \(wake.formatted(date: .omitted, time: .shortened))"
+                )
+            }
+        } header: {
+            Text("Last Night")
+        }
+    }
+
+    @ViewBuilder
+    private var metricPickerSection: some View {
+        Section {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(VitalMetric.allCases) { metric in
+                        let isSelected = metric == selectedMetric
+                        Button {
+                            selectedMetric = metric
+                        } label: {
+                            Text(metric.rawValue)
+                                .font(.footnote.weight(.medium))
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 7)
+                                .background(
+                                    RoundedRectangle(cornerRadius: AppTheme.chipRadius)
+                                        .fill(isSelected ? metric.colour.opacity(0.18) : Color(.tertiarySystemFill))
+                                )
+                                .foregroundColor(isSelected ? metric.colour : .secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+        }
+    }
+
+    @ViewBuilder
+    private var chartSection: some View {
+        if chartData.count > 1 {
+            Section {
+                Picker("Range", selection: $chartRange) {
+                    ForEach(VitalsRange.allCases, id: \.self) { r in
+                        Text(r.rawValue).tag(r)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .listRowSeparator(.hidden)
+
+                Chart {
+                    ForEach(Array(chartData.enumerated()), id: \.offset) { _, point in
+                        LineMark(
+                            x: .value("Date", point.date),
+                            y: .value(selectedMetric.rawValue, point.value)
+                        )
+                        .foregroundStyle(selectedMetric.colour)
+                        .interpolationMethod(.catmullRom)
+
+                        AreaMark(
+                            x: .value("Date", point.date),
+                            y: .value(selectedMetric.rawValue, point.value)
+                        )
+                        .foregroundStyle(selectedMetric.colour.opacity(0.12))
+                        .interpolationMethod(.catmullRom)
+                    }
+                    if selectedMetric == .sleep {
+                        RuleMark(y: .value("Goal", Double(appState.healthSettings.sleepGoalMinutes) / 60))
+                            .foregroundStyle(.orange)
+                            .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+                    }
+                }
+                .frame(height: 190)
+                .chartYScale(domain: .automatic(includesZero: selectedMetric.zeroBaseline))
+            } header: {
+                Text("Trend")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var importSection: some View {
+        Section {
+            Button {
+                importFromHealthKit()
+            } label: {
+                HStack {
+                    Label(
+                        appState.healthSettings.hasBackfilled ? "Sync from Apple Health" : "Import from Apple Health",
+                        systemImage: "heart.fill"
+                    )
+                    .foregroundColor(.red)
+                    Spacer()
+                    if isImporting { ProgressView() }
+                }
+            }
+            .disabled(isImporting)
+
+            if let importError = importError {
+                Text(importError)
+                    .font(.caption)
+                    .foregroundColor(.red)
+            }
+        } footer: {
+            Text("Pulls a year of sleep, heart and activity history. Anything your tracker writes into Apple Health shows up here.")
+        }
+    }
+
+    // MARK: Import
+
+    private func importFromHealthKit() {
+        isImporting = true
+        importError = nil
+        Task {
+            let granted = await healthKitManager.requestPermissions()
+            guard granted else {
+                await MainActor.run {
+                    isImporting = false
+                    importError = "HealthKit access denied. Please allow in Settings > Health > Data Access."
+                }
+                return
+            }
+
+            let days = await healthKitManager.fetchDailyMetrics(daysBack: 365)
+            let steps = await healthKitManager.fetchDailySteps(daysBack: 365)
+
+            await MainActor.run {
+                appState.mergeHealthDays(Array(days.values))
+                appState.mergeSteps(steps)
+                appState.setHealthSettings { $0.hasBackfilled = true }
+                isImporting = false
+                if days.isEmpty {
+                    importError = "Apple Health returned no sleep or heart data. Check Settings > Health > Data Access > Life, and that your tracker is syncing into Health."
                 }
             }
         }

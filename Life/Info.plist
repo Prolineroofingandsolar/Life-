@@ -39,7 +39,7 @@
 
     <!-- HealthKit -->
     <key>NSHealthShareUsageDescription</key>
-    <string>Life uses Apple Health to import your weight, body fat, and BMI data.</string>
+    <string>Life reads Apple Health to show your sleep, resting heart rate, HRV, breathing rate, blood oxygen, activity and body composition alongside your workouts and habits.</string>
     <key>NSHealthUpdateUsageDescription</key>
     <string>Life does not write to Apple Health.</string>
 

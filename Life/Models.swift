@@ -540,6 +540,101 @@ struct CareSettings: Codable {
     var eveningNudgeEnabled: Bool = false
 }
 
+// MARK: - Health Models
+
+/// One day of Apple Health metrics, keyed by `Date.dayKey`.
+///
+/// Every metric is optional and `nil` means "not recorded that day" — which is
+/// different from zero. A day with no tracker worn should chart as a gap, not
+/// as a reading of 0.
+///
+/// The `CodingKeys` are deliberately terse. The whole `StateSnapshot` is
+/// encoded into a single Firestore document with a hard 1 MB ceiling (see
+/// `FirestoreSync.SyncError`), and this is the only type that grows by one
+/// record every day forever. Short keys plus `JSONEncoder` skipping nil
+/// optionals keeps a year of history down to tens of KB rather than hundreds.
+struct HealthDay: Codable {
+    var dayKey: String = ""
+
+    // Sleep. Minutes, attributed to the morning the night ended.
+    var sleepMin: Int? = nil
+    var deepMin: Int? = nil
+    var remMin: Int? = nil
+    var lightMin: Int? = nil
+    var awakeMin: Int? = nil
+    var bedtime: Date? = nil
+    var wakeTime: Date? = nil
+
+    // Heart and recovery.
+    var restingHr: Double? = nil
+    var hrvMs: Double? = nil
+    var respiratoryRate: Double? = nil
+    var spo2Pct: Double? = nil
+    var wristTempC: Double? = nil
+    var vo2Max: Double? = nil
+
+    // Activity.
+    var activeEnergyKcal: Double? = nil
+    var exerciseMinutes: Int? = nil
+    var distanceKm: Double? = nil
+    var flights: Int? = nil
+
+    enum CodingKeys: String, CodingKey {
+        case dayKey = "k"
+        case sleepMin = "sl", deepMin = "dp", remMin = "rm", lightMin = "lt", awakeMin = "aw"
+        case bedtime = "bt", wakeTime = "wt"
+        case restingHr = "rh", hrvMs = "hv", respiratoryRate = "rr"
+        case spo2Pct = "ox", wristTempC = "tp", vo2Max = "vo"
+        case activeEnergyKcal = "ae", exerciseMinutes = "em"
+        case distanceKm = "ds", flights = "fl"
+    }
+
+    /// Proportion of time in bed actually spent asleep, 0–1.
+    /// Nil unless both asleep and awake time were recorded.
+    var sleepEfficiency: Double? {
+        guard let sleepMin, let awakeMin else { return nil }
+        let total = sleepMin + awakeMin
+        guard total > 0 else { return nil }
+        return Double(sleepMin) / Double(total)
+    }
+
+    /// True when the day carries no readings at all, so empty records can be
+    /// dropped rather than synced.
+    var isEmpty: Bool {
+        sleepMin == nil && restingHr == nil && hrvMs == nil && respiratoryRate == nil
+            && spo2Pct == nil && wristTempC == nil && vo2Max == nil
+            && activeEnergyKcal == nil && exerciseMinutes == nil
+            && distanceKm == nil && flights == nil
+    }
+}
+
+struct HealthSettings: Codable {
+    var sleepGoalMinutes: Int = 480
+    var exerciseGoalMinutes: Int = 30
+    var showRecoveryTile: Bool = true
+    /// Set once the first full-history import has run, so the 5-minute
+    /// foreground sync only ever pulls a short recent window.
+    var hasBackfilled: Bool = false
+
+    enum CodingKeys: String, CodingKey {
+        case sleepGoalMinutes, exerciseGoalMinutes, showRecoveryTile, hasBackfilled
+    }
+
+    init() {}
+
+    /// Decodes key by key so a settings blob written by an older version — one
+    /// missing a goal added later — still loads. Swift's synthesized decoder
+    /// would throw on the absent key instead of using the default above, and a
+    /// throw here fails the whole `StateSnapshot`.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        sleepGoalMinutes = try c.decodeIfPresent(Int.self, forKey: .sleepGoalMinutes) ?? 480
+        exerciseGoalMinutes = try c.decodeIfPresent(Int.self, forKey: .exerciseGoalMinutes) ?? 30
+        showRecoveryTile = try c.decodeIfPresent(Bool.self, forKey: .showRecoveryTile) ?? true
+        hasBackfilled = try c.decodeIfPresent(Bool.self, forKey: .hasBackfilled) ?? false
+    }
+}
+
 struct WorkoutSettings: Codable {
     var restTimerEnabled: Bool = true
     var defaultRestSeconds: Int = 90

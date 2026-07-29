@@ -64,6 +64,15 @@ struct StateSnapshot: Codable {
     var visitedLocations: [VisitedLocation] = []
     var plannedSessions: [PlannedSession] = []
     var supplements: [Supplement] = []
+    // Optional on purpose. Swift's synthesized `Codable` calls `decode` (not
+    // `decodeIfPresent`) for non-optional properties, so a *missing* key throws
+    // rather than falling back to the default value — and `load()` treats a
+    // decode failure as "first launch" and seeds defaults. A non-optional field
+    // added here would therefore wipe every save written before this version.
+    // Optionals get `decodeIfPresent`, so old snapshots decode as nil and
+    // `apply(snapshot:)` substitutes the default.
+    var healthDays: [String: HealthDay]? = nil
+    var healthSettings: HealthSettings? = nil
 }
 
 // MARK: - AppState
@@ -100,6 +109,8 @@ final class AppState {
     var visitedLocations: [VisitedLocation] = []
     var plannedSessions: [PlannedSession] = []
     var progressPhotos: [ProgressPhoto] = []
+    var healthDays: [String: HealthDay] = [:]
+    var healthSettings: HealthSettings = HealthSettings()
 
     // MARK: Computed Properties
 
@@ -107,6 +118,36 @@ final class AppState {
 
     var today: CareDay {
         get { careDays[todayKey] ?? CareDay(dayKey: todayKey) }
+    }
+
+    /// Health days oldest-first, for charting.
+    var healthHistory: [HealthDay] {
+        healthDays.values.sorted { $0.dayKey < $1.dayKey }
+    }
+
+    /// Last night's sleep — today's record if it has one, otherwise the most
+    /// recent night on file. Sleep is filed under the morning you woke, so
+    /// today's entry is the night just gone.
+    var lastNightSleep: HealthDay? {
+        if let todayRecord = healthDays[todayKey], todayRecord.sleepMin != nil { return todayRecord }
+        return healthHistory.last { $0.sleepMin != nil }
+    }
+
+    /// Mean of the last `days` readings for a metric, excluding today so a
+    /// reading can be compared against its own recent baseline. Nil until there
+    /// are at least `minimumSamples` readings — a baseline from two nights is
+    /// noise, not a baseline.
+    func healthBaseline(
+        _ metric: (HealthDay) -> Double?,
+        days: Int = 7,
+        minimumSamples: Int = 3
+    ) -> Double? {
+        let values = healthHistory
+            .filter { $0.dayKey != todayKey }
+            .suffix(days)
+            .compactMap(metric)
+        guard values.count >= minimumSamples else { return nil }
+        return values.reduce(0, +) / Double(values.count)
     }
 
     var activeSession: WorkoutSession? {
@@ -195,7 +236,9 @@ final class AppState {
             userName: userName,
             visitedLocations: visitedLocations,
             plannedSessions: plannedSessions,
-            supplements: supplements
+            supplements: supplements,
+            healthDays: healthDays,
+            healthSettings: healthSettings
         )
     }
 
@@ -222,6 +265,8 @@ final class AppState {
         userName = snapshot.userName
         visitedLocations = snapshot.visitedLocations
         plannedSessions = snapshot.plannedSessions
+        healthDays = snapshot.healthDays ?? [:]
+        healthSettings = snapshot.healthSettings ?? HealthSettings()
     }
 
     // MARK: Cloud Sync
@@ -1184,6 +1229,69 @@ final class AppState {
         save()
     }
 
+    /// Backfills step counts for past days without touching anything else on
+    /// those records.
+    func mergeSteps(_ stepsByDay: [String: Int]) {
+        guard !stepsByDay.isEmpty else { return }
+        for (key, steps) in stepsByDay {
+            var day = careDays[key] ?? CareDay(dayKey: key)
+            day.steps = max(0, steps)
+            careDays[key] = day
+        }
+        save()
+    }
+
+    // MARK: - Health Mutations
+
+    /// How much health history to keep. The whole `StateSnapshot` is uploaded as
+    /// a single Firestore document with a 1 MB ceiling, and `healthDays` is the
+    /// one collection that grows by a record every day forever — so it gets a
+    /// hard cap rather than being allowed to creep up on the limit.
+    private static let healthDayRetention = 400
+
+    /// Merges a sync into stored history field by field, so a short 7-day pull
+    /// never blanks values an earlier full import found. Only non-nil incoming
+    /// values overwrite.
+    func mergeHealthDays(_ days: [HealthDay]) {
+        guard !days.isEmpty else { return }
+
+        for incoming in days where !incoming.dayKey.isEmpty {
+            var day = healthDays[incoming.dayKey] ?? HealthDay(dayKey: incoming.dayKey)
+            if let v = incoming.sleepMin { day.sleepMin = v }
+            if let v = incoming.deepMin { day.deepMin = v }
+            if let v = incoming.remMin { day.remMin = v }
+            if let v = incoming.lightMin { day.lightMin = v }
+            if let v = incoming.awakeMin { day.awakeMin = v }
+            if let v = incoming.bedtime { day.bedtime = v }
+            if let v = incoming.wakeTime { day.wakeTime = v }
+            if let v = incoming.restingHr { day.restingHr = v }
+            if let v = incoming.hrvMs { day.hrvMs = v }
+            if let v = incoming.respiratoryRate { day.respiratoryRate = v }
+            if let v = incoming.spo2Pct { day.spo2Pct = v }
+            if let v = incoming.wristTempC { day.wristTempC = v }
+            if let v = incoming.vo2Max { day.vo2Max = v }
+            if let v = incoming.activeEnergyKcal { day.activeEnergyKcal = v }
+            if let v = incoming.exerciseMinutes { day.exerciseMinutes = v }
+            if let v = incoming.distanceKm { day.distanceKm = v }
+            if let v = incoming.flights { day.flights = v }
+            healthDays[incoming.dayKey] = day
+        }
+
+        pruneHealthDays()
+        save()
+    }
+
+    private func pruneHealthDays() {
+        guard healthDays.count > Self.healthDayRetention else { return }
+        let keep = Set(healthDays.keys.sorted().suffix(Self.healthDayRetention))
+        healthDays = healthDays.filter { keep.contains($0.key) }
+    }
+
+    func setHealthSettings(_ transform: (inout HealthSettings) -> Void) {
+        transform(&healthSettings)
+        save()
+    }
+
     // MARK: - Settings Mutations
 
     func setName(_ name: String) {
@@ -1984,6 +2092,8 @@ final class AppState {
         visitedLocations = []
         plannedSessions = []
         progressPhotos = []
+        healthDays = [:]
+        healthSettings = HealthSettings()
         savePhotos()
         seedDefaults()
     }
