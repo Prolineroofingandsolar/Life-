@@ -284,17 +284,38 @@ private struct ActivityRingsView: View {
 private struct CareSection: View {
 
     @Environment(AppState.self) private var appState
-    @State private var stepSyncTask: Task<Void, Never>? = nil
+    @State private var healthSyncTask: Task<Void, Never>? = nil
     @State private var showMealSheet = false
 
     private var today: CareDay { appState.today }
     private var settings: CareSettings { appState.careSettings }
+    private var healthSettings: HealthSettings { appState.healthSettings }
 
     @State private var hkManager = HealthKitManager()
 
     private var workedOutToday: Bool {
         let key = Date().dayKey
         return appState.completedWorkouts.contains { $0.startedAt.dayKey == key }
+    }
+
+    private var lastNight: HealthDay? { appState.lastNightSleep }
+
+    /// "8h", or "7h30m" when the goal isn't a whole number of hours.
+    private var sleepGoalLabel: String {
+        let goal = healthSettings.sleepGoalMinutes
+        return goal % 60 == 0 ? "\(goal / 60)h" : "\(goal / 60)h\(goal % 60)m"
+    }
+
+    /// The latest resting HR and HRV, plus how far the resting HR sits from its
+    /// own 7-day baseline. The delta is nil until there's enough history to
+    /// compare against, so the tile never shows a meaningless figure.
+    private var recovery: (restingHr: Double?, hrvMs: Double?, hrDelta: Double?) {
+        // Recovery metrics are recorded overnight, so today's record usually has
+        // them; fall back to the most recent day that does.
+        let latest = appState.healthHistory.last { $0.restingHr != nil || $0.hrvMs != nil }
+        let hr = latest?.restingHr
+        let baseline = appState.healthBaseline { $0.restingHr }
+        return (hr, latest?.hrvMs, hr.flatMap { v in baseline.map { v - $0 } })
     }
 
     private var rings: [ActivityRingsView.Ring] {
@@ -349,6 +370,17 @@ private struct CareSection: View {
                     value: workedOutToday ? "Done" : "Rest", label: "Workout",
                     done: workedOutToday
                 )
+
+                if let night = lastNight, let minutes = night.sleepMin {
+                    TodayStatBox(
+                        icon: "bed.double.fill", iconColor: .indigo,
+                        value: "\(minutes / 60)h \(minutes % 60)m",
+                        label: "Sleep · \(sleepGoalLabel) goal",
+                        done: minutes >= healthSettings.sleepGoalMinutes
+                    )
+                }
+
+                if healthSettings.showRecoveryTile { recoveryBox }
             }
         }
         .padding(.horizontal, 16)
@@ -358,25 +390,80 @@ private struct CareSection: View {
             }
         }
         .task {
-            await syncStepsFromHealth()
+            await syncHealthFromApple()
         }
         .onAppear {
-            stepSyncTask?.cancel()
-            stepSyncTask = Task {
+            healthSyncTask?.cancel()
+            healthSyncTask = Task {
                 while !Task.isCancelled {
                     try? await Task.sleep(nanoseconds: 5 * 60 * 1_000_000_000)
-                    if !Task.isCancelled { await syncStepsFromHealth() }
+                    if !Task.isCancelled { await syncHealthFromApple() }
                 }
             }
         }
-        .onDisappear { stepSyncTask?.cancel() }
+        .onDisappear { healthSyncTask?.cancel() }
     }
 
-    private func syncStepsFromHealth() async {
+    /// Resting HR with its drift from baseline. Informational, so no action —
+    /// `TodayStatBox` renders a non-tappable card when `action` is nil.
+    @ViewBuilder
+    private var recoveryBox: some View {
+        let r = recovery
+        if let hr = r.restingHr {
+            TodayStatBox(
+                icon: "heart.fill", iconColor: .pink,
+                value: "\(Int(hr))",
+                label: recoveryLabel(hrDelta: r.hrDelta, hrvMs: r.hrvMs)
+            )
+        } else if let hrv = r.hrvMs {
+            TodayStatBox(
+                icon: "waveform.path.ecg", iconColor: AppTheme.primary,
+                value: "\(Int(hrv))",
+                label: "HRV ms"
+            )
+        }
+    }
+
+    /// "Resting HR · 2 below usual", or the HRV reading when there's no
+    /// baseline yet. Deltas under a beat are noise, so they're not shown.
+    private func recoveryLabel(hrDelta: Double?, hrvMs: Double?) -> String {
+        if let delta = hrDelta, abs(delta) >= 1 {
+            let rounded = Int(abs(delta).rounded())
+            return delta < 0 ? "Resting HR · \(rounded) below usual" : "Resting HR · \(rounded) above usual"
+        }
+        if let hrvMs = hrvMs {
+            return "Resting HR · HRV \(Int(hrvMs))ms"
+        }
+        return "Resting HR"
+    }
+
+    private func syncHealthFromApple() async {
         guard HKHealthStore.isHealthDataAvailable() else { return }
+        // Deliberately not gated on the result: HealthKit reports success even
+        // when the user denies a type, and a previously-granted read still works
+        // if this call errors. Queries just come back empty when there's no
+        // access.
         _ = await hkManager.requestPermissions()
+
         let steps = await hkManager.fetchStepsForToday()
         appState.syncSteps(steps)
+
+        // The first sync pulls a year so the Vitals charts have history to draw.
+        // After that a short window is plenty, and keeps the 5-minute refresh
+        // from re-querying a year of HealthKit data every time.
+        let alreadyBackfilled = appState.healthSettings.hasBackfilled
+        let window = alreadyBackfilled ? 7 : 365
+
+        let days = await hkManager.fetchDailyMetrics(daysBack: window)
+        appState.mergeHealthDays(Array(days.values))
+
+        if !alreadyBackfilled {
+            appState.mergeSteps(await hkManager.fetchDailySteps(daysBack: 365))
+            // Set even when the pull came back empty, so a user with no tracker
+            // data isn't re-running a year-long query every five minutes. The
+            // Body ▸ Vitals screen has a manual re-sync for when data appears.
+            appState.setHealthSettings { $0.hasBackfilled = true }
+        }
     }
 }
 

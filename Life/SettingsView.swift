@@ -12,6 +12,7 @@ struct SettingsView: View {
     @State private var careSettings: CareSettings = CareSettings()
     @State private var workoutSettings: WorkoutSettings = WorkoutSettings()
     @State private var moneySettings: MoneySettings = MoneySettings()
+    @State private var healthSettings: HealthSettings = HealthSettings()
     @State private var showResetConfirm = false
     @State private var showCalculators = false
     @State private var showShareSheet = false
@@ -131,6 +132,27 @@ struct SettingsView: View {
                     }
                 }
 
+                // Health
+                Section {
+                    Stepper(
+                        "Sleep Goal: \(healthSettings.sleepGoalMinutes / 60)h \(healthSettings.sleepGoalMinutes % 60)m",
+                        value: $healthSettings.sleepGoalMinutes,
+                        in: 240...720,
+                        step: 15
+                    )
+                    Stepper(
+                        "Active Minutes Goal: \(healthSettings.exerciseGoalMinutes)",
+                        value: $healthSettings.exerciseGoalMinutes,
+                        in: 5...180,
+                        step: 5
+                    )
+                    Toggle("Recovery Tile on Today", isOn: $healthSettings.showRecoveryTile)
+                } header: {
+                    Text("Health")
+                } footer: {
+                    Text("Sleep, heart rate, HRV and activity are read from Apple Health. Anything your tracker writes there shows up under Body ▸ Vitals.")
+                }
+
                 // Habit Reminders
                 Section("Habit Reminders") {
                     Toggle("Morning Summary", isOn: $careSettings.morningSummaryEnabled)
@@ -227,6 +249,19 @@ struct SettingsView: View {
                 careSettings = appState.careSettings
                 workoutSettings = appState.workoutSettings
                 moneySettings = appState.moneySettings
+                healthSettings = appState.healthSettings
+            }
+            // Only the fields this screen owns are written back. Assigning the
+            // whole struct would overwrite `hasBackfilled` with whatever this
+            // view loaded on appear, undoing a sync that finished in between.
+            .onChange(of: healthSettings.sleepGoalMinutes) { _, value in
+                appState.setHealthSettings { $0.sleepGoalMinutes = value }
+            }
+            .onChange(of: healthSettings.exerciseGoalMinutes) { _, value in
+                appState.setHealthSettings { $0.exerciseGoalMinutes = value }
+            }
+            .onChange(of: healthSettings.showRecoveryTile) { _, value in
+                appState.setHealthSettings { $0.showRecoveryTile = value }
             }
             .onChange(of: workoutSettings.weightUnit) { _, _ in
                 appState.setWorkoutSettings(workoutSettings)
