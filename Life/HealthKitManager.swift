@@ -242,6 +242,52 @@ final class HealthKitManager {
         return totals.compactMapValues { $0 > 0 ? Int($0.rounded()) : nil }
     }
 
+    // MARK: - Sources
+
+    /// Names of the apps and devices writing the data Life reads — a watch, a
+    /// ring, a smart scale, the iPhone itself.
+    ///
+    /// Sampled from a handful of recent samples per type rather than the full
+    /// history: this only exists to list what's contributing, so a small recent
+    /// window answers it far more cheaply than a year-long scan.
+    func fetchDataSources(daysBack: Int = 14) async -> [String] {
+        guard HKHealthStore.isHealthDataAvailable() else { return [] }
+        guard let start = Calendar.current.date(byAdding: .day, value: -daysBack, to: Date()) else {
+            return []
+        }
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: Date(), options: [])
+
+        var types: [HKSampleType] = []
+        for id in [HKQuantityTypeIdentifier.stepCount, .restingHeartRate, .heartRateVariabilitySDNN, .bodyMass] {
+            if let type = HKQuantityType.quantityType(forIdentifier: id) { types.append(type) }
+        }
+        if let sleep = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) { types.append(sleep) }
+
+        var names = Set<String>()
+        for type in types {
+            names.formUnion(await sourceNames(for: type, predicate: predicate))
+        }
+        return names.sorted()
+    }
+
+    private func sourceNames(for type: HKSampleType, predicate: NSPredicate) async -> [String] {
+        await withCheckedContinuation { continuation in
+            let query = HKSampleQuery(
+                sampleType: type,
+                predicate: predicate,
+                limit: 200,
+                sortDescriptors: nil
+            ) { _, samples, error in
+                guard error == nil, let samples else {
+                    continuation.resume(returning: [])
+                    return
+                }
+                continuation.resume(returning: samples.map { $0.sourceRevision.source.name })
+            }
+            store.execute(query)
+        }
+    }
+
     // MARK: - Sleep
 
     struct SleepSummary {

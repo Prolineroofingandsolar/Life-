@@ -133,6 +133,30 @@ final class AppState {
         return healthHistory.last { $0.sleepMin != nil }
     }
 
+    /// Activity per day, oldest first.
+    ///
+    /// Steps live on `CareDay` (they drive Today's Move ring) while everything
+    /// else lives on `HealthDay`, so this stitches the two together. Days
+    /// present in either map are included; a day with only steps is still a day
+    /// worth charting.
+    var activityHistory: [ActivityDay] {
+        var byDay: [String: ActivityDay] = [:]
+
+        for (key, care) in careDays where care.steps > 0 {
+            byDay[key] = ActivityDay(dayKey: key, steps: care.steps)
+        }
+        for (key, health) in healthDays {
+            var day = byDay[key] ?? ActivityDay(dayKey: key)
+            day.activeEnergyKcal = health.activeEnergyKcal
+            day.exerciseMinutes = health.exerciseMinutes
+            day.distanceKm = health.distanceKm
+            day.flights = health.flights
+            byDay[key] = day
+        }
+
+        return byDay.values.sorted { $0.dayKey < $1.dayKey }
+    }
+
     /// Mean of the last `days` readings for a metric, excluding today so a
     /// reading can be compared against its own recent baseline. Nil until there
     /// are at least `minimumSamples` readings — a baseline from two nights is

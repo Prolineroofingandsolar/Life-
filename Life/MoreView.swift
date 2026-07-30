@@ -8,12 +8,30 @@ struct MoreView: View {
     @EnvironmentObject private var authManager: AuthManager
     @State private var showSettings = false
     @State private var showProgressPhotos = false
+    @State private var showHabits = false
 
     var body: some View {
         NavigationStack {
             List {
                 // MARK: - Tracking
                 Section("Tracking") {
+                    // Habits moved here when Health took the fourth tab slot.
+                    // Presented rather than pushed: HabitsView carries its own
+                    // NavigationStack from its days as a tab root, and pushing
+                    // it into this one would nest two stacks. Same reason
+                    // Progress Photos below is a sheet.
+                    Button {
+                        showHabits = true
+                    } label: {
+                        MoreRowLabel(
+                            icon: "chart.bar.fill",
+                            color: AppTheme.primary,
+                            title: "Habits",
+                            subtitle: "Daily habits & streaks",
+                            showsChevron: true
+                        )
+                    }
+                    .buttonStyle(.plain)
                     MoreRow(
                         icon: "scalemass.fill",
                         color: .green,
@@ -136,6 +154,9 @@ struct MoreView: View {
             .sheet(isPresented: $showProgressPhotos) {
                 ProgressPhotosView()
             }
+            .sheet(isPresented: $showHabits) {
+                HabitsView()
+            }
         }
     }
 }
@@ -151,24 +172,48 @@ private struct MoreRow<Destination: View>: View {
 
     var body: some View {
         NavigationLink(destination: destination()) {
-            HStack(spacing: 14) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 9)
-                        .fill(color.opacity(0.15))
-                        .frame(width: 38, height: 38)
-                    Image(systemName: icon)
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(color)
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.subheadline.weight(.semibold))
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-            .padding(.vertical, 4)
+            MoreRowLabel(icon: icon, color: color, title: title, subtitle: subtitle)
         }
+    }
+}
+
+/// The icon + title + subtitle content of a More row, split out so rows that
+/// present a sheet instead of pushing a destination look identical to those
+/// that push.
+private struct MoreRowLabel: View {
+    let icon: String
+    let color: Color
+    let title: String
+    let subtitle: String
+    /// `NavigationLink` draws its own disclosure chevron in a `List`; rows that
+    /// present a sheet have to draw their own.
+    var showsChevron: Bool = false
+
+    var body: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 9)
+                    .fill(color.opacity(0.15))
+                    .frame(width: 38, height: 38)
+                Image(systemName: icon)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundColor(color)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.primary)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            if showsChevron {
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(Color(.tertiaryLabel))
+            }
+        }
+        .padding(.vertical, 4)
     }
 }

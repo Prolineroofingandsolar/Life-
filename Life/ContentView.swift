@@ -2,15 +2,19 @@ import SwiftUI
 
 // MARK: - App Tab
 
+/// Habits used to hold the fourth slot. It moved into More ▸ Tracking when
+/// Health took its place — five tabs is the comfortable maximum, and health
+/// data is checked far more often than the habits list. The `life://habits`
+/// widget link still works; it opens Habits as a sheet (see `ContentView`).
 enum AppTab: String, CaseIterable {
-    case today, tasks, train, habits, more
+    case today, tasks, train, health, more
 
     var label: String {
         switch self {
         case .today:   return "Today"
         case .tasks:   return "Tasks"
         case .train:   return "Train"
-        case .habits:  return "Habits"
+        case .health:  return "Health"
         case .more:    return "More"
         }
     }
@@ -20,7 +24,7 @@ enum AppTab: String, CaseIterable {
         case .today:   return "sun.max.fill"
         case .tasks:   return "checkmark.circle.fill"
         case .train:   return "dumbbell.fill"
-        case .habits:  return "chart.bar.fill"
+        case .health:  return "heart.fill"
         case .more:    return "ellipsis"
         }
     }
@@ -88,6 +92,10 @@ struct ContentView: View {
     /// nulling `activeSession` (otherwise the sheet goes blank white on Finish).
     @State private var presentedWorkoutId: String?
 
+    /// Habits lost its tab to Health; the habit widget's `life://habits` link
+    /// presents it instead.
+    @State private var showHabits = false
+
     var body: some View {
         ZStack(alignment: .top) {
             TabView(selection: $selectedTab) {
@@ -100,9 +108,9 @@ struct ContentView: View {
                 TrainView()
                     .tag(AppTab.train)
                     .tabItem { Label(AppTab.train.label, systemImage: AppTab.train.icon) }
-                HabitsView()
-                    .tag(AppTab.habits)
-                    .tabItem { Label(AppTab.habits.label, systemImage: AppTab.habits.icon) }
+                HealthView()
+                    .tag(AppTab.health)
+                    .tabItem { Label(AppTab.health.label, systemImage: AppTab.health.icon) }
                 MoreView()
                     .tag(AppTab.more)
                     .tabItem { Label(AppTab.more.label, systemImage: AppTab.more.icon) }
@@ -128,11 +136,17 @@ struct ContentView: View {
                 ActiveWorkoutView(isPresented: $showActiveWorkout, sessionId: id)
             }
         }
+        // Not wrapped in a NavigationStack — HabitsView brings its own.
+        .sheet(isPresented: $showHabits) {
+            HabitsView()
+        }
         .onOpenURL { url in
             guard url.scheme == "life" else { return }
             switch url.host {
             case "tasks":  selectedTab = .tasks
-            case "habits": selectedTab = .habits
+            // Habits no longer has a tab, but the habit widget still links here,
+            // so present it rather than dropping the tap on the floor.
+            case "habits": showHabits = true
             default:       break
             }
         }
