@@ -1,5 +1,4 @@
 import SwiftUI
-import HealthKit
 
 struct TodayView: View {
 
@@ -445,32 +444,19 @@ private struct CareSection: View {
         return "Resting HR"
     }
 
+    @MainActor
     private func syncHealthFromApple() async {
-        guard HKHealthStore.isHealthDataAvailable() else { return }
-        // Deliberately not gated on the result: HealthKit reports success even
-        // when the user denies a type, and a previously-granted read still works
-        // if this call errors. Queries just come back empty when there's no
-        // access.
-        _ = await hkManager.requestPermissions()
+        // Routed through HealthSync so this agrees with the Health tab about
+        // which source is authoritative — Fitbit when connected, Apple Health
+        // otherwise. Syncing HealthKit here regardless would let an iPhone-only
+        // step count overwrite the wrist tracker's.
+        let window = appState.healthSettings.hasBackfilled ? 7 : 365
+        await HealthSync.run(appState: appState, healthKit: hkManager, daysBack: window)
 
-        let steps = await hkManager.fetchStepsForToday()
-        appState.syncSteps(steps)
-
-        // The first sync pulls a year so the Vitals charts have history to draw.
-        // After that a short window is plenty, and keeps the 5-minute refresh
-        // from re-querying a year of HealthKit data every time.
-        let alreadyBackfilled = appState.healthSettings.hasBackfilled
-        let window = alreadyBackfilled ? 7 : 365
-
-        let days = await hkManager.fetchDailyMetrics(daysBack: window)
-        appState.mergeHealthDays(Array(days.values))
-
-        if !alreadyBackfilled {
-            appState.mergeSteps(await hkManager.fetchDailySteps(daysBack: 365))
-            // Set even when the pull came back empty, so a user with no tracker
-            // data isn't re-running a year-long query every five minutes. The
-            // Body ▸ Vitals screen has a manual re-sync for when data appears.
-            appState.setHealthSettings { $0.hasBackfilled = true }
+        // Today's step count comes straight from HealthKit on the Apple Health
+        // path so the Move ring stays live between the coarser daily merges.
+        if HealthSync.activeSource == .appleHealth {
+            appState.syncSteps(await hkManager.fetchStepsForToday())
         }
     }
 }

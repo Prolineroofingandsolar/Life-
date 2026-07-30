@@ -133,6 +133,8 @@ struct SettingsView: View {
 
                 HealthSettingsSection()
 
+                FitbitSettingsSection()
+
                 // Habit Reminders
                 Section("Habit Reminders") {
                     Toggle("Morning Summary", isOn: $careSettings.morningSummaryEnabled)

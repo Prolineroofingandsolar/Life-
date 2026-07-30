@@ -7,6 +7,9 @@ final class HealthKitManager {
 
     private let store = HKHealthStore()
 
+    /// Exposed so callers can ask about availability without importing HealthKit.
+    static var isHealthDataAvailable: Bool { HKHealthStore.isHealthDataAvailable() }
+
     private var readTypes: Set<HKObjectType> {
         var types = Set<HKObjectType>()
         let identifiers: [HKQuantityTypeIdentifier] = [

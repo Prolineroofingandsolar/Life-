@@ -426,38 +426,30 @@ struct HealthView: View {
 
     // MARK: Actions
 
+    @MainActor
     private func loadSources() async {
         guard sources.isEmpty else { return }
-        sources = await healthKit.fetchDataSources()
+        switch HealthSync.activeSource {
+        case .fitbit:      sources = ["Fitbit"]
+        case .appleHealth: sources = await healthKit.fetchDataSources()
+        case .none:        sources = []
+        }
     }
 
     private func sync() {
         isSyncing = true
         syncMessage = nil
         Task {
-            let granted = await healthKit.requestPermissions()
-            guard granted else {
-                await MainActor.run {
-                    isSyncing = false
-                    syncMessage = "Apple Health access denied. Allow it in Settings ▸ Health ▸ Data Access & Devices ▸ Life."
-                }
-                return
+            // A manual sync reaches further back than the background one — this
+            // is the button people press when a chart looks short. Fitbit's
+            // 150-requests-per-hour budget is why it's a year here and a week
+            // on the automatic path, not a year everywhere.
+            let outcome = await HealthSync.run(appState: appState, healthKit: healthKit, daysBack: 365)
+            if HealthSync.activeSource == .appleHealth {
+                sources = await healthKit.fetchDataSources()
             }
-
-            let days = await healthKit.fetchDailyMetrics(daysBack: 365)
-            let steps = await healthKit.fetchDailySteps(daysBack: 365)
-            let found = await healthKit.fetchDataSources()
-
-            await MainActor.run {
-                appState.mergeHealthDays(Array(days.values))
-                appState.mergeSteps(steps)
-                appState.setHealthSettings { $0.hasBackfilled = true }
-                sources = found
-                isSyncing = false
-                syncMessage = days.isEmpty
-                    ? "Apple Health returned nothing. Check your tracker is syncing into the Health app, and that Life has read access."
-                    : nil
-            }
+            isSyncing = false
+            syncMessage = outcome.message
         }
     }
 }
