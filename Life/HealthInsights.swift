@@ -646,6 +646,64 @@ enum HealthInsights {
         )
     }
 
+    // MARK: Ranking and comparison
+    //
+    // These are the honest half of the sleep screen. Every figure below comes
+    // straight from measured data with no invented weighting, so unlike the
+    // estimated score they can't be "wrong" — only more or less useful.
+
+    /// Where a night sits among recent nights, best first.
+    ///
+    /// A rank can't disagree with itself the way an absolute score can: if a
+    /// night really was poor, it cannot come out near the top, whatever the
+    /// formula thinks. Shown next to the score so a misbehaving score is
+    /// immediately visible rather than quietly believed.
+    static func nightRank(
+        for night: HealthDay,
+        in history: [HealthDay],
+        settings: HealthSettings,
+        window: Int = 14
+    ) -> (rank: Int, of: Int)? {
+        let recent = history.suffix(window).filter { $0.sleepMin != nil }
+        guard recent.count >= 3 else { return nil }
+
+        let scored = recent.compactMap { day -> (String, Int)? in
+            guard let breakdown = sleepScoreBreakdown(for: day, history: history, settings: settings)
+            else { return nil }
+            return (day.dayKey, breakdown.total)
+        }
+        guard scored.count >= 3,
+              let mine = scored.first(where: { $0.0 == night.dayKey })?.1 else { return nil }
+
+        let better = scored.filter { $0.1 > mine }.count
+        return (better + 1, scored.count)
+    }
+
+    /// Mean of a sleep metric across recent nights, for "versus your usual".
+    static func recentAverage(
+        _ history: [HealthDay],
+        window: Int = 14,
+        metric: (HealthDay) -> Double?
+    ) -> Double? {
+        let values = history.suffix(window).compactMap { day -> Double? in metric(day) }
+        guard values.count >= 3 else { return nil }
+        return values.reduce(0, +) / Double(values.count)
+    }
+
+    /// "42m more than usual" / "in line with your usual". Nil when there's not
+    /// enough history, or the difference is too small to be worth saying.
+    static func comparison(
+        _ value: Double?,
+        against average: Double?,
+        formatter: (Double) -> String,
+        threshold: Double
+    ) -> String? {
+        guard let value, let average else { return nil }
+        let delta = value - average
+        guard abs(delta) >= threshold else { return "in line with your usual" }
+        return "\(formatter(abs(delta))) \(delta > 0 ? "more" : "less") than usual"
+    }
+
     /// Convenience for callers that only want the number for the latest night.
     static func sleepScore(_ days: [HealthDay], settings: HealthSettings) -> Score? {
         guard let night = days.last(where: { $0.sleepMin != nil }) else { return nil }

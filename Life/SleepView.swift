@@ -99,10 +99,10 @@ struct SleepView: View {
                     nightPicker
                     if let night = selected {
                         SleepHypnogramCard(night: selectedNight, day: night)
-                        SleepHeadlineRow(day: night)
+                        SleepHeadlineRow(day: night, history: nights)
                         SleepWarningsCard(day: night)
                         SleepScoreCard(night: night, history: nights, settings: settings)
-                        SleepStagesCard(day: night)
+                        SleepStagesCard(day: night, history: nights)
                         SleepVitalsCard(day: night, history: nights)
                     }
                     trendsLink
@@ -313,13 +313,32 @@ private struct SleepHypnogramCard: View {
 
 private struct SleepHeadlineRow: View {
     let day: HealthDay
+    let history: [HealthDay]
+
+    /// "38m less than usual". Straight from measured data — no weighting, no
+    /// formula, nothing to disagree with.
+    private var durationComparison: String? {
+        HealthInsights.comparison(
+            day.sleepMin.map(Double.init),
+            against: HealthInsights.recentAverage(history) { $0.sleepMin.map(Double.init) },
+            formatter: { HealthInsights.formatDuration(Int($0.rounded())) },
+            threshold: 15
+        )
+    }
 
     var body: some View {
-        HStack(spacing: 0) {
-            SleepStat(title: "Asleep", value: day.sleepMin.map { HealthInsights.formatDuration($0) })
-            SleepStat(title: "In bed", value: day.timeInBedMin.map { HealthInsights.formatDuration($0) })
-            SleepStat(title: "Fell asleep", value: day.latencyMin.map { "\($0)m" })
-            SleepStat(title: "Woke", value: day.awakenings.map { "\($0)×" })
+        VStack(spacing: 10) {
+            HStack(spacing: 0) {
+                SleepStat(title: "Asleep", value: day.sleepMin.map { HealthInsights.formatDuration($0) })
+                SleepStat(title: "In bed", value: day.timeInBedMin.map { HealthInsights.formatDuration($0) })
+                SleepStat(title: "Fell asleep", value: day.latencyMin.map { "\($0)m" })
+                SleepStat(title: "Woke", value: day.awakenings.map { "\($0)×" })
+            }
+            if let durationComparison {
+                Text(durationComparison)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
         }
         .padding(.vertical, 14)
         .frame(maxWidth: .infinity)
@@ -431,6 +450,7 @@ private struct SleepScoreCard: View {
                             .foregroundColor(breakdown.tone.colour)
                         Spacer()
                     }
+                    rankLine
                     // Components only exist for Life's own estimate. An official
                     // score is shown exactly as the source gave it, with nothing
                     // added, so there's no working to show.
@@ -452,6 +472,26 @@ private struct SleepScoreCard: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+        }
+    }
+
+    /// Where this night ranks among recent ones. Derived purely from measured
+    /// data, so it's the line to trust if it and the score ever disagree.
+    @ViewBuilder
+    private var rankLine: some View {
+        if let rank = HealthInsights.nightRank(for: night, in: history, settings: settings) {
+            Text("\(ordinal(rank.rank)) best of your last \(rank.of) nights")
+                .font(.footnote)
+                .foregroundColor(.secondary)
+        }
+    }
+
+    private func ordinal(_ value: Int) -> String {
+        switch value {
+        case 1: return "Best"
+        case 2: return "2nd"
+        case 3: return "3rd"
+        default: return "\(value)th"
         }
     }
 
@@ -528,6 +568,7 @@ private struct StageTotal: Identifiable {
 
 private struct SleepStagesCard: View {
     let day: HealthDay
+    let history: [HealthDay]
 
     private var rows: [StageTotal] {
         var out: [StageTotal] = []
@@ -545,7 +586,7 @@ private struct SleepStagesCard: View {
                     Text("Stages")
                         .font(.subheadline.weight(.semibold))
                     ForEach(rows) { row in
-                        SleepStageRow(kind: row.kind, minutes: row.minutes, totalAsleep: day.sleepMin ?? 0)
+                        SleepStageRow(kind: row.kind, minutes: row.minutes, totalAsleep: day.sleepMin ?? 0, history: history)
                     }
                 }
             }
@@ -557,14 +598,39 @@ private struct SleepStageRow: View {
     let kind: SleepStageKind
     let minutes: Int
     let totalAsleep: Int
+    var history: [HealthDay] = []
 
     private var share: Double? {
         guard totalAsleep > 0 else { return nil }
         return Double(minutes) / Double(totalAsleep)
     }
 
-    /// "typical 13–23%" — the figures mean nothing without it.
+    /// This stage's usual share across recent nights.
+    private var personalAverage: Double? {
+        HealthInsights.recentAverage(history) { day in
+            guard let asleep = day.sleepMin, asleep > 0 else { return nil }
+            let stageMinutes: Int?
+            switch kind {
+            case .deep:  stageMinutes = day.deepMin
+            case .rem:   stageMinutes = day.remMin
+            case .light: stageMinutes = day.lightMin
+            case .awake: stageMinutes = day.awakeMin
+            default:     stageMinutes = nil
+            }
+            guard let stageMinutes else { return nil }
+            return Double(stageMinutes) / Double(asleep)
+        }
+    }
+
+    /// Your own recent average first — it's measured, and it's what actually
+    /// tells you whether a night was unusual *for you*. The population range is
+    /// the fallback until there's enough history to have a personal one.
     private var comparison: String? {
+        if let share, let mine = personalAverage {
+            let delta = (share - mine) * 100
+            if abs(delta) < 2 { return "about your usual \(Int((mine * 100).rounded()))%" }
+            return "\(delta > 0 ? "above" : "below") your usual \(Int((mine * 100).rounded()))%"
+        }
         guard let share, let range = kind.typicalRange else { return nil }
         let typical = "typical \(Int(range.lowerBound * 100))–\(Int(range.upperBound * 100))%"
         if share < range.lowerBound { return "below \(typical)" }
