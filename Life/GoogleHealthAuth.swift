@@ -18,8 +18,24 @@ enum GoogleHealthConfig {
 
     private static let clientIDKey = "googlehealth.clientID"
 
+    /// The iOS OAuth client for this app's Google Cloud project.
+    ///
+    /// Compiled in so the connection works without setup on a fresh install.
+    /// This is not a secret: Google's iOS client IDs carry no client secret and
+    /// are embedded in every copy of a distributed app by design. It also grants
+    /// nothing on its own — the consent screen is in Testing mode, so only
+    /// accounts listed as test users can authorise, and each only ever reaches
+    /// their own data.
+    private static let defaultClientID =
+        "845292341174-0lqjgdif99mn267t24l600v45udqv4ip.apps.googleusercontent.com"
+
+    /// Anything entered in Settings wins, so a different Cloud project can be
+    /// pointed at without a code change.
     static var clientID: String {
-        get { UserDefaults.standard.string(forKey: clientIDKey) ?? "" }
+        get {
+            let stored = UserDefaults.standard.string(forKey: clientIDKey) ?? ""
+            return stored.isEmpty ? defaultClientID : stored
+        }
         set { UserDefaults.standard.set(newValue.trimmingCharacters(in: .whitespaces), forKey: clientIDKey) }
     }
 
