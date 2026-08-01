@@ -499,7 +499,11 @@ enum SleepAnalysis {
 
     static func isScoreable(_ day: HealthDay) -> Bool {
         isScoreable(
-            hasSourceStages: day.sleepType == "STAGES" && day.restorativeShare != nil,
+            // Inferred from the data present, not from `sleepType`. That field
+            // is optional in the API, so a night with a perfectly good deep/REM
+            // breakdown can arrive with no type at all — and gating on it
+            // silently suppressed the score for those nights.
+            hasSourceStages: day.restorativeShare != nil,
             stageCoverage: day.stageCoverage,
             minutesAsleep: day.sleepMin ?? 0
         )
@@ -507,7 +511,11 @@ enum SleepAnalysis {
 
     static func warnings(for day: HealthDay) -> [Warning] {
         warnings(
-            hasSourceStages: day.sleepType == "STAGES" && day.restorativeShare != nil,
+            // Inferred from the data present, not from `sleepType`. That field
+            // is optional in the API, so a night with a perfectly good deep/REM
+            // breakdown can arrive with no type at all — and gating on it
+            // silently suppressed the score for those nights.
+            hasSourceStages: day.restorativeShare != nil,
             stageCoverage: day.stageCoverage,
             // Any overnight cardiac signal counts; without one, restoration
             // falls back to efficiency and the user should know.

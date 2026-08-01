@@ -403,15 +403,24 @@ final class GoogleHealthService {
             SleepAnalysis.parseUTCOffset(interval["endUtcOffset"] as? String)
             ?? SleepAnalysis.parseUTCOffset(interval["startUtcOffset"] as? String)
 
+        let stages = intervals(from: sleep["stages"])
+
+        // Whether the source classified the night is inferred from the stages
+        // it actually sent, not from `type`. That field is optional, so a night
+        // with a full deep/REM breakdown can arrive with no type at all —
+        // trusting it alone marked such nights CLASSIC and suppressed both the
+        // hypnogram and the score.
+        let classified = stages.contains {
+            $0.stage == .deep || $0.stage == .rem || $0.stage == .light
+        }
+
         return SleepSessionInput(
             start: start,
             end: end,
-            stages: intervals(from: sleep["stages"]),
+            stages: stages,
             outOfBed: intervals(from: sleep["outOfBedSegments"], forced: .outOfBed),
             isNap: metadata?["nap"] as? Bool == true,
-            // "STAGES" means the source classified the night itself. Anything
-            // else is a flat total, which must not be treated as stage data.
-            hasSourceStages: (sleep["type"] as? String) == "STAGES",
+            hasSourceStages: classified || (sleep["type"] as? String) == "STAGES",
             provenance: provenance
         )
     }
