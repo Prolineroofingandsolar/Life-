@@ -474,16 +474,68 @@ enum SleepAnalysis {
 
     /// Whether a night carries enough stage detail to be scored at all.
     static func isScoreable(_ night: AnalysedSleep) -> Bool {
-        night.hasSourceStages
-            && night.minutesAsleep > 0
-            && night.stageCoverage >= minimumStageCoverage
+        isScoreable(
+            hasSourceStages: night.hasSourceStages,
+            stageCoverage: night.stageCoverage,
+            minutesAsleep: night.minutesAsleep
+        )
     }
 
     /// What's wrong with a night's data, for surfacing rather than hiding.
     static func warnings(for night: AnalysedSleep, hasRestorationSignals: Bool) -> [Warning] {
+        warnings(
+            hasSourceStages: night.hasSourceStages,
+            stageCoverage: night.stageCoverage,
+            hasRestorationSignals: hasRestorationSignals
+        )
+    }
+
+    // MARK: Stored-record overloads
+    //
+    // The app works from `HealthDay` while the tests work from `AnalysedSleep`.
+    // Both route through the same rules below so the two can't drift — the
+    // alternative is a test suite that passes while the app applies different
+    // thresholds.
+
+    static func isScoreable(_ day: HealthDay) -> Bool {
+        isScoreable(
+            hasSourceStages: day.sleepType == "STAGES" && day.restorativeShare != nil,
+            stageCoverage: day.stageCoverage,
+            minutesAsleep: day.sleepMin ?? 0
+        )
+    }
+
+    static func warnings(for day: HealthDay) -> [Warning] {
+        warnings(
+            hasSourceStages: day.sleepType == "STAGES" && day.restorativeShare != nil,
+            stageCoverage: day.stageCoverage,
+            // Any overnight cardiac signal counts; without one, restoration
+            // falls back to efficiency and the user should know.
+            hasRestorationSignals: day.restingHr != nil || day.hrvMs != nil || day.deepSleepHrvMs != nil
+        )
+    }
+
+    // MARK: Shared rules
+
+    /// Nil coverage means the night predates coverage tracking — treat it as
+    /// adequate rather than retroactively unscoring old nights.
+    static func isScoreable(hasSourceStages: Bool, stageCoverage: Double?, minutesAsleep: Int) -> Bool {
+        hasSourceStages
+            && minutesAsleep > 0
+            && (stageCoverage ?? 1) >= minimumStageCoverage
+    }
+
+    static func warnings(
+        hasSourceStages: Bool,
+        stageCoverage: Double?,
+        hasRestorationSignals: Bool
+    ) -> [Warning] {
         var out: [Warning] = []
-        if !night.hasSourceStages { out.append(.noSourceStages) }
-        else if night.stageCoverage < minimumStageCoverage { out.append(.sparseStageCoverage) }
+        if !hasSourceStages {
+            out.append(.noSourceStages)
+        } else if (stageCoverage ?? 1) < minimumStageCoverage {
+            out.append(.sparseStageCoverage)
+        }
         if !hasRestorationSignals { out.append(.noHeartRateOrMovement) }
         return out
     }

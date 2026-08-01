@@ -559,9 +559,9 @@ enum HealthInsights {
 
         // Nights described by too little stage data aren't scored at all. A
         // number derived from an hour of a nine-hour night would look just as
-        // confident as a real one.
-        if night.sleepType == "CLASSIC" || night.restorativeShare == nil { return nil }
-        if let coverage = night.stageCoverage, coverage < SleepAnalysis.minimumStageCoverage { return nil }
+        // confident as a real one. The rule lives in `SleepAnalysis` so the
+        // tests exercise the same thresholds the app applies.
+        guard SleepAnalysis.isScoreable(night) else { return nil }
 
         // Duration. Full marks need the goal met; below that it falls away
         // faster than linearly, because the gap between six and seven hours

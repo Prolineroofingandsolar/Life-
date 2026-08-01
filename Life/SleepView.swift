@@ -354,16 +354,7 @@ private struct SleepWarningsCard: View {
     let day: HealthDay
 
     private var warnings: [SleepAnalysis.Warning] {
-        var out: [SleepAnalysis.Warning] = []
-        if day.sleepType == "CLASSIC" || day.restorativeShare == nil {
-            out.append(.noSourceStages)
-        } else if let coverage = day.stageCoverage, coverage < SleepAnalysis.minimumStageCoverage {
-            out.append(.sparseStageCoverage)
-        }
-        if day.restingHr == nil && day.hrvMs == nil && day.deepSleepHrvMs == nil {
-            out.append(.noHeartRateOrMovement)
-        }
-        return out
+        SleepAnalysis.warnings(for: day)
     }
 
     var body: some View {
