@@ -564,6 +564,17 @@ struct HealthDay: Codable {
     var awakeMin: Int? = nil
     var bedtime: Date? = nil
     var wakeTime: Date? = nil
+    /// Bedtime to wake, including time awake. The honest denominator for
+    /// efficiency, rather than inferring it from asleep + awake.
+    var timeInBedMin: Int? = nil
+    /// How long it took to drop off.
+    var latencyMin: Int? = nil
+    /// Number of separate awake segments — how broken the night was.
+    var awakenings: Int? = nil
+    /// "STAGES" or "CLASSIC". Classic nights have no stage breakdown, so the UI
+    /// hides the hypnogram rather than drawing an empty one, and the score drops
+    /// its quality term instead of scoring it zero.
+    var sleepType: String? = nil
 
     // Heart and recovery.
     var restingHr: Double? = nil
@@ -572,6 +583,16 @@ struct HealthDay: Codable {
     var spo2Pct: Double? = nil
     var wristTempC: Double? = nil
     var vo2Max: Double? = nil
+    /// Breathing rate split by stage — REM breathing differs from deep, and the
+    /// gap between them is itself a signal.
+    var breathingRem: Double? = nil
+    var breathingDeep: Double? = nil
+    var breathingLight: Double? = nil
+    /// HRV measured specifically during deep sleep, the cleanest window for it.
+    var deepSleepHrvMs: Double? = nil
+    /// Your own median nightly skin temperature, so `wristTempC` can be shown as
+    /// a deviation rather than a bare number nobody can interpret.
+    var tempBaselineC: Double? = nil
 
     // Activity.
     var activeEnergyKcal: Double? = nil
@@ -583,19 +604,43 @@ struct HealthDay: Codable {
         case dayKey = "k"
         case sleepMin = "sl", deepMin = "dp", remMin = "rm", lightMin = "lt", awakeMin = "aw"
         case bedtime = "bt", wakeTime = "wt"
+        case timeInBedMin = "ib", latencyMin = "lc", awakenings = "wk", sleepType = "st"
         case restingHr = "rh", hrvMs = "hv", respiratoryRate = "rr"
         case spo2Pct = "ox", wristTempC = "tp", vo2Max = "vo"
+        case breathingRem = "br", breathingDeep = "bd", breathingLight = "bl"
+        case deepSleepHrvMs = "dh", tempBaselineC = "tb"
         case activeEnergyKcal = "ae", exerciseMinutes = "em"
         case distanceKm = "ds", flights = "fl"
     }
 
     /// Proportion of time in bed actually spent asleep, 0–1.
-    /// Nil unless both asleep and awake time were recorded.
+    ///
+    /// Prefers the reported time in bed, which counts the whole period between
+    /// getting in and getting up. Falls back to asleep + awake, which is
+    /// slightly flattering because it misses the time before sleep onset.
     var sleepEfficiency: Double? {
+        if let timeInBedMin, timeInBedMin > 0, let sleepMin {
+            return min(1, Double(sleepMin) / Double(timeInBedMin))
+        }
         guard let sleepMin, let awakeMin else { return nil }
         let total = sleepMin + awakeMin
         guard total > 0 else { return nil }
         return Double(sleepMin) / Double(total)
+    }
+
+    /// Deep plus REM as a share of time asleep — the restorative portion.
+    /// Nil for CLASSIC nights, which carry no stage breakdown.
+    var restorativeShare: Double? {
+        guard let sleepMin, sleepMin > 0, deepMin != nil || remMin != nil else { return nil }
+        return Double((deepMin ?? 0) + (remMin ?? 0)) / Double(sleepMin)
+    }
+
+    /// Nightly skin temperature relative to your own baseline, in °C. This is
+    /// the form worth showing — an absolute wrist temperature means nothing
+    /// without knowing what's normal for you.
+    var tempDeviationC: Double? {
+        guard let wristTempC, let tempBaselineC else { return nil }
+        return wristTempC - tempBaselineC
     }
 
     /// True when the day carries no readings at all, so empty records can be
@@ -606,6 +651,45 @@ struct HealthDay: Codable {
             && activeEnergyKcal == nil && exerciseMinutes == nil
             && distanceKm == nil && flights == nil
     }
+}
+
+// MARK: - Sleep Stages
+
+/// One contiguous stretch of a single sleep stage.
+struct SleepSegment: Codable, Identifiable {
+    var start: Date
+    var minutes: Int
+    /// DEEP, REM, LIGHT, AWAKE, or ASLEEP on classic-tracked nights.
+    var stage: String
+
+    var id: String { "\(stage)-\(start.timeIntervalSince1970)" }
+    var end: Date { start.addingTimeInterval(Double(minutes) * 60) }
+
+    enum CodingKeys: String, CodingKey {
+        case start = "s", minutes = "m", stage = "t"
+    }
+}
+
+/// The stage-by-stage shape of one night — what the hypnogram is drawn from.
+///
+/// Kept separately from `HealthDay` because it's an order of magnitude larger:
+/// roughly thirty segments a night against a handful of numbers. Only the most
+/// recent nights are retained (see `AppState.sleepNightRetention`); older nights
+/// keep their totals on `HealthDay` and simply don't offer a hypnogram.
+struct SleepNight: Codable {
+    var dayKey: String = ""
+    var segments: [SleepSegment] = []
+    /// Times out of bed during the night. These can overlap stage segments, so
+    /// they're kept apart rather than merged in.
+    var outOfBed: [SleepSegment] = []
+
+    enum CodingKeys: String, CodingKey {
+        case dayKey = "k", segments = "g", outOfBed = "o"
+    }
+
+    var start: Date? { segments.map(\.start).min() }
+    var end: Date? { segments.map(\.end).max() }
+    var hasStages: Bool { segments.contains { $0.stage != "ASLEEP" } }
 }
 
 struct HealthSettings: Codable {

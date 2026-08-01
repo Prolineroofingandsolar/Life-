@@ -73,6 +73,7 @@ struct StateSnapshot: Codable {
     // `apply(snapshot:)` substitutes the default.
     var healthDays: [String: HealthDay]? = nil
     var healthSettings: HealthSettings? = nil
+    var sleepNights: [String: SleepNight]? = nil
 }
 
 // MARK: - AppState
@@ -111,6 +112,7 @@ final class AppState {
     var progressPhotos: [ProgressPhoto] = []
     var healthDays: [String: HealthDay] = [:]
     var healthSettings: HealthSettings = HealthSettings()
+    var sleepNights: [String: SleepNight] = [:]
 
     // MARK: Computed Properties
 
@@ -262,7 +264,8 @@ final class AppState {
             plannedSessions: plannedSessions,
             supplements: supplements,
             healthDays: healthDays,
-            healthSettings: healthSettings
+            healthSettings: healthSettings,
+            sleepNights: sleepNights
         )
     }
 
@@ -291,6 +294,7 @@ final class AppState {
         plannedSessions = snapshot.plannedSessions
         healthDays = snapshot.healthDays ?? [:]
         healthSettings = snapshot.healthSettings ?? HealthSettings()
+        sleepNights = snapshot.sleepNights ?? [:]
     }
 
     // MARK: Cloud Sync
@@ -1305,6 +1309,26 @@ final class AppState {
         save()
     }
 
+    /// Hypnogram segments are roughly thirty records a night against a handful
+    /// of numbers on `HealthDay`, so they get a much shorter memory. A year of
+    /// them would be most of the 1 MB Firestore document on its own.
+    private static let sleepNightRetention = 30
+
+    /// Replaces stored nights outright rather than merging field by field: a
+    /// night's stage list is a single indivisible reading, and a re-sync of the
+    /// same night should supersede it, not interleave with it.
+    func mergeSleepNights(_ nights: [SleepNight]) {
+        guard !nights.isEmpty else { return }
+        for night in nights where !night.dayKey.isEmpty && !night.segments.isEmpty {
+            sleepNights[night.dayKey] = night
+        }
+        if sleepNights.count > Self.sleepNightRetention {
+            let keep = Set(sleepNights.keys.sorted().suffix(Self.sleepNightRetention))
+            sleepNights = sleepNights.filter { keep.contains($0.key) }
+        }
+        save()
+    }
+
     private func pruneHealthDays() {
         guard healthDays.count > Self.healthDayRetention else { return }
         let keep = Set(healthDays.keys.sorted().suffix(Self.healthDayRetention))
@@ -2118,6 +2142,7 @@ final class AppState {
         progressPhotos = []
         healthDays = [:]
         healthSettings = HealthSettings()
+        sleepNights = [:]
         savePhotos()
         seedDefaults()
     }

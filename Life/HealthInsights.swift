@@ -456,57 +456,136 @@ enum HealthInsights {
         let tone: Tone
     }
 
+    /// Fitbit's own bands, so a score close to theirs also gets the same word
+    /// next to it. Life previously called 85+ "Excellent" where Fitbit starts
+    /// that at 80, which guaranteed the labels disagreed even when the numbers
+    /// didn't.
     static func describe(_ value: Int) -> (String, Tone) {
         switch value {
-        case 85...:  return ("Excellent", .good)
-        case 70..<85: return ("Great", .good)
-        case 55..<70: return ("Good", .neutral)
-        case 40..<55: return ("Fair", .neutral)
-        default:      return ("Low", .watch)
+        case 90...:   return ("Excellent", .good)
+        case 80..<90: return ("Very good", .good)
+        case 60..<80: return ("Good", .neutral)
+        case 40..<60: return ("Fair", .watch)
+        default:      return ("Poor", .watch)
         }
     }
 
-    /// Sleep quality for the most recent night, 0–100.
+    /// The three parts of a sleep score, kept so the UI can show its working.
+    /// A score you can't interrogate is just a number to argue with.
+    struct SleepScoreBreakdown {
+        var duration: Double        // out of 50
+        var quality: Double         // out of 25
+        var restoration: Double     // out of 25
+        var total: Int
+        var label: String
+        var tone: Tone
+
+        var score: Score { Score(value: total, label: label, tone: tone) }
+    }
+
+    /// Sleep quality for a night, 0–100, built to track Fitbit's score.
     ///
-    /// **This is not Fitbit's sleep score and won't match it.** Fitbit's number
-    /// isn't exposed anywhere in the Google Health API — there's no score field
-    /// on any sleep schema — so this is computed from the underlying data
-    /// instead. Expect the two to differ by ten points or so; a large gap in the
-    /// same direction every night means these weights need adjusting.
+    /// Fitbit's number isn't exposed anywhere in the Google Health API — there's
+    /// no score field on any sleep schema — so it has to be recomputed from the
+    /// same underlying data. This mirrors their published composition:
     ///
-    /// Three parts, following the shape sleep scores generally take:
+    /// - **Duration, 50 points** — how much you slept.
+    /// - **Quality, 25 points** — time in deep and REM.
+    /// - **Restoration, 25 points** — how relaxed you were: resting heart rate,
+    ///   SpO₂ and HRV during sleep, each against your own baseline.
     ///
-    /// - **Duration, 50%** — against your own goal. The one thing you control.
-    /// - **Restorative sleep, 25%** — deep plus REM as a share of the night.
-    ///   Around 40% combined is typical for a healthy adult, so that's full
-    ///   marks; this is what separates eight poor hours from eight good ones.
-    /// - **Efficiency, 25%** — time asleep versus time in bed, rescaled so 75%
-    ///   scores zero and 97% scores full. Raw efficiency sits in a narrow
-    ///   88–95% band, so using it unscaled hands out near-perfect marks to
-    ///   every night and the score stops discriminating.
+    /// Calibration matters as much as the shape. Fitbit says most people score
+    /// **72–83**, so an ordinary night — around seven hours, ~32% deep+REM,
+    /// resting heart rate at baseline — needs to land there rather than in the
+    /// nineties. Reaching 90+ should take genuinely excellent sleep. An earlier
+    /// version scored a duration hit as full marks and read raw efficiency
+    /// (which never leaves an 88–95% band) as a fraction, so almost every night
+    /// came out at 99 and the number said nothing.
+    ///
+    /// It still won't match to the point — Fitbit's weightings aren't published.
+    /// If it's consistently out in one direction across a week, the breakdown
+    /// shows which term to adjust.
     ///
     /// Where a component's data is missing its weight is redistributed across
     /// the others, rather than penalising a tracker that reports less detail.
+    static func sleepScoreBreakdown(
+        for night: HealthDay,
+        history: [HealthDay],
+        settings: HealthSettings
+    ) -> SleepScoreBreakdown? {
+        guard let minutes = night.sleepMin, minutes > 0, settings.sleepGoalMinutes > 0 else { return nil }
+
+        // Duration. Full marks need the goal met; below that it falls away
+        // faster than linearly, because the gap between six and seven hours
+        // matters more than between eight and nine.
+        let ratio = min(1.0, Double(minutes) / Double(settings.sleepGoalMinutes))
+        let duration = pow(ratio, 1.3) * 50
+        var available = 50.0
+
+        // Quality — deep + REM share. 20% or less earns nothing; full marks need
+        // ~44% combined, which is a genuinely strong night for an adult.
+        var quality = 0.0
+        if let restorative = night.restorativeShare {
+            quality = clamp((restorative - 0.20) / 0.24) * 25
+            available += 25
+        }
+
+        // Restoration — how settled the body was, against its own baselines.
+        // Each sub-signal is optional; whatever's present is averaged.
+        var restoration = 0.0
+        var parts: [Double] = []
+        if let hr = night.restingHr, let hrBaseline = baseline(history, { $0.restingHr }) {
+            // Sitting at your baseline scores 0.6, not full marks — the top of
+            // each scale is reserved for a night that's better than your normal,
+            // which is what stops ordinary nights piling up at 100.
+            parts.append(clamp(0.6 - (hr - hrBaseline) / 11))
+        }
+        if let hrv = night.deepSleepHrvMs ?? night.hrvMs,
+           let hrvBaseline = baseline(history, { $0.deepSleepHrvMs ?? $0.hrvMs }), hrvBaseline > 0 {
+            parts.append(clamp(0.6 + (hrv - hrvBaseline) / (hrvBaseline * 0.7)))
+        }
+        if let spo2 = night.spo2Pct {
+            // 97%+ is unremarkable; below 92% is worth noticing.
+            parts.append(clamp((spo2 - 90) / 7))
+        }
+        if !parts.isEmpty {
+            restoration = (parts.reduce(0, +) / Double(parts.count)) * 25
+            available += 25
+        } else if let efficiency = night.sleepEfficiency {
+            // No baselines yet — fall back to efficiency so the term isn't
+            // simply missing for the first fortnight.
+            restoration = clamp((efficiency - 0.75) / 0.22) * 25
+            available += 25
+        }
+
+        let total = Int(((duration + quality + restoration) / available * 100).rounded())
+        let (label, tone) = describe(total)
+        return SleepScoreBreakdown(
+            duration: duration,
+            quality: quality,
+            restoration: restoration,
+            total: total,
+            label: label,
+            tone: tone
+        )
+    }
+
+    /// Convenience for callers that only want the number for the latest night.
     static func sleepScore(_ days: [HealthDay], settings: HealthSettings) -> Score? {
-        guard let night = days.last(where: { $0.sleepMin != nil }),
-              let minutes = night.sleepMin, settings.sleepGoalMinutes > 0 else { return nil }
+        guard let night = days.last(where: { $0.sleepMin != nil }) else { return nil }
+        return sleepScoreBreakdown(for: night, history: days, settings: settings)?.score
+    }
 
-        var total = min(1.0, Double(minutes) / Double(settings.sleepGoalMinutes)) * 0.5
-        var weight = 0.5
-
-        if minutes > 0, night.deepMin != nil || night.remMin != nil {
-            let restorative = Double((night.deepMin ?? 0) + (night.remMin ?? 0)) / Double(minutes)
-            total += min(1.0, restorative / 0.40) * 0.25
-            weight += 0.25
-        }
-        if let efficiency = night.sleepEfficiency {
-            total += clamp((efficiency - 0.75) / 0.22) * 0.25
-            weight += 0.25
-        }
-
-        let value = Int((total / weight * 100).rounded())
-        let (label, tone) = describe(value)
-        return Score(value: value, label: label, tone: tone)
+    /// Mean of a metric over recent history, for scoring against. Separate from
+    /// `trend` because scoring wants a plain baseline, not a comparison.
+    private static func baseline(
+        _ days: [HealthDay],
+        _ metric: (HealthDay) -> Double?,
+        window: Int = 30
+    ) -> Double? {
+        let values = days.compactMap { day -> Double? in metric(day) }.suffix(window)
+        guard values.count >= minimumSamples else { return nil }
+        return values.reduce(0, +) / Double(values.count)
     }
 
     /// How ready the body looks for hard work today.

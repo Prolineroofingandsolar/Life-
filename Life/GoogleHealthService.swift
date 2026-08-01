@@ -41,6 +41,9 @@ final class GoogleHealthService {
 
         static func daily(_ camel: String) -> DataType { .init(camel: camel, timeField: "date") }
         static func interval(_ camel: String) -> DataType { .init(camel: camel, timeField: "interval.civil_start_time") }
+        /// Point-in-time observations filter on their sample time, not an
+        /// interval — the respiratory sleep summary is one of these.
+        static func sample(_ camel: String) -> DataType { .init(camel: camel, timeField: "sample_time.civil_time") }
         static let sleep = DataType(camel: "sleep", timeField: "interval.civil_end_time")
 
         private static func kebab(_ s: String) -> String { split(s).joined(separator: "-") }
@@ -69,6 +72,7 @@ final class GoogleHealthService {
 
     struct SyncResult {
         var days: [HealthDay] = []
+        var nights: [SleepNight] = []
         var steps: [String: Int] = [:]
         /// Metrics that failed, so a partial sync says what's missing instead of
         /// looking complete.
@@ -130,16 +134,23 @@ final class GoogleHealthService {
                 if let existing = byDay[wake.dayKey]?.sleepMin, existing >= asleep { continue }
 
                 var d = day(wake.dayKey)
+                d.sleepType = sleep["type"] as? String
                 if let summary = sleep["summary"] as? [String: Any] {
                     d.sleepMin = Self.int(summary["minutesAsleep"])
                     d.awakeMin = Self.int(summary["minutesAwake"])
+                    d.timeInBedMin = Self.int(summary["minutesInSleepPeriod"])
+                    d.latencyMin = Self.int(summary["minutesToFallAsleep"])
                     for stage in summary["stagesSummary"] as? [[String: Any]] ?? [] {
                         guard let minutes = Self.int(stage["minutes"]) else { continue }
                         switch stage["type"] as? String {
                         case "DEEP":  d.deepMin = minutes
                         case "REM":   d.remMin = minutes
                         case "LIGHT": d.lightMin = minutes
-                        case "AWAKE": d.awakeMin = minutes
+                        case "AWAKE":
+                            d.awakeMin = minutes
+                            // Segment count, not minutes — how many times the
+                            // night was broken rather than for how long.
+                            d.awakenings = Self.int(stage["count"])
                         // CLASSIC-type sleep reports a flat ASLEEP total with no
                         // stage breakdown; it's already in minutesAsleep.
                         default:      break
@@ -151,6 +162,31 @@ final class GoogleHealthService {
                     d.bedtime = Self.rfc3339.date(from: startTime)
                 }
                 byDay[wake.dayKey] = d
+
+                // The stage-by-stage shape of the night — what the hypnogram is
+                // drawn from. Kept apart from HealthDay because it's an order of
+                // magnitude more data; AppState retains only recent nights.
+                let segments = Self.segments(from: sleep["stages"])
+                if !segments.isEmpty {
+                    result.nights.append(SleepNight(
+                        dayKey: wake.dayKey,
+                        segments: segments,
+                        outOfBed: Self.segments(from: sleep["outOfBedSegments"], stage: "OUT_OF_BED")
+                    ))
+                }
+            }
+        }
+
+        await attempt("breathing by stage") {
+            for point in try await list(.sample("respiratoryRateSleepSummary"), start: start, end: end) {
+                guard let body = point["respiratoryRateSleepSummary"] as? [String: Any],
+                      let key = Self.dayKey(fromSampleTime: body["sampleTime"]) else { continue }
+                var d = day(key)
+                d.breathingRem = Self.stat(body["remSleepStats"])
+                d.breathingDeep = Self.stat(body["deepSleepStats"])
+                d.breathingLight = Self.stat(body["lightSleepStats"])
+                if d.respiratoryRate == nil { d.respiratoryRate = Self.stat(body["fullSleepStats"]) }
+                byDay[key] = d
             }
         }
 
@@ -161,10 +197,17 @@ final class GoogleHealthService {
         }
 
         await attempt("HRV") {
-            for (key, value) in try await daily(.daily("dailyHeartRateVariability"),
-                                                field: "averageHeartRateVariabilityMilliseconds",
-                                                start: start, end: end) {
-                var d = day(key); d.hrvMs = value; byDay[key] = d
+            for point in try await list(.daily("dailyHeartRateVariability"), start: start, end: end) {
+                guard let body = point["dailyHeartRateVariability"] as? [String: Any],
+                      let date = body["date"] as? [String: Any],
+                      let key = Self.dayKey(from: date) else { continue }
+                var d = day(key)
+                d.hrvMs = Self.double(body["averageHeartRateVariabilityMilliseconds"])
+                // Deep sleep is the cleanest window for HRV — least movement,
+                // least breathing variation — so it's worth keeping separately
+                // from the whole-night average.
+                d.deepSleepHrvMs = Self.double(body["deepSleepRootMeanSquareOfSuccessiveDifferencesMilliseconds"])
+                byDay[key] = d
             }
         }
 
@@ -190,10 +233,16 @@ final class GoogleHealthService {
         // variation — this reports an absolute figure, so it's comparable with
         // HealthKit's wrist temperature and safe to store in the same field.
         await attempt("skin temperature") {
-            for (key, value) in try await daily(.daily("dailySleepTemperatureDerivations"),
-                                                field: "nightlyTemperatureCelsius",
-                                                start: start, end: end) {
-                var d = day(key); d.wristTempC = value; byDay[key] = d
+            for point in try await list(.daily("dailySleepTemperatureDerivations"), start: start, end: end) {
+                guard let body = point["dailySleepTemperatureDerivations"] as? [String: Any],
+                      let date = body["date"] as? [String: Any],
+                      let key = Self.dayKey(from: date) else { continue }
+                var d = day(key)
+                d.wristTempC = Self.double(body["nightlyTemperatureCelsius"])
+                // Without the baseline an absolute skin temperature is
+                // uninterpretable; with it, the deviation is the whole point.
+                d.tempBaselineC = Self.double(body["baselineTemperatureCelsius"])
+                byDay[key] = d
             }
         }
 
@@ -348,6 +397,49 @@ final class GoogleHealthService {
 
     private static func int(_ raw: Any?) -> Int? {
         double(raw).map { Int($0.rounded()) }
+    }
+
+    /// Average breaths per minute out of a `RespiratoryRateSleepSummaryStatistics`.
+    private static func stat(_ raw: Any?) -> Double? {
+        guard let stats = raw as? [String: Any] else { return nil }
+        return double(stats["breathsPerMinute"])
+    }
+
+    /// Turns the API's stage or out-of-bed segments into `SleepSegment`s.
+    ///
+    /// Zero-length segments are dropped — they'd render as invisible slivers in
+    /// the hypnogram while still cluttering storage.
+    private static func segments(from raw: Any?, stage: String? = nil) -> [SleepSegment] {
+        guard let list = raw as? [[String: Any]] else { return [] }
+        return list.compactMap { entry in
+            guard let startText = entry["startTime"] as? String,
+                  let endText = entry["endTime"] as? String,
+                  let start = rfc3339.date(from: startText),
+                  let end = rfc3339.date(from: endText) else { return nil }
+            let minutes = Int((end.timeIntervalSince(start) / 60).rounded())
+            guard minutes > 0 else { return nil }
+            return SleepSegment(
+                start: start,
+                minutes: minutes,
+                stage: stage ?? (entry["type"] as? String ?? "ASLEEP")
+            )
+        }
+        .sorted { $0.start < $1.start }
+    }
+
+    /// The local day of a point-in-time observation.
+    private static func dayKey(fromSampleTime raw: Any?) -> String? {
+        guard let sampleTime = raw as? [String: Any] else { return nil }
+        if let civil = sampleTime["civilTime"] as? [String: Any],
+           let date = civil["date"] as? [String: Any],
+           let key = dayKey(from: date) {
+            return key
+        }
+        if let physical = sampleTime["physicalTime"] as? String,
+           let date = rfc3339.date(from: physical) {
+            return date.dayKey
+        }
+        return nil
     }
 
     /// `{"year": 2026, "month": 8, "day": 1}` → "2026-08-01".

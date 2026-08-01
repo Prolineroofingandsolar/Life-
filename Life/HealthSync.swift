@@ -61,6 +61,7 @@ enum HealthSync {
             // requests. Routine background syncs stay short deliberately.
             let result = try await GoogleHealthService.shared.sync(daysBack: daysBack)
             appState.mergeHealthDays(result.days)
+            appState.mergeSleepNights(result.nights)
             appState.mergeSteps(result.steps)
             appState.setHealthSettings { $0.hasBackfilled = true }
 
