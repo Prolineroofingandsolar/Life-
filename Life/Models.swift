@@ -576,6 +576,29 @@ struct HealthDay: Codable {
     /// its quality term instead of scoring it zero.
     var sleepType: String? = nil
 
+    /// An official sleep score supplied by the source, stored verbatim.
+    ///
+    /// **Nothing populates this today.** The Google Health API v4 schema has no
+    /// score field on any sleep type — verified across every schema in the
+    /// discovery document — and Google doesn't publish the formula. The field
+    /// exists so that if a source ever does provide one, it can be shown as-is
+    /// rather than recalculated, averaged, normalised or blended with Life's
+    /// own estimate.
+    var officialSleepScore: Int? = nil
+    /// Who provided `officialSleepScore` — e.g. GOOGLE_HEALTH, FITBIT.
+    var officialSleepScoreSource: String? = nil
+    /// Device that measured the night, for display alongside the figures.
+    var sleepSourceDevice: String? = nil
+
+    // Derived sleep measurements (see `SleepAnalysis`).
+    var restlessMinutes: Int? = nil
+    var interruptionMinutes: Int? = nil
+    var stageTransitions: Int? = nil
+    var sleepMidpoint: Date? = nil
+    /// Share of the sleep window described by stage intervals, 0–1. Below
+    /// `SleepAnalysis.minimumStageCoverage` the night isn't scored.
+    var stageCoverage: Double? = nil
+
     // Heart and recovery.
     var restingHr: Double? = nil
     var hrvMs: Double? = nil
@@ -605,6 +628,9 @@ struct HealthDay: Codable {
         case sleepMin = "sl", deepMin = "dp", remMin = "rm", lightMin = "lt", awakeMin = "aw"
         case bedtime = "bt", wakeTime = "wt"
         case timeInBedMin = "ib", latencyMin = "lc", awakenings = "wk", sleepType = "st"
+        case officialSleepScore = "os", officialSleepScoreSource = "op", sleepSourceDevice = "sd"
+        case restlessMinutes = "rl", interruptionMinutes = "im", stageTransitions = "tr"
+        case sleepMidpoint = "mp", stageCoverage = "cv"
         case restingHr = "rh", hrvMs = "hv", respiratoryRate = "rr"
         case spo2Pct = "ox", wristTempC = "tp", vo2Max = "vo"
         case breathingRem = "br", breathingDeep = "bd", breathingLight = "bl"
@@ -628,7 +654,12 @@ struct HealthDay: Codable {
         return Double(sleepMin) / Double(total)
     }
 
-    /// Deep plus REM as a share of time asleep — the restorative portion.
+    /// Deep plus REM as a share of time asleep.
+    ///
+    /// Called *restorative*, never "sound sleep". Google's sound-sleep figure is
+    /// derived from epoch-level heart rate and movement data this app doesn't
+    /// receive; deep + REM is a stage-only approximation and isn't equivalent.
+    ///
     /// Nil for CLASSIC nights, which carry no stage breakdown.
     var restorativeShare: Double? {
         guard let sleepMin, sleepMin > 0, deepMin != nil || remMin != nil else { return nil }
@@ -656,7 +687,7 @@ struct HealthDay: Codable {
 // MARK: - Sleep Stages
 
 /// One contiguous stretch of a single sleep stage.
-struct SleepSegment: Codable, Identifiable {
+struct SleepSegment: Codable, Identifiable, Equatable {
     var start: Date
     var minutes: Int
     /// DEEP, REM, LIGHT, AWAKE, or ASLEEP on classic-tracked nights.

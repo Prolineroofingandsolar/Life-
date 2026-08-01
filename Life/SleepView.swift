@@ -14,8 +14,13 @@ enum SleepStageKind: String, CaseIterable {
     /// Devices without stage tracking report one flat block.
     case asleep = "ASLEEP"
 
+    /// Out-of-bed maps onto the awake lane. It has to map to *something* awake:
+    /// falling through to `.asleep` would draw time spent up and about as sleep.
     init(apiValue: String) {
-        self = SleepStageKind(rawValue: apiValue) ?? .asleep
+        switch apiValue.uppercased() {
+        case "OUT_OF_BED", "RESTLESS": self = .awake
+        default: self = SleepStageKind(rawValue: apiValue.uppercased()) ?? .asleep
+        }
     }
 
     var label: String {
@@ -95,6 +100,7 @@ struct SleepView: View {
                     if let night = selected {
                         SleepHypnogramCard(night: selectedNight, day: night)
                         SleepHeadlineRow(day: night)
+                        SleepWarningsCard(day: night)
                         SleepScoreCard(night: night, history: nights, settings: settings)
                         SleepStagesCard(day: night)
                         SleepVitalsCard(day: night, history: nights)
@@ -340,6 +346,47 @@ private struct SleepStat: View {
     }
 }
 
+// MARK: - Warnings
+
+/// Surfaces gaps in the night's data rather than letting the figures imply a
+/// completeness they don't have.
+private struct SleepWarningsCard: View {
+    let day: HealthDay
+
+    private var warnings: [SleepAnalysis.Warning] {
+        var out: [SleepAnalysis.Warning] = []
+        if day.sleepType == "CLASSIC" || day.restorativeShare == nil {
+            out.append(.noSourceStages)
+        } else if let coverage = day.stageCoverage, coverage < SleepAnalysis.minimumStageCoverage {
+            out.append(.sparseStageCoverage)
+        }
+        if day.restingHr == nil && day.hrvMs == nil && day.deepSleepHrvMs == nil {
+            out.append(.noHeartRateOrMovement)
+        }
+        return out
+    }
+
+    var body: some View {
+        if !warnings.isEmpty {
+            HealthCard {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(warnings, id: \.self) { warning in
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 12))
+                                .foregroundColor(.orange)
+                            Text(warning.message)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 // MARK: - Score
 
 /// Shows the total *and* its three components. A score you can't interrogate is
@@ -354,10 +401,18 @@ private struct SleepScoreCard: View {
         HealthInsights.sleepScoreBreakdown(for: night, history: history, settings: settings)
     }
 
+    private var measuredOn: String {
+        guard let date = _dayKeyFormatter.date(from: night.dayKey) else { return night.dayKey }
+        return date.formatted(date: .abbreviated, time: .omitted)
+    }
+
     var body: some View {
         HealthCard {
             if let breakdown = breakdown {
                 VStack(alignment: .leading, spacing: 12) {
+                    Text(breakdown.title)
+                        .font(.footnote.weight(.medium))
+                        .foregroundColor(.secondary)
                     HStack(alignment: .lastTextBaseline, spacing: 8) {
                         Text("\(breakdown.total)")
                             .font(.system(size: 34, weight: .bold, design: .rounded))
@@ -366,19 +421,46 @@ private struct SleepScoreCard: View {
                             .foregroundColor(breakdown.tone.colour)
                         Spacer()
                     }
-                    SleepScoreBar(title: "Duration", earned: breakdown.duration, outOf: 50, colour: .indigo)
-                    SleepScoreBar(title: "Quality", earned: breakdown.quality, outOf: 25, colour: .purple)
-                    SleepScoreBar(title: "Restoration", earned: breakdown.restoration, outOf: 25, colour: AppTheme.primary)
-                    Text("Life's own score, built the way Fitbit describes theirs — duration, deep and REM, then how settled your heart rate and HRV were. Fitbit's number isn't published through the API, so expect a few points either way.")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    // Components only exist for Life's own estimate. An official
+                    // score is shown exactly as the source gave it, with nothing
+                    // added, so there's no working to show.
+                    if breakdown.isEstimate {
+                        SleepScoreBar(title: "Duration", earned: breakdown.duration, outOf: 50, colour: .indigo)
+                        SleepScoreBar(title: "Quality", earned: breakdown.quality, outOf: 25, colour: .purple)
+                        SleepScoreBar(title: "Restoration", earned: breakdown.restoration, outOf: 25, colour: AppTheme.primary)
+                    }
+                    provenanceLine(breakdown)
+                    disclaimer(breakdown)
                 }
             } else {
-                Text("Not enough of this night was recorded to score it.")
+                Text("This night doesn't carry enough stage detail to estimate a score. The measured figures above are still accurate.")
                     .font(.caption)
                     .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func provenanceLine(_ breakdown: HealthInsights.SleepScoreBreakdown) -> some View {
+        HStack(spacing: 4) {
+            Text(measuredOn)
+            if let device = breakdown.device {
+                Text("·")
+                Text(device)
+            }
+        }
+        .font(.caption2)
+        .foregroundColor(Color(.tertiaryLabel))
+    }
+
+    @ViewBuilder
+    private func disclaimer(_ breakdown: HealthInsights.SleepScoreBreakdown) -> some View {
+        if breakdown.isEstimate {
+            Text("Life's own estimate, not Google's or Fitbit's sleep score — neither is published through the API. Calculated from your measured duration, deep and REM sleep, and how settled your heart rate and HRV were against your own baseline.")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }

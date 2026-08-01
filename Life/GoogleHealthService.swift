@@ -113,66 +113,43 @@ final class GoogleHealthService {
             }
         }
 
-        // Sleep — filtered on civil end time, so a night belongs to the morning
-        // it finished, matching the HealthKit import's convention.
+        // Sleep. Every session is imported — naps included — and handed to
+        // `SleepAnalysis`, which does the merging, main-night selection, overlap
+        // removal and derivation. Keeping that logic out of the transport layer
+        // is what makes it testable; see `LifeTests/SleepAnalysisTests.swift`.
         await attempt("sleep") {
-            for point in try await list(.sleep, start: start, end: end) {
-                guard let sleep = point["sleep"] as? [String: Any],
-                      let interval = sleep["interval"] as? [String: Any],
-                      let endTime = interval["endTime"] as? String,
-                      let wake = Self.rfc3339.date(from: endTime) else { continue }
+            let sessions = try await list(.sleep, start: start, end: end).compactMap(Self.sessionInput)
+            let analysed = SleepAnalysis.analyse(sessions: sessions)
 
-                // Skip naps. They're keyed to the same morning as the night
-                // before, so without this an afternoon doze overwrites a full
-                // night's figures with 20 minutes.
-                let metadata = sleep["metadata"] as? [String: Any]
-                if metadata?["nap"] as? Bool == true { continue }
+            for (key, night) in analysed.nights {
+                var d = day(key)
+                d.sleepType = night.hasSourceStages ? "STAGES" : "CLASSIC"
+                d.sleepMin = night.minutesAsleep
+                d.deepMin = night.deepMinutes > 0 ? night.deepMinutes : nil
+                d.remMin = night.remMinutes > 0 ? night.remMinutes : nil
+                d.lightMin = night.lightMinutes > 0 ? night.lightMinutes : nil
+                d.awakeMin = night.interruptionMinutes + night.restlessMinutes
+                d.timeInBedMin = night.timeInSleepWindow
+                d.latencyMin = night.sleepLatencyMinutes
+                d.awakenings = night.fullAwakeningCount
+                d.restlessMinutes = night.restlessMinutes
+                d.interruptionMinutes = night.interruptionMinutes
+                d.stageTransitions = night.stageTransitionCount
+                d.sleepMidpoint = night.sleepMidpoint
+                d.stageCoverage = night.stageCoverage
+                d.bedtime = night.attemptedBedtime
+                d.wakeTime = night.finalWakeTime
+                d.sleepSourceDevice = night.provenance.displayLabel
+                // `officialSleepScore` is deliberately left unset: the v4 schema
+                // exposes no score field on any sleep type. If that changes it
+                // gets assigned here and displayed verbatim.
+                byDay[key] = d
 
-                // Belt and braces for anything the nap flag misses: never let a
-                // shorter session replace a longer one on the same day.
-                let asleep = Self.int((sleep["summary"] as? [String: Any])?["minutesAsleep"]) ?? 0
-                if let existing = byDay[wake.dayKey]?.sleepMin, existing >= asleep { continue }
-
-                var d = day(wake.dayKey)
-                d.sleepType = sleep["type"] as? String
-                if let summary = sleep["summary"] as? [String: Any] {
-                    d.sleepMin = Self.int(summary["minutesAsleep"])
-                    d.awakeMin = Self.int(summary["minutesAwake"])
-                    d.timeInBedMin = Self.int(summary["minutesInSleepPeriod"])
-                    d.latencyMin = Self.int(summary["minutesToFallAsleep"])
-                    for stage in summary["stagesSummary"] as? [[String: Any]] ?? [] {
-                        guard let minutes = Self.int(stage["minutes"]) else { continue }
-                        switch stage["type"] as? String {
-                        case "DEEP":  d.deepMin = minutes
-                        case "REM":   d.remMin = minutes
-                        case "LIGHT": d.lightMin = minutes
-                        case "AWAKE":
-                            d.awakeMin = minutes
-                            // Segment count, not minutes — how many times the
-                            // night was broken rather than for how long.
-                            d.awakenings = Self.int(stage["count"])
-                        // CLASSIC-type sleep reports a flat ASLEEP total with no
-                        // stage breakdown; it's already in minutesAsleep.
-                        default:      break
-                        }
-                    }
-                }
-                d.wakeTime = wake
-                if let startTime = interval["startTime"] as? String {
-                    d.bedtime = Self.rfc3339.date(from: startTime)
-                }
-                byDay[wake.dayKey] = d
-
-                // The stage-by-stage shape of the night — what the hypnogram is
-                // drawn from. Kept apart from HealthDay because it's an order of
-                // magnitude more data; AppState retains only recent nights.
-                let segments = Self.segments(from: sleep["stages"])
-                if !segments.isEmpty {
-                    result.nights.append(SleepNight(
-                        dayKey: wake.dayKey,
-                        segments: segments,
-                        outOfBed: Self.segments(from: sleep["outOfBedSegments"], stage: "OUT_OF_BED")
-                    ))
+                // Hypnogram segments come from the same de-overlapped timeline
+                // the measurements were taken from, so the chart and the numbers
+                // can't disagree.
+                if !night.segments.isEmpty {
+                    result.nights.append(SleepNight(dayKey: key, segments: night.segments, outOfBed: []))
                 }
             }
         }
@@ -395,36 +372,62 @@ final class GoogleHealthService {
         return nil
     }
 
-    private static func int(_ raw: Any?) -> Int? {
-        double(raw).map { Int($0.rounded()) }
-    }
-
     /// Average breaths per minute out of a `RespiratoryRateSleepSummaryStatistics`.
     private static func stat(_ raw: Any?) -> Double? {
         guard let stats = raw as? [String: Any] else { return nil }
         return double(stats["breathsPerMinute"])
     }
 
-    /// Turns the API's stage or out-of-bed segments into `SleepSegment`s.
-    ///
-    /// Zero-length segments are dropped — they'd render as invisible slivers in
-    /// the hypnogram while still cluttering storage.
-    private static func segments(from raw: Any?, stage: String? = nil) -> [SleepSegment] {
+    /// Builds a raw sleep session from a data point, preserving where it came
+    /// from and the UTC offset in effect, so `SleepAnalysis` can file the night
+    /// under the right local day even across travel and clock changes.
+    private static func sessionInput(_ point: [String: Any]) -> SleepSessionInput? {
+        guard let sleep = point["sleep"] as? [String: Any],
+              let interval = sleep["interval"] as? [String: Any],
+              let startText = interval["startTime"] as? String,
+              let endText = interval["endTime"] as? String,
+              let start = rfc3339.date(from: startText),
+              let end = rfc3339.date(from: endText) else { return nil }
+
+        let metadata = sleep["metadata"] as? [String: Any]
+        let source = point["dataSource"] as? [String: Any]
+        let device = source?["device"] as? [String: Any]
+
+        var provenance = SleepProvenance()
+        provenance.platform = source?["platform"] as? String
+        provenance.deviceName = device?["displayName"] as? String
+        provenance.manufacturer = device?["manufacturer"] as? String
+        provenance.formFactor = device?["formFactor"] as? String
+        provenance.recordingMethod = source?["recordingMethod"] as? String
+        provenance.utcOffsetSeconds =
+            SleepAnalysis.parseUTCOffset(interval["endUtcOffset"] as? String)
+            ?? SleepAnalysis.parseUTCOffset(interval["startUtcOffset"] as? String)
+
+        return SleepSessionInput(
+            start: start,
+            end: end,
+            stages: intervals(from: sleep["stages"]),
+            outOfBed: intervals(from: sleep["outOfBedSegments"], forced: .outOfBed),
+            isNap: metadata?["nap"] as? Bool == true,
+            // "STAGES" means the source classified the night itself. Anything
+            // else is a flat total, which must not be treated as stage data.
+            hasSourceStages: (sleep["type"] as? String) == "STAGES",
+            provenance: provenance
+        )
+    }
+
+    /// Stage or out-of-bed intervals as `SleepAnalysis` wants them.
+    private static func intervals(from raw: Any?, forced: SleepStageClass? = nil) -> [SleepInterval] {
         guard let list = raw as? [[String: Any]] else { return [] }
         return list.compactMap { entry in
             guard let startText = entry["startTime"] as? String,
                   let endText = entry["endTime"] as? String,
                   let start = rfc3339.date(from: startText),
-                  let end = rfc3339.date(from: endText) else { return nil }
-            let minutes = Int((end.timeIntervalSince(start) / 60).rounded())
-            guard minutes > 0 else { return nil }
-            return SleepSegment(
-                start: start,
-                minutes: minutes,
-                stage: stage ?? (entry["type"] as? String ?? "ASLEEP")
-            )
+                  let end = rfc3339.date(from: endText),
+                  end > start else { return nil }
+            let stage = forced ?? SleepStageClass.fromAPI(entry["type"] as? String ?? "")
+            return SleepInterval(start: start, end: end, stage: stage, sourceDerived: true)
         }
-        .sorted { $0.start < $1.start }
     }
 
     /// The local day of a point-in-time observation.

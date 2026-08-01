@@ -470,15 +470,44 @@ enum HealthInsights {
         }
     }
 
-    /// The three parts of a sleep score, kept so the UI can show its working.
-    /// A score you can't interrogate is just a number to argue with.
+    /// A sleep score and, when it's Life's own, the components behind it.
+    ///
+    /// `origin` is the important field. A score supplied by the source is passed
+    /// through untouched; anything Life computes is an **estimate** and must be
+    /// labelled as one everywhere it appears. The two are never averaged,
+    /// normalised or blended.
     struct SleepScoreBreakdown {
+        enum Origin: Equatable {
+            /// Provided by the source and stored verbatim.
+            case official(source: String)
+            /// Computed by Life from the underlying measurements.
+            case estimated
+        }
+
+        var origin: Origin = .estimated
         var duration: Double        // out of 50
         var quality: Double         // out of 25
         var restoration: Double     // out of 25
         var total: Int
         var label: String
         var tone: Tone
+        /// Device that measured the night, where the source said.
+        var device: String? = nil
+        /// The night this score is for.
+        var dayKey: String = ""
+
+        var isEstimate: Bool { origin == .estimated }
+
+        /// What to call it on screen. Never "Google Health Score" or "Fitbit
+        /// Sleep Score" unless the source actually gave us that value.
+        var title: String {
+            switch origin {
+            case .official(let source):
+                return source.replacingOccurrences(of: "_", with: " ").capitalized + " Sleep Score"
+            case .estimated:
+                return "Estimated Sleep Score"
+            }
+        }
 
         var score: Score { Score(value: total, label: label, tone: tone) }
     }
@@ -513,7 +542,26 @@ enum HealthInsights {
         history: [HealthDay],
         settings: HealthSettings
     ) -> SleepScoreBreakdown? {
+        // An official score from the source is displayed exactly as given —
+        // never recalculated, averaged, normalised or blended with the estimate
+        // below. Nothing populates this today; see `HealthDay.officialSleepScore`.
+        if let official = night.officialSleepScore {
+            let (label, tone) = describe(official)
+            return SleepScoreBreakdown(
+                origin: .official(source: night.officialSleepScoreSource ?? "Source"),
+                duration: 0, quality: 0, restoration: 0,
+                total: official, label: label, tone: tone,
+                device: night.sleepSourceDevice, dayKey: night.dayKey
+            )
+        }
+
         guard let minutes = night.sleepMin, minutes > 0, settings.sleepGoalMinutes > 0 else { return nil }
+
+        // Nights described by too little stage data aren't scored at all. A
+        // number derived from an hour of a nine-hour night would look just as
+        // confident as a real one.
+        if night.sleepType == "CLASSIC" || night.restorativeShare == nil { return nil }
+        if let coverage = night.stageCoverage, coverage < SleepAnalysis.minimumStageCoverage { return nil }
 
         // Duration. Full marks need the goal met; below that it falls away
         // faster than linearly, because the gap between six and seven hours
@@ -561,12 +609,15 @@ enum HealthInsights {
         let total = Int(((duration + quality + restoration) / available * 100).rounded())
         let (label, tone) = describe(total)
         return SleepScoreBreakdown(
+            origin: .estimated,
             duration: duration,
             quality: quality,
             restoration: restoration,
             total: total,
             label: label,
-            tone: tone
+            tone: tone,
+            device: night.sleepSourceDevice,
+            dayKey: night.dayKey
         )
     }
 
