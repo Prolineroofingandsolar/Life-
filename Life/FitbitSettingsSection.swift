@@ -33,7 +33,7 @@ struct FitbitSettingsSection: View {
         } footer: {
             Text(isConnected
                  ? "Sleep, heart rate, HRV, SpO₂ and activity come straight from Fitbit. Apple Health is used only when Fitbit isn't connected."
-                 : "Create a free app at dev.fitbit.com/apps, set its redirect URL to life://fitbit and its type to Client, then paste the Client ID here.")
+                 : "Fitbit has closed new registrations on the legacy Web API this connection uses, and switches it off in September 2026. Its replacement is the Google Health API, registered through Google Cloud. Use Apple Health for now.")
         }
     }
 
