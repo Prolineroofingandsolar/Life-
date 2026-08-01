@@ -27,7 +27,7 @@ enum GoogleHealthConfig {
     /// accounts listed as test users can authorise, and each only ever reaches
     /// their own data.
     private static let defaultClientID =
-        "845292341174-0lqjgdif99mn267t24l600v45udqv4ip.apps.googleusercontent.com"
+        "669385744983-j9h2iaeu5bjtr8bglnklu7engcopkr4t.apps.googleusercontent.com"
 
     /// Anything entered in Settings wins, so a different Cloud project can be
     /// pointed at without a code change.
