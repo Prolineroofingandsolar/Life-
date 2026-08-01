@@ -466,28 +466,42 @@ enum HealthInsights {
         }
     }
 
-    /// Sleep quality for the most recent night.
+    /// Sleep quality for the most recent night, 0–100.
     ///
-    /// Duration against goal carries most of it, since that's what people can
-    /// act on. Efficiency and timing consistency adjust it where the data
-    /// exists; where it doesn't, the remaining weight redistributes to duration
-    /// rather than penalising a tracker that reports less detail.
+    /// **This is not Fitbit's sleep score and won't match it.** Fitbit's number
+    /// isn't exposed anywhere in the Google Health API — there's no score field
+    /// on any sleep schema — so this is computed from the underlying data
+    /// instead. Expect the two to differ by ten points or so; a large gap in the
+    /// same direction every night means these weights need adjusting.
+    ///
+    /// Three parts, following the shape sleep scores generally take:
+    ///
+    /// - **Duration, 50%** — against your own goal. The one thing you control.
+    /// - **Restorative sleep, 25%** — deep plus REM as a share of the night.
+    ///   Around 40% combined is typical for a healthy adult, so that's full
+    ///   marks; this is what separates eight poor hours from eight good ones.
+    /// - **Efficiency, 25%** — time asleep versus time in bed, rescaled so 75%
+    ///   scores zero and 97% scores full. Raw efficiency sits in a narrow
+    ///   88–95% band, so using it unscaled hands out near-perfect marks to
+    ///   every night and the score stops discriminating.
+    ///
+    /// Where a component's data is missing its weight is redistributed across
+    /// the others, rather than penalising a tracker that reports less detail.
     static func sleepScore(_ days: [HealthDay], settings: HealthSettings) -> Score? {
         guard let night = days.last(where: { $0.sleepMin != nil }),
               let minutes = night.sleepMin, settings.sleepGoalMinutes > 0 else { return nil }
 
-        let duration = min(1.0, Double(minutes) / Double(settings.sleepGoalMinutes))
-        var total = duration * 0.6
-        var weight = 0.6
+        var total = min(1.0, Double(minutes) / Double(settings.sleepGoalMinutes)) * 0.5
+        var weight = 0.5
 
-        if let efficiency = night.sleepEfficiency {
-            total += min(1.0, efficiency) * 0.25
+        if minutes > 0, night.deepMin != nil || night.remMin != nil {
+            let restorative = Double((night.deepMin ?? 0) + (night.remMin ?? 0)) / Double(minutes)
+            total += min(1.0, restorative / 0.40) * 0.25
             weight += 0.25
         }
-        if let consistency = sleepConsistency(days) {
-            // 90 minutes of drift or more scores zero here.
-            total += max(0, 1 - consistency.bedtimeSD / 90) * 0.15
-            weight += 0.15
+        if let efficiency = night.sleepEfficiency {
+            total += clamp((efficiency - 0.75) / 0.22) * 0.25
+            weight += 0.25
         }
 
         let value = Int((total / weight * 100).rounded())

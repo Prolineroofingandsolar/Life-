@@ -118,6 +118,17 @@ final class GoogleHealthService {
                       let endTime = interval["endTime"] as? String,
                       let wake = Self.rfc3339.date(from: endTime) else { continue }
 
+                // Skip naps. They're keyed to the same morning as the night
+                // before, so without this an afternoon doze overwrites a full
+                // night's figures with 20 minutes.
+                let metadata = sleep["metadata"] as? [String: Any]
+                if metadata?["nap"] as? Bool == true { continue }
+
+                // Belt and braces for anything the nap flag misses: never let a
+                // shorter session replace a longer one on the same day.
+                let asleep = Self.int((sleep["summary"] as? [String: Any])?["minutesAsleep"]) ?? 0
+                if let existing = byDay[wake.dayKey]?.sleepMin, existing >= asleep { continue }
+
                 var d = day(wake.dayKey)
                 if let summary = sleep["summary"] as? [String: Any] {
                     d.sleepMin = Self.int(summary["minutesAsleep"])
