@@ -470,40 +470,37 @@ enum HealthInsights {
         }
     }
 
-    /// A sleep score and, when it's Life's own, the components behind it.
+    /// A sleep score for display.
     ///
-    /// `origin` is the important field. A score supplied by the source is passed
-    /// through untouched; anything Life computes is an **estimate** and must be
-    /// labelled as one everywhere it appears. The two are never averaged,
+    /// `origin` is the load-bearing field. A score supplied by the source is
+    /// passed through untouched; anything Life computes is an **estimate** and
+    /// is labelled as one everywhere it appears. The two are never averaged,
     /// normalised or blended.
+    ///
+    /// The estimate itself lives in `SleepScore` — a single model with
+    /// components, ceilings, confidence and diagnostics, rather than scoring
+    /// logic scattered across the app.
     struct SleepScoreBreakdown {
         enum Origin: Equatable {
-            /// Provided by the source and stored verbatim.
             case official(source: String)
-            /// Computed by Life from the underlying measurements.
             case estimated
         }
 
         var origin: Origin = .estimated
-        var duration: Double        // out of 50
-        var quality: Double         // out of 25
-        var restoration: Double     // out of 25
         var total: Int
         var label: String
         var tone: Tone
-        /// Device that measured the night, where the source said.
         var device: String? = nil
-        /// The night this score is for.
         var dayKey: String = ""
-        /// True while restoration is still working from a short or absent
-        /// baseline. The score is usable but will move as history builds, and
-        /// the UI says so rather than presenting it as settled.
-        var isProvisional: Bool = false
+        /// Nil for an official score — there is no working to show for a number
+        /// Life didn't compute.
+        var estimate: SleepScore.Result? = nil
 
         var isEstimate: Bool { origin == .estimated }
+        var isProvisional: Bool { estimate?.confidence == .low }
 
-        /// What to call it on screen. Never "Google Health Score" or "Fitbit
-        /// Sleep Score" unless the source actually gave us that value.
+        /// Never "Google Health Score" or "Fitbit Sleep Score" unless the source
+        /// actually supplied that value.
         var title: String {
             switch origin {
             case .official(let source):
@@ -516,133 +513,45 @@ enum HealthInsights {
         var score: Score { Score(value: total, label: label, tone: tone) }
     }
 
-    /// Sleep quality for a night, 0–100, built to track Fitbit's score.
-    ///
-    /// Fitbit's number isn't exposed anywhere in the Google Health API — there's
-    /// no score field on any sleep schema — so it has to be recomputed from the
-    /// same underlying data. This mirrors their published composition:
-    ///
-    /// - **Duration, 50 points** — how much you slept.
-    /// - **Quality, 25 points** — time in deep and REM.
-    /// - **Restoration, 25 points** — how relaxed you were: resting heart rate,
-    ///   SpO₂ and HRV during sleep, each against your own baseline.
-    ///
-    /// Calibration matters as much as the shape. Fitbit says most people score
-    /// **72–83**, so an ordinary night — around seven hours, ~32% deep+REM,
-    /// resting heart rate at baseline — needs to land there rather than in the
-    /// nineties. Reaching 90+ should take genuinely excellent sleep. An earlier
-    /// version scored a duration hit as full marks and read raw efficiency
-    /// (which never leaves an 88–95% band) as a fraction, so almost every night
-    /// came out at 99 and the number said nothing.
-    ///
-    /// It still won't match to the point — Fitbit's weightings aren't published.
-    /// If it's consistently out in one direction across a week, the breakdown
-    /// shows which term to adjust.
-    ///
-    /// Where a component's data is missing its weight is redistributed across
-    /// the others, rather than penalising a tracker that reports less detail.
+    static func tone(for category: SleepScore.Category) -> Tone {
+        switch category {
+        case .excellent, .good: return .good
+        case .fair:             return .neutral
+        case .poor:             return .watch
+        }
+    }
+
+    /// A night's score: the source's own if it ever supplies one, otherwise
+    /// Life's estimate.
     static func sleepScoreBreakdown(
         for night: HealthDay,
         history: [HealthDay],
         settings: HealthSettings
     ) -> SleepScoreBreakdown? {
-        // An official score from the source is displayed exactly as given —
-        // never recalculated, averaged, normalised or blended with the estimate
-        // below. Nothing populates this today; see `HealthDay.officialSleepScore`.
+        // An official score is displayed exactly as given — never recalculated,
+        // averaged, normalised or blended. Nothing populates this today; see
+        // `HealthDay.officialSleepScore`.
         if let official = night.officialSleepScore {
-            let (label, tone) = describe(official)
+            let category = SleepScore.Category(score: official)
             return SleepScoreBreakdown(
                 origin: .official(source: night.officialSleepScoreSource ?? "Source"),
-                duration: 0, quality: 0, restoration: 0,
-                total: official, label: label, tone: tone,
-                device: night.sleepSourceDevice, dayKey: night.dayKey
+                total: official,
+                label: category.rawValue,
+                tone: tone(for: category),
+                device: night.sleepSourceDevice,
+                dayKey: night.dayKey
             )
         }
 
-        guard let minutes = night.sleepMin, minutes > 0, settings.sleepGoalMinutes > 0 else { return nil }
-
-        // Nights described by too little stage data aren't scored at all. A
-        // number derived from an hour of a nine-hour night would look just as
-        // confident as a real one. The rule lives in `SleepAnalysis` so the
-        // tests exercise the same thresholds the app applies.
-        guard SleepAnalysis.isScoreable(night) else { return nil }
-
-        // Duration. Full marks need the goal met; below that it falls away
-        // faster than linearly, because the gap between six and seven hours
-        // matters more than between eight and nine.
-        let ratio = min(1.0, Double(minutes) / Double(settings.sleepGoalMinutes))
-        let duration = pow(ratio, 1.3) * 50
-        var available = 50.0
-
-        // Quality — deep + REM share. 20% or less earns nothing; full marks need
-        // ~44% combined, which is a genuinely strong night for an adult.
-        var quality = 0.0
-        if let restorative = night.restorativeShare {
-            quality = clamp((restorative - 0.20) / 0.24) * 25
-            available += 25
-        }
-
-        // Restoration — how settled the body was, measured against its own
-        // baselines.
-        //
-        // This term *requires* a baseline-backed cardiac signal. It used to fall
-        // back to whatever was available, which produced nonsense: SpO2 alone
-        // would score 25/25, because 97% is unremarkable and scored as if it
-        // were exceptional. Combined with duration at 50/50 for simply hitting
-        // the goal, ordinary nights came out at 98. A term meaning "how
-        // recovered were you" cannot be answered by a number that reads the same
-        // for everyone every night.
-        var parts: [Double] = []
-        var samples = 0
-        if let hr = night.restingHr,
-           let hrBaseline = baseline(history, { $0.restingHr }, minimum: provisionalMinimumSamples) {
-            // Sitting at your baseline scores 0.6, not full marks — the top of
-            // the scale is reserved for a night better than your normal.
-            parts.append(clamp(0.6 - (hr - hrBaseline) / 11))
-            samples = max(samples, sampleCount(history) { $0.restingHr })
-        }
-        if let hrv = night.deepSleepHrvMs ?? night.hrvMs,
-           let hrvBaseline = baseline(history, { $0.deepSleepHrvMs ?? $0.hrvMs }, minimum: provisionalMinimumSamples),
-           hrvBaseline > 0 {
-            parts.append(clamp(0.6 + (hrv - hrvBaseline) / (hrvBaseline * 0.7)))
-            samples = max(samples, sampleCount(history) { $0.deepSleepHrvMs ?? $0.hrvMs })
-        }
-
-        // With no baseline at all, assume *typical* rather than excellent — the
-        // same 0.6 a night sitting exactly on your baseline would earn. Refusing
-        // to score leaves the screen blank on day one; scoring it from whatever
-        // single signal happens to exist is what produced 98s. Assuming average
-        // in the absence of evidence does neither.
-        var isProvisional = false
-        if parts.isEmpty {
-            parts.append(0.6)
-            isProvisional = true
-        } else if samples < minimumSamples {
-            isProvisional = true
-        }
-
-        var restoration = (parts.reduce(0, +) / Double(parts.count)) * 25
-        available += 25
-
-        // SpO2 only ever subtracts. Desaturation is worth flagging; a normal
-        // reading is not an achievement and must not earn points.
-        if let spo2 = night.spo2Pct, spo2 < 92 {
-            restoration *= clamp(0.5 + (spo2 - 88) / 8)
-        }
-
-        let total = Int(((duration + quality + restoration) / available * 100).rounded())
-        let (label, tone) = describe(total)
+        guard let result = SleepScore.calculate(day: night, history: history) else { return nil }
         return SleepScoreBreakdown(
             origin: .estimated,
-            duration: duration,
-            quality: quality,
-            restoration: restoration,
-            total: total,
-            label: label,
-            tone: tone,
+            total: result.score,
+            label: result.category.rawValue,
+            tone: tone(for: result.category),
             device: night.sleepSourceDevice,
             dayKey: night.dayKey,
-            isProvisional: isProvisional
+            estimate: result
         )
     }
 
@@ -709,11 +618,6 @@ enum HealthInsights {
         guard let night = days.last(where: { $0.sleepMin != nil }) else { return nil }
         return sleepScoreBreakdown(for: night, history: days, settings: settings)?.score
     }
-
-    /// Readings needed before a baseline is treated as settled rather than
-    /// provisional. Three nights is enough to be better than assuming average,
-    /// while `minimumSamples` (ten) is where it stops being marked provisional.
-    static let provisionalMinimumSamples = 3
 
     /// Mean of a metric over recent history, for scoring against. Separate from
     /// `trend` because scoring wants a plain baseline, not a comparison.

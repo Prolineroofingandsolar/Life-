@@ -414,10 +414,7 @@ private struct SleepScoreCard: View {
     /// Why a night went unscored. Silence here reads as a bug; the measured
     /// figures above are unaffected and remain accurate.
     private var unscoreableReason: String {
-        if !SleepAnalysis.isScoreable(night) {
-            return "This night wasn't recorded with enough sleep-stage detail to estimate a score. The measured figures above are unaffected."
-        }
-        return "Restoration needs about ten nights of resting heart rate or HRV before it knows what's normal for you. Rather than guess, there's no score until then — the measured figures above are unaffected."
+        "Insufficient data was received for this night — without sleep stages there's nothing to score against. The measured figures above are unaffected and remain accurate."
     }
 
     private var measuredOn: String {
@@ -433,14 +430,8 @@ private struct SleepScoreCard: View {
                         Text(breakdown.title)
                             .font(.footnote.weight(.medium))
                             .foregroundColor(.secondary)
-                        if breakdown.isProvisional {
-                            Text("PROVISIONAL")
-                                .font(.system(size: 9, weight: .bold))
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 2)
-                                .background(Capsule().fill(Color.orange.opacity(0.18)))
-                                .foregroundColor(.orange)
-                        }
+                        // Confidence is stated in full below the components, so
+                        // a separate badge here would only repeat it.
                     }
                     HStack(alignment: .lastTextBaseline, spacing: 8) {
                         Text("\(breakdown.total)")
@@ -451,13 +442,16 @@ private struct SleepScoreCard: View {
                         Spacer()
                     }
                     rankLine
-                    // Components only exist for Life's own estimate. An official
-                    // score is shown exactly as the source gave it, with nothing
-                    // added, so there's no working to show.
-                    if breakdown.isEstimate {
-                        SleepScoreBar(title: "Duration", earned: breakdown.duration, outOf: 50, colour: .indigo)
-                        SleepScoreBar(title: "Quality", earned: breakdown.quality, outOf: 25, colour: .purple)
-                        SleepScoreBar(title: "Restoration", earned: breakdown.restoration, outOf: 25, colour: AppTheme.primary)
+                    // Components exist only for Life's own estimate. An
+                    // official score is shown exactly as the source gave it,
+                    // with nothing added, so there is no working to show.
+                    if let estimate = breakdown.estimate {
+                        SleepScoreBar(title: "Duration", earned: estimate.components.duration, colour: .indigo)
+                        SleepScoreBar(title: "Continuity", earned: estimate.components.continuity, colour: .teal)
+                        SleepScoreBar(title: "Restorative sleep", earned: estimate.components.restorative, colour: .purple)
+                        SleepScoreBar(title: "Latency", earned: estimate.components.latency, colour: .blue)
+                        SleepScoreBar(title: "Consistency", earned: estimate.components.consistency, colour: AppTheme.primary)
+                        confidenceLine(estimate)
                     }
                     provenanceLine(breakdown)
                     disclaimer(breakdown)
@@ -508,29 +502,38 @@ private struct SleepScoreCard: View {
         .foregroundColor(Color(.tertiaryLabel))
     }
 
+    /// Confidence is reported alongside the score and never alters it. A night
+    /// with thin data does not get a higher number to compensate.
+    @ViewBuilder
+    private func confidenceLine(_ estimate: SleepScore.Result) -> some View {
+        HStack(spacing: 6) {
+            Text("Confidence: \(estimate.confidence.rawValue.capitalized)")
+                .font(.caption2)
+                .foregroundColor(estimate.confidence == .high ? .secondary : .orange)
+            if !estimate.missingFields.isEmpty {
+                Text("· missing \(estimate.missingFields.joined(separator: ", "))")
+                    .font(.caption2)
+                    .foregroundColor(Color(.tertiaryLabel))
+            }
+        }
+    }
+
     @ViewBuilder
     private func disclaimer(_ breakdown: HealthInsights.SleepScoreBreakdown) -> some View {
         if breakdown.isEstimate {
-            VStack(alignment: .leading, spacing: 4) {
-                if breakdown.isProvisional {
-                    Text("Restoration is still learning what's normal for you, so it's assuming average for now. This score will shift as your baseline builds over the next week or two.")
-                        .font(.caption2)
-                        .foregroundColor(.orange)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Text("Life's own estimate, not Google's or Fitbit's sleep score — neither is published through the API. Calculated from your measured duration, deep and REM sleep, and how settled your heart rate and HRV were against your own baseline.")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            Text("This is an estimate calculated from your imported sleep data. It may differ from Google Health because Google uses additional sensor data and a private personalized scoring model.")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }
 
 private struct SleepScoreBar: View {
     let title: String
+    /// A 0–100 component score, not a share of the total.
     let earned: Double
-    let outOf: Double
+    var outOf: Double = 100
     let colour: Color
 
     var body: some View {
