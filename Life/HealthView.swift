@@ -105,13 +105,26 @@ struct HealthView: View {
         HealthInsights.activityScore(activity, settings: settings, stepGoal: appState.careSettings.stepGoal)
     }
 
+    /// Each dial is its own drill-down — tapping Sleep is the main way into the
+    /// sleep screen, so it has to be tappable rather than decorative.
     @ViewBuilder
     private var scoreCard: some View {
         HealthCard {
             HStack(alignment: .top, spacing: 4) {
-                HealthGauge(score: readiness, title: "Readiness", icon: "figure.stand", colour: AppTheme.primary)
-                HealthGauge(score: sleep, title: "Sleep", icon: "moon.stars.fill", colour: .blue)
-                HealthGauge(score: activityScore, title: "Activity", icon: "flame.fill", colour: .orange)
+                NavigationLink { HealthDetailView(initialTab: .recovery) } label: {
+                    HealthGauge(score: readiness, title: "Readiness", icon: "figure.stand", colour: AppTheme.primary)
+                }
+                .buttonStyle(.plain)
+
+                NavigationLink { SleepView() } label: {
+                    HealthGauge(score: sleep, title: "Sleep", icon: "moon.stars.fill", colour: .blue)
+                }
+                .buttonStyle(.plain)
+
+                NavigationLink { HealthDetailView(initialTab: .activity) } label: {
+                    HealthGauge(score: activityScore, title: "Activity", icon: "flame.fill", colour: .orange)
+                }
+                .buttonStyle(.plain)
             }
         }
     }
@@ -496,7 +509,7 @@ struct HealthDetailView: View {
     @ViewBuilder
     private var content: some View {
         switch selectedTab {
-        case .sleep:    HealthSleepTab()
+        case .sleep:    SleepView()
         case .recovery: HealthRecoveryTab()
         case .activity: HealthActivityTab()
         }
