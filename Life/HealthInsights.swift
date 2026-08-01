@@ -495,6 +495,10 @@ enum HealthInsights {
         var device: String? = nil
         /// The night this score is for.
         var dayKey: String = ""
+        /// True while restoration is still working from a short or absent
+        /// baseline. The score is usable but will move as history builds, and
+        /// the UI says so rather than presenting it as settled.
+        var isProvisional: Bool = false
 
         var isEstimate: Bool { origin == .estimated }
 
@@ -589,20 +593,33 @@ enum HealthInsights {
         // recovered were you" cannot be answered by a number that reads the same
         // for everyone every night.
         var parts: [Double] = []
-        if let hr = night.restingHr, let hrBaseline = baseline(history, { $0.restingHr }) {
+        var samples = 0
+        if let hr = night.restingHr,
+           let hrBaseline = baseline(history, { $0.restingHr }, minimum: provisionalMinimumSamples) {
             // Sitting at your baseline scores 0.6, not full marks — the top of
             // the scale is reserved for a night better than your normal.
             parts.append(clamp(0.6 - (hr - hrBaseline) / 11))
+            samples = max(samples, sampleCount(history) { $0.restingHr })
         }
         if let hrv = night.deepSleepHrvMs ?? night.hrvMs,
-           let hrvBaseline = baseline(history, { $0.deepSleepHrvMs ?? $0.hrvMs }), hrvBaseline > 0 {
+           let hrvBaseline = baseline(history, { $0.deepSleepHrvMs ?? $0.hrvMs }, minimum: provisionalMinimumSamples),
+           hrvBaseline > 0 {
             parts.append(clamp(0.6 + (hrv - hrvBaseline) / (hrvBaseline * 0.7)))
+            samples = max(samples, sampleCount(history) { $0.deepSleepHrvMs ?? $0.hrvMs })
         }
 
-        // Without a baseline there is no honest restoration figure, and
-        // redistributing its weight would inflate the total rather than admit
-        // the gap. Better to show the measured facts and no score.
-        guard !parts.isEmpty else { return nil }
+        // With no baseline at all, assume *typical* rather than excellent — the
+        // same 0.6 a night sitting exactly on your baseline would earn. Refusing
+        // to score leaves the screen blank on day one; scoring it from whatever
+        // single signal happens to exist is what produced 98s. Assuming average
+        // in the absence of evidence does neither.
+        var isProvisional = false
+        if parts.isEmpty {
+            parts.append(0.6)
+            isProvisional = true
+        } else if samples < minimumSamples {
+            isProvisional = true
+        }
 
         var restoration = (parts.reduce(0, +) / Double(parts.count)) * 25
         available += 25
@@ -624,7 +641,8 @@ enum HealthInsights {
             label: label,
             tone: tone,
             device: night.sleepSourceDevice,
-            dayKey: night.dayKey
+            dayKey: night.dayKey,
+            isProvisional: isProvisional
         )
     }
 
@@ -634,16 +652,28 @@ enum HealthInsights {
         return sleepScoreBreakdown(for: night, history: days, settings: settings)?.score
     }
 
+    /// Readings needed before a baseline is treated as settled rather than
+    /// provisional. Three nights is enough to be better than assuming average,
+    /// while `minimumSamples` (ten) is where it stops being marked provisional.
+    static let provisionalMinimumSamples = 3
+
     /// Mean of a metric over recent history, for scoring against. Separate from
     /// `trend` because scoring wants a plain baseline, not a comparison.
     private static func baseline(
         _ days: [HealthDay],
         _ metric: (HealthDay) -> Double?,
-        window: Int = 30
+        window: Int = 30,
+        minimum: Int = minimumSamples
     ) -> Double? {
         let values = days.compactMap { day -> Double? in metric(day) }.suffix(window)
-        guard values.count >= minimumSamples else { return nil }
+        guard values.count >= minimum else { return nil }
         return values.reduce(0, +) / Double(values.count)
+    }
+
+    /// How many readings of a metric exist, for deciding whether a baseline is
+    /// settled or still provisional.
+    private static func sampleCount(_ days: [HealthDay], _ metric: (HealthDay) -> Double?) -> Int {
+        days.compactMap { day -> Double? in metric(day) }.suffix(30).count
     }
 
     /// How ready the body looks for hard work today.

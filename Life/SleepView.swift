@@ -410,9 +410,19 @@ private struct SleepScoreCard: View {
         HealthCard {
             if let breakdown = breakdown {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text(breakdown.title)
-                        .font(.footnote.weight(.medium))
-                        .foregroundColor(.secondary)
+                    HStack(spacing: 6) {
+                        Text(breakdown.title)
+                            .font(.footnote.weight(.medium))
+                            .foregroundColor(.secondary)
+                        if breakdown.isProvisional {
+                            Text("PROVISIONAL")
+                                .font(.system(size: 9, weight: .bold))
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(Color.orange.opacity(0.18)))
+                                .foregroundColor(.orange)
+                        }
+                    }
                     HStack(alignment: .lastTextBaseline, spacing: 8) {
                         Text("\(breakdown.total)")
                             .font(.system(size: 34, weight: .bold, design: .rounded))
@@ -461,10 +471,18 @@ private struct SleepScoreCard: View {
     @ViewBuilder
     private func disclaimer(_ breakdown: HealthInsights.SleepScoreBreakdown) -> some View {
         if breakdown.isEstimate {
-            Text("Life's own estimate, not Google's or Fitbit's sleep score — neither is published through the API. Calculated from your measured duration, deep and REM sleep, and how settled your heart rate and HRV were against your own baseline.")
-                .font(.caption2)
-                .foregroundColor(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 4) {
+                if breakdown.isProvisional {
+                    Text("Restoration is still learning what's normal for you, so it's assuming average for now. This score will shift as your baseline builds over the next week or two.")
+                        .font(.caption2)
+                        .foregroundColor(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Text("Life's own estimate, not Google's or Fitbit's sleep score — neither is published through the API. Calculated from your measured duration, deep and REM sleep, and how settled your heart rate and HRV were against your own baseline.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 }
