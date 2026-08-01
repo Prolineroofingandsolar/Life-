@@ -133,7 +133,7 @@ struct SettingsView: View {
 
                 HealthSettingsSection()
 
-                FitbitSettingsSection()
+                GoogleHealthSettingsSection()
 
                 // Habit Reminders
                 Section("Habit Reminders") {

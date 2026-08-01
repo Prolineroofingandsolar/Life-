@@ -1,16 +1,17 @@
 import SwiftUI
 
-// MARK: - Fitbit Settings Section
+// MARK: - Google Health Settings Section
 
-/// Connect/disconnect for the Fitbit account, plus the one-time Client ID.
+/// Connect/disconnect for Fitbit data via the Google Health API, plus the
+/// one-time OAuth Client ID.
 ///
 /// Its own view rather than more rows inside `SettingsView`'s `Form`: that body
 /// already hit the Swift type-checker's time limit once, and this is a lot to
 /// add to it.
-struct FitbitSettingsSection: View {
+struct GoogleHealthSettingsSection: View {
 
-    @State private var clientID: String = FitbitConfig.clientID
-    @State private var isConnected: Bool = FitbitTokenStore.isConnected
+    @State private var clientID: String = GoogleHealthConfig.clientID
+    @State private var isConnected: Bool = GoogleHealthTokenStore.isConnected
     @State private var isWorking = false
     @State private var message: String? = nil
     @FocusState private var clientIDFocused: Bool
@@ -32,8 +33,8 @@ struct FitbitSettingsSection: View {
             Text("Fitbit")
         } footer: {
             Text(isConnected
-                 ? "Sleep, heart rate, HRV, SpO₂ and activity come straight from Fitbit. Apple Health is used only when Fitbit isn't connected."
-                 : "Fitbit has closed new registrations on the legacy Web API this connection uses, and switches it off in September 2026. Its replacement is the Google Health API, registered through Google Cloud. Use Apple Health for now.")
+                 ? "Sleep, heart rate, HRV, SpO₂ and activity come from your Fitbit via the Google Health API. Apple Health is used only when this isn't connected."
+                 : "Fitbit data now comes through Google. Create a project at console.cloud.google.com, enable the Health API, add yourself as a test user on the OAuth consent screen, then create an iOS OAuth client and paste its Client ID here.")
         }
     }
 
@@ -50,27 +51,28 @@ struct FitbitSettingsSection: View {
         Button(role: .destructive) {
             disconnect()
         } label: {
-            Text("Disconnect Fitbit")
+            Text("Disconnect")
         }
         .disabled(isWorking)
     }
 
     @ViewBuilder
     private var setupRows: some View {
-        HStack {
-            Text("Client ID")
-            Spacer()
-            TextField("22XXXX", text: $clientID)
-                .multilineTextAlignment(.trailing)
+        VStack(alignment: .leading, spacing: 4) {
+            Text("OAuth Client ID")
+                .font(.footnote)
+                .foregroundColor(.secondary)
+            TextField("123456-abc.apps.googleusercontent.com", text: $clientID)
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
+                .keyboardType(.URL)
                 .focused($clientIDFocused)
                 .submitLabel(.done)
-                .onSubmit { FitbitConfig.clientID = clientID }
+                .onSubmit { GoogleHealthConfig.clientID = clientID }
         }
 
         Button {
-            FitbitConfig.clientID = clientID
+            GoogleHealthConfig.clientID = clientID
             connect()
         } label: {
             HStack {
@@ -81,11 +83,16 @@ struct FitbitSettingsSection: View {
         }
         .disabled(isWorking || clientID.trimmingCharacters(in: .whitespaces).isEmpty)
 
-        Button {
-            UIPasteboard.general.string = FitbitConfig.redirectURI
-            message = "Copied \(FitbitConfig.redirectURI) — paste it as the Redirect URL on your Fitbit app."
-        } label: {
-            Label("Copy redirect URL", systemImage: "doc.on.doc")
+        // The redirect Google needs is derived from the Client ID, so it can
+        // only be shown once one has been entered.
+        if !clientID.trimmingCharacters(in: .whitespaces).isEmpty {
+            Button {
+                GoogleHealthConfig.clientID = clientID
+                UIPasteboard.general.string = GoogleHealthConfig.redirectURI
+                message = "Copied \(GoogleHealthConfig.redirectURI)"
+            } label: {
+                Label("Copy redirect URI", systemImage: "doc.on.doc")
+            }
         }
     }
 
@@ -97,10 +104,10 @@ struct FitbitSettingsSection: View {
         message = nil
         Task {
             do {
-                try await FitbitAuth.shared.connect()
+                try await GoogleHealthAuth.shared.connect()
                 isConnected = true
                 message = "Connected. Open the Health tab and tap Sync to pull your history."
-            } catch let error as FitbitError {
+            } catch let error as GoogleHealthError {
                 // Cancelling isn't a failure worth shouting about.
                 if case .cancelled = error { message = nil } else { message = error.errorDescription }
             } catch {
@@ -114,7 +121,7 @@ struct FitbitSettingsSection: View {
         isWorking = true
         message = nil
         Task {
-            await FitbitAuth.shared.disconnect()
+            await GoogleHealthAuth.shared.disconnect()
             isConnected = false
             isWorking = false
             message = "Disconnected. Life will fall back to Apple Health."

@@ -21,7 +21,7 @@ enum HealthSync {
     }
 
     static var activeSource: Source {
-        if FitbitService.shared.isConnected { return .fitbit }
+        if GoogleHealthService.shared.isConnected { return .fitbit }
         if HKHealthStoreAvailability.isAvailable { return .appleHealth }
         return .none
     }
@@ -56,10 +56,10 @@ enum HealthSync {
 
     private static func syncFitbit(appState: AppState, daysBack: Int) async -> Outcome {
         do {
-            // Fitbit allows 150 requests an hour and this fans out across a
-            // dozen endpoints, each chunked by its own range cap. A year-long
-            // pull is a lot of requests, so routine syncs stay short.
-            let result = try await FitbitService.shared.sync(daysBack: daysBack)
+            // Fans out across a dozen data types, each paginated — sleep is
+            // capped at 25 points per page — so a year-long pull is a lot of
+            // requests. Routine background syncs stay short deliberately.
+            let result = try await GoogleHealthService.shared.sync(daysBack: daysBack)
             appState.mergeHealthDays(result.days)
             appState.mergeSteps(result.steps)
             appState.setHealthSettings { $0.hasBackfilled = true }
@@ -72,7 +72,7 @@ enum HealthSync {
             }
             return Outcome(source: .fitbit, dayCount: result.days.count, message: message)
         } catch {
-            let text = (error as? FitbitError)?.errorDescription ?? error.localizedDescription
+            let text = (error as? GoogleHealthError)?.errorDescription ?? error.localizedDescription
             return Outcome(source: .fitbit, dayCount: 0, message: text)
         }
     }
