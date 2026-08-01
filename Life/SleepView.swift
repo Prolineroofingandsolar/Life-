@@ -392,6 +392,15 @@ private struct SleepScoreCard: View {
         HealthInsights.sleepScoreBreakdown(for: night, history: history, settings: settings)
     }
 
+    /// Why a night went unscored. Silence here reads as a bug; the measured
+    /// figures above are unaffected and remain accurate.
+    private var unscoreableReason: String {
+        if !SleepAnalysis.isScoreable(night) {
+            return "This night wasn't recorded with enough sleep-stage detail to estimate a score. The measured figures above are unaffected."
+        }
+        return "Restoration needs about ten nights of resting heart rate or HRV before it knows what's normal for you. Rather than guess, there's no score until then — the measured figures above are unaffected."
+    }
+
     private var measuredOn: String {
         guard let date = _dayKeyFormatter.date(from: night.dayKey) else { return night.dayKey }
         return date.formatted(date: .abbreviated, time: .omitted)
@@ -424,10 +433,14 @@ private struct SleepScoreCard: View {
                     disclaimer(breakdown)
                 }
             } else {
-                Text("This night doesn't carry enough stage detail to estimate a score. The measured figures above are still accurate.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("No estimated score for this night")
+                        .font(.subheadline.weight(.semibold))
+                    Text(unscoreableReason)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
     }

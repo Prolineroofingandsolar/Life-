@@ -578,32 +578,39 @@ enum HealthInsights {
             available += 25
         }
 
-        // Restoration — how settled the body was, against its own baselines.
-        // Each sub-signal is optional; whatever's present is averaged.
-        var restoration = 0.0
+        // Restoration — how settled the body was, measured against its own
+        // baselines.
+        //
+        // This term *requires* a baseline-backed cardiac signal. It used to fall
+        // back to whatever was available, which produced nonsense: SpO2 alone
+        // would score 25/25, because 97% is unremarkable and scored as if it
+        // were exceptional. Combined with duration at 50/50 for simply hitting
+        // the goal, ordinary nights came out at 98. A term meaning "how
+        // recovered were you" cannot be answered by a number that reads the same
+        // for everyone every night.
         var parts: [Double] = []
         if let hr = night.restingHr, let hrBaseline = baseline(history, { $0.restingHr }) {
             // Sitting at your baseline scores 0.6, not full marks — the top of
-            // each scale is reserved for a night that's better than your normal,
-            // which is what stops ordinary nights piling up at 100.
+            // the scale is reserved for a night better than your normal.
             parts.append(clamp(0.6 - (hr - hrBaseline) / 11))
         }
         if let hrv = night.deepSleepHrvMs ?? night.hrvMs,
            let hrvBaseline = baseline(history, { $0.deepSleepHrvMs ?? $0.hrvMs }), hrvBaseline > 0 {
             parts.append(clamp(0.6 + (hrv - hrvBaseline) / (hrvBaseline * 0.7)))
         }
-        if let spo2 = night.spo2Pct {
-            // 97%+ is unremarkable; below 92% is worth noticing.
-            parts.append(clamp((spo2 - 90) / 7))
-        }
-        if !parts.isEmpty {
-            restoration = (parts.reduce(0, +) / Double(parts.count)) * 25
-            available += 25
-        } else if let efficiency = night.sleepEfficiency {
-            // No baselines yet — fall back to efficiency so the term isn't
-            // simply missing for the first fortnight.
-            restoration = clamp((efficiency - 0.75) / 0.22) * 25
-            available += 25
+
+        // Without a baseline there is no honest restoration figure, and
+        // redistributing its weight would inflate the total rather than admit
+        // the gap. Better to show the measured facts and no score.
+        guard !parts.isEmpty else { return nil }
+
+        var restoration = (parts.reduce(0, +) / Double(parts.count)) * 25
+        available += 25
+
+        // SpO2 only ever subtracts. Desaturation is worth flagging; a normal
+        // reading is not an achievement and must not earn points.
+        if let spo2 = night.spo2Pct, spo2 < 92 {
+            restoration *= clamp(0.5 + (spo2 - 88) / 8)
         }
 
         let total = Int(((duration + quality + restoration) / available * 100).rounded())
