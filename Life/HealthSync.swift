@@ -84,7 +84,12 @@ enum HealthSync {
             appState.mergeHealthDays(result.days)
             appState.mergeSleepNights(result.nights)
             appState.mergeSteps(result.steps)
-            appState.setHealthSettings { $0.hasBackfilled = true }
+            appState.setHealthSettings {
+                $0.hasBackfilled = true
+                $0.lastSyncedAt = Date()
+                $0.lastSyncSource = Source.fitbit.rawValue
+                $0.lastSyncFailures = result.failures
+            }
 
             var message: String?
             if result.days.isEmpty && result.steps.isEmpty {
@@ -116,7 +121,15 @@ enum HealthSync {
 
         appState.mergeHealthDays(Array(days.values))
         appState.mergeSteps(steps)
-        appState.setHealthSettings { $0.hasBackfilled = true }
+        appState.setHealthSettings {
+            $0.hasBackfilled = true
+            $0.lastSyncedAt = Date()
+            $0.lastSyncSource = Source.appleHealth.rawValue
+            // HealthKit reports success even for denied types, so there's no
+            // per-metric failure list to record here — an empty list means
+            // "nothing known to have failed", not "everything arrived".
+            $0.lastSyncFailures = []
+        }
 
         let message = (days.isEmpty && steps.isEmpty)
             ? "Apple Health returned nothing. Check your tracker is writing into the Health app, and that Life has read access under Settings ▸ Health ▸ Data Access & Devices."

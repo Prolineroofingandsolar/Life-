@@ -347,26 +347,60 @@ struct HealthView: View {
     // MARK: Sources
 
     @ViewBuilder
+    /// Where the numbers come from and how fresh they are.
+    ///
+    /// Always shown, including on the Fitbit path — it previously rendered
+    /// nothing at all unless Apple Health had listed some sources, so when a
+    /// figure looked wrong there was no way to tell whether it was stale, part
+    /// of a failed import, or genuinely miscounted. All three look identical
+    /// on a chart.
+    @MainActor
     private var sourcesCard: some View {
-        if !sources.isEmpty {
+        NavigationLink { HealthDataCheckView() } label: {
             HealthCard {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Sources")
-                        .font(.subheadline.weight(.semibold))
-                    ForEach(sources, id: \.self) { source in
-                        HStack(spacing: 10) {
-                            Circle().fill(Color.green).frame(width: 7, height: 7)
-                            Text(source)
-                                .font(.footnote)
-                            Spacer()
-                        }
-                    }
-                    Text("Apps and devices writing into Apple Health that Life can read.")
+                    HealthCardHeader(title: "Sources")
+                    InfoRow(label: "Reading from", value: HealthSync.source(for: settings).rawValue)
+                    InfoRow(label: "Last updated", value: lastSyncedDescription)
+                    appleSourceList
+                    failuresLine
+                    Text("Figures are only as fresh as the last sync. Tap to check what's actually stored.")
                         .font(.caption2)
                         .foregroundColor(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var lastSyncedDescription: String {
+        guard let date = settings.lastSyncedAt else { return "Never" }
+        return date.formatted(date: .omitted, time: .shortened)
+            + " · " + date.formatted(.relative(presentation: .numeric))
+    }
+
+    @ViewBuilder
+    private var appleSourceList: some View {
+        ForEach(sources, id: \.self) { source in
+            HStack(spacing: 10) {
+                Circle().fill(Color.green).frame(width: 7, height: 7)
+                Text(source)
+                    .font(.footnote)
+                Spacer()
+            }
+        }
+    }
+
+    /// Names what didn't come through, rather than letting a partial sync look
+    /// complete.
+    @ViewBuilder
+    private var failuresLine: some View {
+        if !settings.lastSyncFailures.isEmpty {
+            Text("Didn't come through: " + settings.lastSyncFailures.joined(separator: ", "))
+                .font(.caption)
+                .foregroundColor(.orange)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

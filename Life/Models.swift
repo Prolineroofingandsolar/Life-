@@ -822,9 +822,20 @@ struct HealthSettings: Codable {
     /// whichever synced last.
     var stepSource: StepSource = .automatic
 
+    /// When data last actually arrived, which device it came from, and
+    /// anything that didn't come through.
+    ///
+    /// Without these there is no way to tell a stale figure from a broken one
+    /// — both look like a number that's too low, and they need opposite
+    /// fixes. Every figure on screen is only as fresh as this.
+    var lastSyncedAt: Date? = nil
+    var lastSyncSource: String? = nil
+    var lastSyncFailures: [String] = []
+
     enum CodingKeys: String, CodingKey {
         case sleepGoalMinutes, exerciseGoalMinutes, showRecoveryTile, hasBackfilled
         case stepSource
+        case lastSyncedAt, lastSyncSource, lastSyncFailures
     }
 
     init() {}
@@ -844,6 +855,9 @@ struct HealthSettings: Codable {
         stepSource = StepSource(
             rawValue: try c.decodeIfPresent(String.self, forKey: .stepSource) ?? ""
         ) ?? .automatic
+        lastSyncedAt = try c.decodeIfPresent(Date.self, forKey: .lastSyncedAt)
+        lastSyncSource = try c.decodeIfPresent(String.self, forKey: .lastSyncSource)
+        lastSyncFailures = try c.decodeIfPresent([String].self, forKey: .lastSyncFailures) ?? []
     }
 }
 

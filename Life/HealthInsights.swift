@@ -386,25 +386,66 @@ enum HealthInsights {
         return Array(ordered.suffix(weeks))
     }
 
-    /// This calendar week's total and the previous week's.
+    /// This week so far, against the same stretch of last week.
     ///
-    /// Keyed to the actual weeks rather than to whichever entries happen to be
-    /// last in the list. `weeklyTotals` omits weeks with no readings, so taking
-    /// the final two elements labelled *last* week's figure as "this week"
-    /// every Monday morning, and compared it against the week before that.
-    static func weekOnWeek(
-        _ days: [ActivityDay],
-        metric: ActivityMetric
-    ) -> (thisWeek: Double, lastWeek: Double?) {
-        let calendar = Calendar.current
-        guard let thisStart = calendar.dateInterval(of: .weekOfYear, for: Date())?.start,
-              let lastStart = calendar.date(byAdding: .weekOfYear, value: -1, to: thisStart)
-        else { return (0, nil) }
+    /// Two things this gets right that the obvious version doesn't.
+    ///
+    /// It keys on the actual calendar weeks rather than the last two entries
+    /// of `weeklyTotals`, which omits weeks with no readings — so the final
+    /// entry is *last* week whenever this week hasn't recorded anything yet,
+    /// and reading it as "this week" showed the wrong number under the wrong
+    /// heading.
+    ///
+    /// And it compares like with like. A week that is one day old was being
+    /// set against a complete seven-day week, so the card read as a collapse
+    /// every Monday regardless of how much you'd walked. `lastWeekToDate`
+    /// covers the same number of elapsed days, which is the only comparison
+    /// that means anything mid-week.
+    struct WeekToDate {
+        var start: Date
+        var thisWeek: Double
+        /// Last week over the same number of days. Nil when last week has no
+        /// readings at all.
+        var lastWeekToDate: Double?
+        /// Last week in full, for context once this week completes.
+        var lastWeekTotal: Double?
+        /// 1 on the first day of the week, 7 on the last.
+        var daysElapsed: Int
+        var daysInWeek: Int
+    }
 
-        let totals = weeklyTotals(days, metric: metric)
-        return (
-            totals.first { $0.weekStart == thisStart }?.total ?? 0,
-            totals.first { $0.weekStart == lastStart }?.total
+    static func weekToDate(_ days: [ActivityDay], metric: ActivityMetric) -> WeekToDate? {
+        let calendar = Calendar.current
+        let now = Date()
+        guard let thisStart = calendar.dateInterval(of: .weekOfYear, for: now)?.start,
+              let lastStart = calendar.date(byAdding: .weekOfYear, value: -1, to: thisStart)
+        else { return nil }
+
+        let length = calendar.range(of: .day, in: .weekOfYear, for: now)?.count ?? 7
+        let elapsed = min(
+            length,
+            (calendar.dateComponents([.day], from: thisStart, to: now).day ?? 0) + 1
+        )
+        // The matching cut-off in last week: the same number of days in.
+        let lastCutoff = calendar.date(byAdding: .day, value: elapsed, to: lastStart) ?? lastStart
+
+        func total(from: Date, to: Date) -> Double? {
+            let values = days.compactMap { day -> Double? in
+                guard let date = day.date, date >= from, date < to,
+                      let value = metric.value(from: day) else { return nil }
+                return value
+            }
+            return values.isEmpty ? nil : values.reduce(0, +)
+        }
+
+        let lastEnd = calendar.date(byAdding: .day, value: length, to: lastStart) ?? thisStart
+        return WeekToDate(
+            start: thisStart,
+            thisWeek: total(from: thisStart, to: now) ?? 0,
+            lastWeekToDate: total(from: lastStart, to: lastCutoff),
+            lastWeekTotal: total(from: lastStart, to: lastEnd),
+            daysElapsed: max(1, elapsed),
+            daysInWeek: length
         )
     }
 

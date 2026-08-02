@@ -1268,7 +1268,15 @@ final class AppState {
         guard !stepsByDay.isEmpty else { return }
         for (key, steps) in stepsByDay {
             var day = careDays[key] ?? CareDay(dayKey: key)
-            day.steps = max(0, steps)
+            // Today is still being counted, and a sync that catches the source
+            // mid-import can return less than it did a minute ago — which made
+            // the step count visibly go *down* during the day. Keep the higher
+            // figure for today only.
+            //
+            // Past days stay a straight overwrite: there the source is
+            // authoritative and a correction should be allowed to reduce the
+            // number, which a max() would silently block forever.
+            day.steps = key == todayKey ? max(day.steps, max(0, steps)) : max(0, steps)
             careDays[key] = day
         }
         save()

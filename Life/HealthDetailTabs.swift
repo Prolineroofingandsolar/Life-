@@ -492,45 +492,67 @@ struct HealthActivityTab: View {
         }
     }
 
-    /// The real calendar week, not the last entry in the list.
-    ///
-    /// `weeklyTotals` leaves out weeks with no readings, so reading the final
-    /// element as "this week" showed *last* week's total under that heading
-    /// every Monday before the first sync — and compared it against the week
-    /// before that.
-    private var thisWeek: (thisWeek: Double, lastWeek: Double?) {
-        HealthInsights.weekOnWeek(history, metric: metric)
+    private var week: HealthInsights.WeekToDate? {
+        HealthInsights.weekToDate(history, metric: metric)
     }
 
     @ViewBuilder
     private var weekComparisonCard: some View {
-        let figures = thisWeek
-        HealthCard {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("This week")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                HStack(alignment: .lastTextBaseline, spacing: 4) {
-                    Text(metric.format(figures.thisWeek))
-                        .font(.system(size: 30, weight: .bold, design: .rounded))
-                    Text(metric.unit)
-                        .font(.subheadline)
+        if let week {
+            HealthCard {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(Self.periodCaption(week))
+                        .font(.caption)
                         .foregroundColor(.secondary)
-                }
-                if let previous = figures.lastWeek, previous > 0 {
-                    weekDelta(current: figures.thisWeek, previous: previous)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(alignment: .lastTextBaseline, spacing: 4) {
+                        Text(metric.format(week.thisWeek))
+                            .font(.system(size: 30, weight: .bold, design: .rounded))
+                        Text(metric.unit)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                    weekDelta(week)
                 }
             }
         }
     }
 
+    /// "This week so far · Mon 27 Jul onwards · day 7 of 7".
+    ///
+    /// Naming the period is the point. A week that's one day old showing a
+    /// single day's steps under a bare "This week" is indistinguishable from a
+    /// broken total — and on a phone set to a Sunday-start region, that's
+    /// exactly what Sunday looks like.
+    private static func periodCaption(_ week: HealthInsights.WeekToDate) -> String {
+        let from = week.start.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
+        return "This week so far · from " + from
+            + " · day " + String(week.daysElapsed) + " of " + String(week.daysInWeek)
+    }
+
+    /// Compared against the same number of days last week, never against a
+    /// complete week — otherwise every Monday reads as a collapse.
     @ViewBuilder
-    private func weekDelta(current: Double, previous: Double) -> some View {
-        let change = (current - previous) / previous * 100
-        let up = change >= 0
-        Text("\(abs(Int(change.rounded())))% \(up ? "up" : "down") on last week")
-            .font(.caption)
-            .foregroundColor(up ? .green : .secondary)
+    private func weekDelta(_ week: HealthInsights.WeekToDate) -> some View {
+        if let previous = week.lastWeekToDate, previous > 0 {
+            let change = (week.thisWeek - previous) / previous * 100
+            let up = change >= 0
+            Text(Self.deltaText(percent: change, up: up, days: week.daysElapsed))
+                .font(.caption)
+                .foregroundColor(up ? .green : .secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        } else {
+            Text("Nothing recorded over the same days last week to compare against")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private static func deltaText(percent: Double, up: Bool, days: Int) -> String {
+        let magnitude = abs(Int(percent.rounded()))
+        let span = days == 1 ? "same day" : "same \(days) days"
+        return String(magnitude) + "% " + (up ? "up" : "down") + " on the " + span + " last week"
     }
 
     @ViewBuilder
