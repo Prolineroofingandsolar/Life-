@@ -39,12 +39,33 @@ enum SleepScore {
 
     // MARK: Result
 
+    /// The ten weighted parts of the base score. Each is 0–100.
     struct Components: Equatable {
-        var duration: Double = 0
-        var continuity: Double = 0
-        var restorative: Double = 0
-        var latency: Double = 0
-        var consistency: Double = 0
+        var duration: Double = 0            // 25%
+        var continuity: Double = 0          // 25%
+        var stages: Double = 0              // 15%
+        var latency: Double = 0             // 10%
+        var consistency: Double = 0         // 10%
+        var sleepingHeartRate: Double = 0   // 5%
+        var hrv: Double = 0                 // 4%
+        var respiratoryRate: Double = 0     // 2%
+        var oxygenSaturation: Double = 0    // 2%
+        var temperatureStability: Double = 0 // 2%
+
+        /// Weights sum to 1.0. Sleep architecture dominates deliberately; the
+        /// physiological signals refine rather than drive the number.
+        var weighted: Double {
+            duration * 0.25
+            + continuity * 0.25
+            + stages * 0.15
+            + latency * 0.10
+            + consistency * 0.10
+            + sleepingHeartRate * 0.05
+            + hrv * 0.04
+            + respiratoryRate * 0.02
+            + oxygenSaturation * 0.02
+            + temperatureStability * 0.02
+        }
     }
 
     /// A scored night, with everything needed to explain and debug it.
@@ -62,47 +83,6 @@ enum SleepScore {
         var title: String { "Estimated Sleep Score" }
     }
 
-    /// The measurements a night must supply to be scored. Deliberately a plain
-    /// value type rather than `HealthDay`, so the model can be tested without
-    /// any of the app's storage.
-    struct Night {
-        var minutesAsleep: Int
-        var timeInBed: Int
-        var lightMinutes: Int?
-        var deepMinutes: Int?
-        var remMinutes: Int?
-        var genericSleepMinutes: Int = 0
-        var fullAwakeningCount: Int = 0
-        var interruptionMinutes: Int = 0
-        var restlessMinutes: Int = 0
-        var sleepLatencyMinutes: Int?
-        /// Clock minutes past midnight.
-        var bedtimeClockMinutes: Double?
-        var wakeClockMinutes: Double?
-        var heartRateAvailable: Bool = false
-        var movementAvailable: Bool = false
-
-        var sleepEfficiency: Double? {
-            guard timeInBed > 0 else { return nil }
-            return min(1, Double(minutesAsleep) / Double(timeInBed))
-        }
-
-        /// Stage detail is required. Without it there is no score at all.
-        var hasStages: Bool { deepMinutes != nil || remMinutes != nil }
-    }
-
-    /// The 14-day rolling baseline the consistency component scores against.
-    struct Baseline {
-        var medianBedtimeClockMinutes: Double?
-        var medianWakeClockMinutes: Double?
-        var validNights: Int = 0
-
-        /// Fewer than seven nights isn't a baseline worth scoring against.
-        var isSufficient: Bool {
-            validNights >= 7 && medianBedtimeClockMinutes != nil && medianWakeClockMinutes != nil
-        }
-    }
-
     // MARK: Constants
 
     /// Substituted for any component whose inputs are missing. Deliberately
@@ -110,64 +90,61 @@ enum SleepScore {
     /// raise the score.
     static let neutralComponentValue: Double = 70
 
+    /// Bumped whenever the scoring rules change, so calibration records made
+    /// against an older model can be identified rather than silently mixed in.
+    static let modelVersion = "base-2"
+
     // MARK: Entry point
 
-    /// Scores a night, or returns nil when there isn't enough data to try.
+    /// Scores a night from its derived features.
     ///
     /// Returns nil only when sleep stages are unavailable — every other gap is
-    /// handled with a neutral component and a confidence downgrade.
-    static func calculate(night: Night, baseline: Baseline) -> Result? {
-        guard night.hasStages, night.minutesAsleep > 0 else { return nil }
+    /// handled with a neutral component and a lowered confidence, never by
+    /// assuming the best.
+    static func calculate(features: SleepFeatures, baselines: SleepBaselines) -> Result? {
+        guard features.hasStages, features.minutesAsleep > 0 else { return nil }
 
-        var missing: [String] = []
+        var components = Components()
+        components.duration = durationScore(minutesAsleep: features.minutesAsleep)
+        components.continuity = continuityScore(features: features)
 
-        let duration = durationScore(minutesAsleep: night.minutesAsleep)
-        let continuity = continuityScore(night: night)
+        guard let stages = stageScore(features: features) else { return nil }
+        components.stages = stages
 
-        guard let restorative = restorativeScore(night: night) else { return nil }
-
-        let latency: Double
-        if let latencyMinutes = night.sleepLatencyMinutes {
-            latency = latencyScore(minutes: Double(latencyMinutes))
+        if let latency = features.sleepLatencyMinutes {
+            components.latency = latencyScore(minutes: Double(latency))
         } else {
-            latency = neutralComponentValue
-            missing.append("latency")
+            components.latency = neutralComponentValue
         }
 
-        let consistency: Double
-        if baseline.isSufficient,
-           let bedtime = night.bedtimeClockMinutes,
-           let wake = night.wakeClockMinutes,
-           let medianBedtime = baseline.medianBedtimeClockMinutes,
-           let medianWake = baseline.medianWakeClockMinutes {
-            let bedtimeDeviation = circularClockDifference(bedtime, medianBedtime)
-            let wakeDeviation = circularClockDifference(wake, medianWake)
-            consistency = consistencyScore(averageDeviation: (bedtimeDeviation + wakeDeviation) / 2)
+        if baselines.hasSchedule,
+           let bedtime = features.bedtimeClockMinutes,
+           let wake = features.wakeClockMinutes,
+           let medianBedtime = baselines.medianBedtimeClockMinutes,
+           let medianWake = baselines.medianWakeClockMinutes {
+            let deviation = (circularClockDifference(bedtime, medianBedtime)
+                             + circularClockDifference(wake, medianWake)) / 2
+            components.consistency = consistencyScore(averageDeviation: deviation)
         } else {
-            consistency = neutralComponentValue
-            missing.append("consistencyBaseline")
+            components.consistency = neutralComponentValue
         }
 
-        if !night.heartRateAvailable { missing.append("heartRate") }
-        if !night.movementAvailable { missing.append("movement") }
+        // Physiological components score the *deviation from this person's own
+        // baseline*, not an absolute value. A resting heart rate of 58 says
+        // nothing without knowing whether that is high or low for them.
+        components.sleepingHeartRate = deviationScore(
+            features.heartRateDeltaFromBaseline, scale: 6, higherIsBetter: false)
+        components.hrv = deviationScore(
+            features.hrvDeltaFromBaseline, scale: baselines.hrv.map { max(5, $0 * 0.25) } ?? 12,
+            higherIsBetter: true)
+        components.respiratoryRate = deviationScore(
+            features.respiratoryRateDeltaFromBaseline, scale: 1.5, higherIsBetter: false)
+        components.temperatureStability = deviationScore(
+            features.temperatureDeltaFromBaseline, scale: 0.5, higherIsBetter: false, symmetric: true)
+        components.oxygenSaturation = oxygenScore(features.spo2Average)
 
-        let components = Components(
-            duration: duration,
-            continuity: continuity,
-            restorative: restorative,
-            latency: latency,
-            consistency: consistency
-        )
-
-        let weighted =
-            duration * 0.30
-            + continuity * 0.30
-            + restorative * 0.20
-            + latency * 0.10
-            + consistency * 0.10
-
-        let ceilings = applicableCeilings(night: night)
-        // The lowest applicable ceiling wins.
+        let weighted = components.weighted
+        let ceilings = applicableCeilings(features: features)
         let cap = ceilings.map(\.limit).min() ?? 100
         // Rounded once, after every calculation and ceiling.
         let final = Int(min(weighted, Double(cap)).rounded())
@@ -176,10 +153,10 @@ enum SleepScore {
             score: max(0, min(100, final)),
             category: Category(score: final),
             components: components,
-            confidence: confidence(night: night, missing: missing),
+            confidence: confidence(features: features),
             weightedScoreBeforeCeilings: (weighted * 10).rounded() / 10,
             appliedCeilings: ceilings.map(\.reason),
-            missingFields: missing
+            missingFields: features.missingFields
         )
     }
 
@@ -194,17 +171,17 @@ enum SleepScore {
         ])
     }
 
-    static func continuityScore(night: Night) -> Double {
-        let efficiency = (night.sleepEfficiency ?? 0) * 100
+    static func continuityScore(features: SleepFeatures) -> Double {
+        let efficiency = (features.sleepEfficiency ?? 0) * 100
         let efficiencyScore = interpolate(efficiency, [
             (60, 20), (70, 35), (75, 50), (80, 65),
             (85, 78), (90, 88), (95, 95), (100, 98)
         ])
 
         let penalised = efficiencyScore
-            - (Double(night.fullAwakeningCount) * 6)
-            - (Double(night.interruptionMinutes) * 0.35)
-            - min(10, Double(night.restlessMinutes) * 0.10)
+            - (Double(features.fullAwakeningCount) * 6)
+            - (Double(features.interruptionMinutes) * 0.35)
+            - min(10, Double(features.restlessMinutes) * 0.10)
 
         return clamp(penalised)
     }
@@ -217,12 +194,11 @@ enum SleepScore {
     ///
     /// Nil when stages are unavailable — the night then gets no score at all
     /// rather than a guess.
-    static func restorativeScore(night: Night) -> Double? {
-        guard night.hasStages, night.minutesAsleep > 0 else { return nil }
+    static func stageScore(features: SleepFeatures) -> Double? {
+        guard features.hasStages, features.minutesAsleep > 0 else { return nil }
 
-        let asleep = Double(night.minutesAsleep)
-        let deepRatio = Double(night.deepMinutes ?? 0) / asleep * 100
-        let remRatio = Double(night.remMinutes ?? 0) / asleep * 100
+        let deepRatio = features.deepPercentage ?? 0
+        let remRatio = features.remPercentage ?? 0
 
         let deepScore = interpolate(deepRatio, [
             (0, 20), (5, 40), (10, 70), (15, 95),
@@ -260,12 +236,12 @@ enum SleepScore {
     }
 
     /// Every ceiling that applies to a night. The caller takes the lowest.
-    static func applicableCeilings(night: Night) -> [Ceiling] {
+    static func applicableCeilings(features: SleepFeatures) -> [Ceiling] {
         var out: [Ceiling] = []
 
         // Ordered most severe first; only the tightest matching band is added
         // so diagnostics don't list three overlapping duration ceilings.
-        switch night.minutesAsleep {
+        switch features.minutesAsleep {
         case ..<240: out.append(.init(limit: 49, reason: "under 4h asleep: max 49"))
         case ..<300: out.append(.init(limit: 59, reason: "under 5h asleep: max 59"))
         case ..<360: out.append(.init(limit: 69, reason: "under 6h asleep: max 69"))
@@ -273,35 +249,36 @@ enum SleepScore {
         default: break
         }
 
-        if let efficiency = night.sleepEfficiency {
+        if let efficiency = features.sleepEfficiency {
             if efficiency < 0.75 { out.append(.init(limit: 59, reason: "efficiency under 75%: max 59")) }
             else if efficiency < 0.80 { out.append(.init(limit: 69, reason: "efficiency under 80%: max 69")) }
             else if efficiency < 0.85 { out.append(.init(limit: 79, reason: "efficiency under 85%: max 79")) }
         }
 
-        if night.interruptionMinutes > 60 {
+        if features.interruptionMinutes > 60 {
             out.append(.init(limit: 69, reason: "over 60 interruption minutes: max 69"))
-        } else if night.interruptionMinutes > 45 {
+        } else if features.interruptionMinutes > 45 {
             out.append(.init(limit: 74, reason: "over 45 interruption minutes: max 74"))
-        } else if night.interruptionMinutes > 30 {
+        } else if features.interruptionMinutes > 30 {
             out.append(.init(limit: 82, reason: "over 30 interruption minutes: max 82"))
         }
 
-        if night.fullAwakeningCount >= 4 {
+        if features.fullAwakeningCount >= 4 {
             out.append(.init(limit: 69, reason: "four or more full awakenings: max 69"))
-        } else if night.fullAwakeningCount >= 3 {
+        } else if features.fullAwakeningCount >= 3 {
             out.append(.init(limit: 76, reason: "three full awakenings: max 76"))
-        } else if night.fullAwakeningCount == 2 {
+        } else if features.fullAwakeningCount == 2 {
             out.append(.init(limit: 84, reason: "two full awakenings: max 84"))
         }
 
-        if let latency = night.sleepLatencyMinutes, latency > 60 {
+        if let latency = features.sleepLatencyMinutes, latency > 60 {
             out.append(.init(limit: 79, reason: "over 60 minutes to fall asleep: max 79"))
         }
 
-        if !night.heartRateAvailable || !night.movementAvailable {
-            out.append(.init(limit: 88, reason: "heart-rate or movement unavailable: max 88"))
-        }
+        // Deliberately no ceiling for missing movement or heart rate. Those
+        // gaps are a statement about how much is known, not about how well the
+        // night went, so they reduce *confidence* instead. Capping the score
+        // for them would penalise the user for their device's limitations.
 
         return out
     }
@@ -310,10 +287,42 @@ enum SleepScore {
 
     /// Confidence is reported separately and never alters the score. A night
     /// with poor data does not get a higher number to compensate.
-    static func confidence(night: Night, missing: [String]) -> Confidence {
-        if missing.contains("latency") || missing.contains("consistencyBaseline") { return .low }
-        if !night.heartRateAvailable || !night.movementAvailable { return .medium }
+    static func confidence(features: SleepFeatures) -> Confidence {
+        let missing = Set(features.missingFields)
+        if missing.contains("latency") || missing.contains("personalBaseline") || missing.contains("stages") {
+            return .low
+        }
+        if !missing.isEmpty { return .medium }
         return .high
+    }
+
+    // MARK: Physiological components
+
+    /// Scores a deviation from the user's own baseline on a 0–100 scale.
+    ///
+    /// Sitting on the baseline scores 70, not 100 — the top of the range is for
+    /// a night measurably better than this person's normal, which is what stops
+    /// unremarkable nights accumulating full marks across five components.
+    ///
+    /// Returns the neutral value when there's no baseline to compare against.
+    static func deviationScore(
+        _ delta: Double?,
+        scale: Double,
+        higherIsBetter: Bool,
+        symmetric: Bool = false
+    ) -> Double {
+        guard let delta, scale > 0 else { return neutralComponentValue }
+        // Temperature is symmetric: drifting either way from baseline is a
+        // signal, so the magnitude is what matters.
+        let signed = symmetric ? -abs(delta) : (higherIsBetter ? delta : -delta)
+        return clamp(70 + (signed / scale) * 30)
+    }
+
+    /// Blood oxygen as a general wellness signal only — deliberately not a
+    /// medical interpretation. Neutral when unavailable.
+    static func oxygenScore(_ average: Double?) -> Double {
+        guard let average else { return neutralComponentValue }
+        return interpolate(average, [(88, 40), (92, 65), (95, 85), (97, 95), (99, 100)])
     }
 
     // MARK: Maths
@@ -367,55 +376,11 @@ enum SleepScore {
 
 extension SleepScore {
 
-    /// Builds a scoreable night from a stored `HealthDay`.
-    ///
-    /// Movement is reported as **unavailable**, and that is not an oversight.
-    /// The API supplies stage classifications, not the epoch-level movement and
-    /// restlessness data Google's own scoring uses. Stage-derived awake
-    /// intervals are a weaker proxy, and treating them as the real thing would
-    /// let nights reach scores the underlying data can't justify — which is
-    /// exactly how the earlier model produced 95s. So the 88 ceiling applies,
-    /// "movement" appears in `missingFields`, and confidence caps at medium.
-    static func night(from day: HealthDay) -> Night {
-        Night(
-            minutesAsleep: day.sleepMin ?? 0,
-            timeInBed: day.timeInBedMin ?? day.sleepMin ?? 0,
-            lightMinutes: day.lightMin,
-            deepMinutes: day.deepMin,
-            remMinutes: day.remMin,
-            genericSleepMinutes: 0,
-            fullAwakeningCount: day.awakenings ?? 0,
-            interruptionMinutes: day.interruptionMinutes ?? 0,
-            restlessMinutes: day.restlessMinutes ?? 0,
-            sleepLatencyMinutes: day.latencyMin,
-            bedtimeClockMinutes: day.bedtime.map(clockMinutes),
-            wakeClockMinutes: day.wakeTime.map(clockMinutes),
-            heartRateAvailable: day.restingHr != nil || day.hrvMs != nil || day.deepSleepHrvMs != nil,
-            movementAvailable: false
-        )
-    }
-
-    /// Rolling 14-day median bedtime and wake time, excluding the night being
-    /// scored so a night is never measured against itself.
-    static func baseline(from history: [HealthDay], excluding dayKey: String) -> Baseline {
-        let recent = history
-            .filter { $0.dayKey != dayKey && $0.bedtime != nil && $0.wakeTime != nil }
-            .suffix(14)
-
-        return Baseline(
-            medianBedtimeClockMinutes: medianClockMinutes(recent.compactMap { $0.bedtime.map(clockMinutes) }),
-            medianWakeClockMinutes: medianClockMinutes(recent.compactMap { $0.wakeTime.map(clockMinutes) }),
-            validNights: recent.count
-        )
-    }
-
+    /// Scores a stored night, deriving its features and baselines first.
     static func calculate(day: HealthDay, history: [HealthDay]) -> Result? {
-        calculate(night: night(from: day), baseline: baseline(from: history, excluding: day.dayKey))
-    }
-
-    private static func clockMinutes(_ date: Date) -> Double {
-        let parts = Calendar.current.dateComponents([.hour, .minute], from: date)
-        return Double((parts.hour ?? 0) * 60 + (parts.minute ?? 0))
+        let baselines = SleepFeatureBuilder.baselines(from: history, excluding: day.dayKey)
+        let features = SleepFeatureBuilder.features(for: day, history: history, baselines: baselines)
+        return calculate(features: features, baselines: baselines)
     }
 }
 
@@ -424,8 +389,9 @@ extension SleepScore {
 extension SleepScore {
 
     /// Per-night structured diagnostics, for working out *why* a night scored
-    /// what it did without reverse-engineering it from the UI.
+    /// what it did without reverse-engineering it from the screen.
     struct Diagnostics: Codable {
+        var dayKey: String
         var minutesAsleep: Int
         var timeInBed: Int
         var sleepEfficiency: Double
@@ -434,49 +400,57 @@ extension SleepScore {
         var restlessMinutes: Int
         var deepMinutes: Int
         var remMinutes: Int
+        var lightMinutes: Int
+        var stageTransitionCount: Int
         var sleepLatency: Int?
         var durationScore: Int
         var continuityScore: Int
-        var restorativeScore: Int
+        var stageScore: Int
         var latencyScore: Int
         var consistencyScore: Int
+        var sleepingHeartRateScore: Int
+        var hrvScore: Int
+        var respiratoryRateScore: Int
+        var oxygenSaturationScore: Int
+        var temperatureScore: Int
+        var baseScore: Int
         var weightedScoreBeforeCeilings: Double
         var appliedCeilings: [String]
-        var finalScore: Int
         var confidence: String
         var missingFields: [String]
+        var modelVersion: String
     }
 
-    static func diagnostics(night: Night, result: Result) -> Diagnostics {
+    static func diagnostics(features: SleepFeatures, result: Result) -> Diagnostics {
         Diagnostics(
-            minutesAsleep: night.minutesAsleep,
-            timeInBed: night.timeInBed,
-            sleepEfficiency: ((night.sleepEfficiency ?? 0) * 1000).rounded() / 1000,
-            fullAwakeningCount: night.fullAwakeningCount,
-            interruptionMinutes: night.interruptionMinutes,
-            restlessMinutes: night.restlessMinutes,
-            deepMinutes: night.deepMinutes ?? 0,
-            remMinutes: night.remMinutes ?? 0,
-            sleepLatency: night.sleepLatencyMinutes,
+            dayKey: features.dayKey,
+            minutesAsleep: features.minutesAsleep,
+            timeInBed: features.timeInBed,
+            sleepEfficiency: ((features.sleepEfficiency ?? 0) * 1000).rounded() / 1000,
+            fullAwakeningCount: features.fullAwakeningCount,
+            interruptionMinutes: features.interruptionMinutes,
+            restlessMinutes: features.restlessMinutes,
+            deepMinutes: features.deepMinutes ?? 0,
+            remMinutes: features.remMinutes ?? 0,
+            lightMinutes: features.lightMinutes ?? 0,
+            stageTransitionCount: features.stageTransitionCount,
+            sleepLatency: features.sleepLatencyMinutes,
             durationScore: Int(result.components.duration.rounded()),
             continuityScore: Int(result.components.continuity.rounded()),
-            restorativeScore: Int(result.components.restorative.rounded()),
+            stageScore: Int(result.components.stages.rounded()),
             latencyScore: Int(result.components.latency.rounded()),
             consistencyScore: Int(result.components.consistency.rounded()),
+            sleepingHeartRateScore: Int(result.components.sleepingHeartRate.rounded()),
+            hrvScore: Int(result.components.hrv.rounded()),
+            respiratoryRateScore: Int(result.components.respiratoryRate.rounded()),
+            oxygenSaturationScore: Int(result.components.oxygenSaturation.rounded()),
+            temperatureScore: Int(result.components.temperatureStability.rounded()),
+            baseScore: result.score,
             weightedScoreBeforeCeilings: result.weightedScoreBeforeCeilings,
             appliedCeilings: result.appliedCeilings,
-            finalScore: result.score,
             confidence: result.confidence.rawValue,
-            missingFields: result.missingFields
+            missingFields: result.missingFields,
+            modelVersion: modelVersion
         )
-    }
-
-    /// Pretty-printed JSON for the debug sheet and for pasting into a bug report.
-    static func diagnosticsJSON(night: Night, result: Result) -> String {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        guard let data = try? encoder.encode(diagnostics(night: night, result: result)),
-              let text = String(data: data, encoding: .utf8) else { return "{}" }
-        return text
     }
 }

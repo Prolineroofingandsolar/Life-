@@ -495,6 +495,9 @@ enum HealthInsights {
         /// Nil for an official score — there is no working to show for a number
         /// Life didn't compute.
         var estimate: SleepScore.Result? = nil
+        /// The personal calibration applied, when there's been enough evidence
+        /// to apply any. The base score inside `estimate` is never overwritten.
+        var adjustment: SleepScoreCalibration.Adjusted? = nil
 
         var isEstimate: Bool { origin == .estimated }
         var isProvisional: Bool { estimate?.confidence == .low }
@@ -526,7 +529,8 @@ enum HealthInsights {
     static func sleepScoreBreakdown(
         for night: HealthDay,
         history: [HealthDay],
-        settings: HealthSettings
+        settings: HealthSettings,
+        calibration: SleepScoreCalibration.Model? = nil
     ) -> SleepScoreBreakdown? {
         // An official score is displayed exactly as given — never recalculated,
         // averaged, normalised or blended. Nothing populates this today; see
@@ -543,15 +547,25 @@ enum HealthInsights {
             )
         }
 
-        guard let result = SleepScore.calculate(day: night, history: history) else { return nil }
+        let baselines = SleepFeatureBuilder.baselines(from: history, excluding: night.dayKey)
+        let features = SleepFeatureBuilder.features(for: night, history: history, baselines: baselines)
+        guard let result = SleepScore.calculate(features: features, baselines: baselines) else { return nil }
+
+        // Personal calibration is applied on top; the base score is carried
+        // through untouched alongside it.
+        let adjusted = calibration.map { SleepScoreCalibration.apply(model: $0, to: result, features: features) }
+        let displayed = adjusted?.adjustedScore ?? result.score
+        let category = SleepScore.Category(score: displayed)
+
         return SleepScoreBreakdown(
             origin: .estimated,
-            total: result.score,
-            label: result.category.rawValue,
-            tone: tone(for: result.category),
+            total: displayed,
+            label: category.rawValue,
+            tone: tone(for: category),
             device: night.sleepSourceDevice,
             dayKey: night.dayKey,
-            estimate: result
+            estimate: result,
+            adjustment: adjusted
         )
     }
 

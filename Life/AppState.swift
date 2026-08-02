@@ -74,6 +74,8 @@ struct StateSnapshot: Codable {
     var healthDays: [String: HealthDay]? = nil
     var healthSettings: HealthSettings? = nil
     var sleepNights: [String: SleepNight]? = nil
+    /// Manually entered Google Health scores paired with our estimates.
+    var sleepComparisons: [String: SleepScoreComparison]? = nil
 }
 
 // MARK: - AppState
@@ -113,6 +115,7 @@ final class AppState {
     var healthDays: [String: HealthDay] = [:]
     var healthSettings: HealthSettings = HealthSettings()
     var sleepNights: [String: SleepNight] = [:]
+    var sleepComparisons: [String: SleepScoreComparison] = [:]
 
     // MARK: Computed Properties
 
@@ -265,7 +268,8 @@ final class AppState {
             supplements: supplements,
             healthDays: healthDays,
             healthSettings: healthSettings,
-            sleepNights: sleepNights
+            sleepNights: sleepNights,
+            sleepComparisons: sleepComparisons
         )
     }
 
@@ -295,6 +299,7 @@ final class AppState {
         healthDays = snapshot.healthDays ?? [:]
         healthSettings = snapshot.healthSettings ?? HealthSettings()
         sleepNights = snapshot.sleepNights ?? [:]
+        sleepComparisons = snapshot.sleepComparisons ?? [:]
     }
 
     // MARK: Cloud Sync
@@ -1329,6 +1334,62 @@ final class AppState {
         save()
     }
 
+    // MARK: - Sleep score comparisons
+
+    /// Saves a manually entered Google Health score for a night.
+    ///
+    /// Returns the reason it was refused, or nil on success. Validation lives in
+    /// `SleepComparisonValidator` so the same rules apply here and at training
+    /// time.
+    @discardableResult
+    func saveSleepComparison(googleScore: Int, for day: HealthDay) -> SleepComparisonValidator.Rejection? {
+        let baselines = SleepFeatureBuilder.baselines(from: healthHistory, excluding: day.dayKey)
+        let features = SleepFeatureBuilder.features(for: day, history: healthHistory, baselines: baselines)
+
+        // Editing an existing entry is allowed; only a *new* duplicate is not.
+        var existing = sleepComparisons
+        existing.removeValue(forKey: day.dayKey)
+        if let rejection = SleepComparisonValidator.validateEntry(
+            googleScore: googleScore, features: features, existing: existing
+        ) { return rejection }
+
+        guard let result = SleepScore.calculate(features: features, baselines: baselines) else {
+            return .missingStages
+        }
+
+        sleepComparisons[day.dayKey] = SleepScoreComparison(
+            features: features, result: result, googleScore: googleScore
+        )
+        save()
+        return nil
+    }
+
+    func removeSleepComparison(for dayKey: String) {
+        guard sleepComparisons[dayKey] != nil else { return }
+        sleepComparisons.removeValue(forKey: dayKey)
+        save()
+    }
+
+    /// The calibration model fitted from currently valid comparisons.
+    ///
+    /// Re-validated on every fit rather than trusting what was stored: a night
+    /// can be reprocessed by the source after a score was entered, and training
+    /// on a stale pairing teaches the wrong correction.
+    var sleepCalibrationModel: SleepScoreCalibration.Model {
+        let history = healthHistory
+        var featuresByDay: [String: SleepFeatures] = [:]
+        for day in history where sleepComparisons[day.dayKey] != nil {
+            let baselines = SleepFeatureBuilder.baselines(from: history, excluding: day.dayKey)
+            featuresByDay[day.dayKey] = SleepFeatureBuilder.features(
+                for: day, history: history, baselines: baselines
+            )
+        }
+        let valid = SleepComparisonValidator.validTrainingSet(
+            Array(sleepComparisons.values), featuresByDay: featuresByDay
+        )
+        return SleepScoreCalibration.fit(valid)
+    }
+
     private func pruneHealthDays() {
         guard healthDays.count > Self.healthDayRetention else { return }
         let keep = Set(healthDays.keys.sorted().suffix(Self.healthDayRetention))
@@ -2143,6 +2204,7 @@ final class AppState {
         healthDays = [:]
         healthSettings = HealthSettings()
         sleepNights = [:]
+        sleepComparisons = [:]
         savePhotos()
         seedDefaults()
     }

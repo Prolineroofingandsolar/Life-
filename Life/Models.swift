@@ -595,6 +595,14 @@ struct HealthDay: Codable {
     var interruptionMinutes: Int? = nil
     var stageTransitions: Int? = nil
     var sleepMidpoint: Date? = nil
+    /// Source record identifier, for tying calibration comparisons to the exact
+    /// session they were made against and spotting when it's been re-imported.
+    var sleepRecordID: String? = nil
+    /// Overnight heart-rate statistics across the sleep window.
+    var sleepingHrAverage: Double? = nil
+    var sleepingHrMinimum: Double? = nil
+    /// Standard deviation of overnight heart rate — steadiness, not rate.
+    var sleepingHrStability: Double? = nil
     /// Share of the sleep window described by stage intervals, 0–1. Below
     /// `SleepAnalysis.minimumStageCoverage` the night isn't scored.
     var stageCoverage: Double? = nil
@@ -631,6 +639,8 @@ struct HealthDay: Codable {
         case officialSleepScore = "os", officialSleepScoreSource = "op", sleepSourceDevice = "sd"
         case restlessMinutes = "rl", interruptionMinutes = "im", stageTransitions = "tr"
         case sleepMidpoint = "mp", stageCoverage = "cv"
+        case sleepRecordID = "ri"
+        case sleepingHrAverage = "ha", sleepingHrMinimum = "hm", sleepingHrStability = "hs"
         case restingHr = "rh", hrvMs = "hv", respiratoryRate = "rr"
         case spo2Pct = "ox", wristTempC = "tp", vo2Max = "vo"
         case breathingRem = "br", breathingDeep = "bd", breathingLight = "bl"

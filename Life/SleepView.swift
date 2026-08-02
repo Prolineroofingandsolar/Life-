@@ -71,6 +71,7 @@ struct SleepView: View {
     @State private var selectedKey: String? = nil
 
     private var settings: HealthSettings { appState.healthSettings }
+    private var calibration: SleepScoreCalibration.Model { appState.sleepCalibrationModel }
 
     /// Nights with a recorded duration, most recent last.
     private var nights: [HealthDay] {
@@ -101,7 +102,7 @@ struct SleepView: View {
                         SleepHypnogramCard(night: selectedNight, day: night)
                         SleepHeadlineRow(day: night, history: nights)
                         SleepWarningsCard(day: night)
-                        SleepScoreCard(night: night, history: nights, settings: settings)
+                        SleepScoreCard(night: night, history: nights, settings: settings, calibration: calibration)
                         SleepStagesCard(day: night, history: nights)
                         SleepVitalsCard(day: night, history: nights)
                     }
@@ -406,9 +407,17 @@ private struct SleepScoreCard: View {
     let night: HealthDay
     let history: [HealthDay]
     let settings: HealthSettings
+    let calibration: SleepScoreCalibration.Model
+
+    @Environment(AppState.self) private var appState
+    @State private var showEntry = false
+
+    private var existingComparison: SleepScoreComparison? { appState.sleepComparisons[night.dayKey] }
 
     private var breakdown: HealthInsights.SleepScoreBreakdown? {
-        HealthInsights.sleepScoreBreakdown(for: night, history: history, settings: settings)
+        HealthInsights.sleepScoreBreakdown(
+            for: night, history: history, settings: settings, calibration: calibration
+        )
     }
 
     /// Why a night went unscored. Silence here reads as a bug; the measured
@@ -423,6 +432,14 @@ private struct SleepScoreCard: View {
     }
 
     var body: some View {
+        card
+            .sheet(isPresented: $showEntry) {
+                SleepScoreEntryView(day: night, estimate: breakdown?.estimate?.score)
+            }
+    }
+
+    @ViewBuilder
+    private var card: some View {
         HealthCard {
             if let breakdown = breakdown {
                 VStack(alignment: .leading, spacing: 12) {
@@ -448,11 +465,13 @@ private struct SleepScoreCard: View {
                     if let estimate = breakdown.estimate {
                         SleepScoreBar(title: "Duration", earned: estimate.components.duration, colour: .indigo)
                         SleepScoreBar(title: "Continuity", earned: estimate.components.continuity, colour: .teal)
-                        SleepScoreBar(title: "Restorative sleep", earned: estimate.components.restorative, colour: .purple)
+                        SleepScoreBar(title: "Restorative sleep", earned: estimate.components.stages, colour: .purple)
                         SleepScoreBar(title: "Latency", earned: estimate.components.latency, colour: .blue)
                         SleepScoreBar(title: "Consistency", earned: estimate.components.consistency, colour: AppTheme.primary)
                         confidenceLine(estimate)
                     }
+                    calibrationSection(breakdown)
+                    googleScoreButton
                     provenanceLine(breakdown)
                     disclaimer(breakdown)
                 }
@@ -518,10 +537,55 @@ private struct SleepScoreCard: View {
         }
     }
 
+    /// The personal adjustment, shown only once calibration is actually being
+    /// applied. Kept off the dashboard — this is detail-screen material.
+    @ViewBuilder
+    private func calibrationSection(_ breakdown: HealthInsights.SleepScoreBreakdown) -> some View {
+        if let adjustment = breakdown.adjustment, adjustment.isPersonalised {
+            VStack(alignment: .leading, spacing: 3) {
+                Divider().padding(.vertical, 2)
+                InfoRow(label: "Original estimate", value: "\(adjustment.baseScore)")
+                InfoRow(
+                    label: "Personal adjustment",
+                    value: adjustment.correction >= 0
+                        ? "+\(Int(adjustment.correction.rounded()))"
+                        : "\(Int(adjustment.correction.rounded()))"
+                )
+                InfoRow(label: "Final estimate", value: "\(adjustment.adjustedScore)")
+                Text("Personalised using \(adjustment.stage.comparisonCount) Google Health comparisons")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+            .font(.footnote)
+        }
+    }
+
+    @ViewBuilder
+    private var googleScoreButton: some View {
+        Button {
+            showEntry = true
+        } label: {
+            Label(
+                existingComparison == nil ? "Add Google Health score" : "Edit Google Health score",
+                systemImage: "plus.circle"
+            )
+            .font(.footnote)
+        }
+        .buttonStyle(.plain)
+        .foregroundColor(AppTheme.primary)
+
+        if let comparison = existingComparison {
+            Text("Google Health scored this night \(comparison.googleScore). Difference: \(comparison.baseScore - comparison.googleScore).")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
     @ViewBuilder
     private func disclaimer(_ breakdown: HealthInsights.SleepScoreBreakdown) -> some View {
         if breakdown.isEstimate {
-            Text("This is an estimate calculated from your imported sleep data. It may differ from Google Health because Google uses additional sensor data and a private personalized scoring model.")
+            Text("This estimate uses sleep stages and available overnight health data imported from Google Health. It may differ from Google because Google uses additional Fitbit sensor data and a private scoring model.")
                 .font(.caption2)
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
