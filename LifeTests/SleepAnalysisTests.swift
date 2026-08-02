@@ -45,7 +45,7 @@ struct SleepAnalysisTests {
     func overlappingIntervalsAreClipped() {
         // 60 minutes of light overlapped by 30 minutes of deep. Total elapsed is
         // 60 minutes, so minutes asleep must be 60 — not 90.
-        let night = SleepAnalysis.measure(session(from: 0, to: 60, stages: [
+        let night = SleepAnalysis.measure(Self.session(from: 0, to: 60, stages: [
             Self.stage(.light, from: 0, to: 60),
             Self.stage(.deep, from: 30, to: 60)
         ]))
@@ -70,7 +70,7 @@ struct SleepAnalysisTests {
 
     @Test("A wake of exactly five minutes is restlessness, not a full awakening")
     func exactlyFiveMinuteWake() {
-        let night = SleepAnalysis.measure(session(from: 0, to: 120, stages: [
+        let night = SleepAnalysis.measure(Self.session(from: 0, to: 120, stages: [
             Self.stage(.light, from: 0, to: 50),
             Self.stage(.awake, from: 50, to: 55),   // exactly 5
             Self.stage(.light, from: 55, to: 120)
@@ -83,7 +83,7 @@ struct SleepAnalysisTests {
 
     @Test("A wake of just over five minutes is a full awakening")
     func justOverFiveMinuteWake() {
-        let night = SleepAnalysis.measure(session(from: 0, to: 120, stages: [
+        let night = SleepAnalysis.measure(Self.session(from: 0, to: 120, stages: [
             Self.stage(.light, from: 0, to: 50),
             Self.stage(.awake, from: 50, to: 56),   // 6 minutes
             Self.stage(.light, from: 56, to: 120)
@@ -98,8 +98,8 @@ struct SleepAnalysisTests {
 
     @Test("Sessions separated by a short gap merge into one night")
     func splitSleepMerges() {
-        let first = session(from: 0, to: 180, stages: [Self.stage(.light, from: 0, to: 180)])
-        let second = session(from: 200, to: 400, stages: [Self.stage(.light, from: 200, to: 400)])
+        let first = Self.session(from: 0, to: 180, stages: [Self.stage(.light, from: 0, to: 180)])
+        let second = Self.session(from: 200, to: 400, stages: [Self.stage(.light, from: 200, to: 400)])
 
         let merged = SleepAnalysis.mergeSessions([first, second])
         #expect(merged.count == 1)
@@ -113,8 +113,8 @@ struct SleepAnalysisTests {
 
     @Test("Sessions separated by a long gap stay separate nights")
     func longGapDoesNotMerge() {
-        let first = session(from: 0, to: 180, stages: [Self.stage(.light, from: 0, to: 180)])
-        let second = session(from: 400, to: 600, stages: [Self.stage(.light, from: 400, to: 600)])
+        let first = Self.session(from: 0, to: 180, stages: [Self.stage(.light, from: 0, to: 180)])
+        let second = Self.session(from: 400, to: 600, stages: [Self.stage(.light, from: 400, to: 600)])
 
         #expect(SleepAnalysis.mergeSessions([first, second]).count == 2)
     }
@@ -123,8 +123,8 @@ struct SleepAnalysisTests {
 
     @Test("Naps are kept out of the nightly figures")
     func napsAreSeparate() {
-        let night = session(from: 0, to: 420, stages: [Self.stage(.light, from: 0, to: 420)])
-        let nap = session(from: 900, to: 945, stages: [Self.stage(.light, from: 900, to: 945)], nap: true)
+        let night = Self.session(from: 0, to: 420, stages: [Self.stage(.light, from: 0, to: 420)])
+        let nap = Self.session(from: 900, to: 945, stages: [Self.stage(.light, from: 900, to: 945)], nap: true)
 
         let result = SleepAnalysis.analyse(sessions: [night, nap])
 
@@ -135,8 +135,8 @@ struct SleepAnalysisTests {
 
     @Test("A nap never merges into an adjacent night")
     func napDoesNotMerge() {
-        let night = session(from: 0, to: 400, stages: [Self.stage(.light, from: 0, to: 400)])
-        let nap = session(from: 430, to: 460, stages: [], nap: true, sourceStages: false)
+        let night = Self.session(from: 0, to: 400, stages: [Self.stage(.light, from: 0, to: 400)])
+        let nap = Self.session(from: 430, to: 460, stages: [], nap: true, sourceStages: false)
 
         // Gap is 30 minutes — inside the merge window — but one side is a nap.
         #expect(SleepAnalysis.mergeSessions([night, nap]).count == 2)
@@ -147,7 +147,7 @@ struct SleepAnalysisTests {
     @Test("Latency, efficiency and midpoint are derived from the sleep window")
     func derivedMeasurements() {
         // In bed at 0, asleep 20→260, up at 270.
-        let night = SleepAnalysis.measure(session(from: 0, to: 270, stages: [
+        let night = SleepAnalysis.measure(Self.session(from: 0, to: 270, stages: [
             Self.stage(.awake, from: 0, to: 20),
             Self.stage(.deep, from: 20, to: 80),
             Self.stage(.rem, from: 80, to: 140),
@@ -174,7 +174,7 @@ struct SleepAnalysisTests {
 
     @Test("Leading awake time is latency, not an interruption")
     func leadingAwakeIsNotAnInterruption() {
-        let night = SleepAnalysis.measure(session(from: 0, to: 100, stages: [
+        let night = SleepAnalysis.measure(Self.session(from: 0, to: 100, stages: [
             Self.stage(.awake, from: 0, to: 30),
             Self.stage(.light, from: 30, to: 100)
         ]))
@@ -200,7 +200,7 @@ struct SleepAnalysisTests {
     func travelKeepsOneNight() {
         // Same night measured with an offset that changed mid-flight: the end
         // offset is what files it, so it lands on exactly one day.
-        var flown = session(from: 0, to: 420, stages: [Self.stage(.light, from: 0, to: 420)])
+        var flown = Self.session(from: 0, to: 420, stages: [Self.stage(.light, from: 0, to: 420)])
         flown.provenance.utcOffsetSeconds = 5 * 3600
 
         let result = SleepAnalysis.analyse(sessions: [flown])
@@ -211,7 +211,7 @@ struct SleepAnalysisTests {
     func daylightSavingChange() {
         // A night spanning a DST boundary is still one session with one end
         // instant, so it files under one day whatever the local clock did.
-        let night = session(from: 0, to: 480, stages: [
+        let night = Self.session(from: 0, to: 480, stages: [
             Self.stage(.light, from: 0, to: 240),
             Self.stage(.deep, from: 240, to: 480)
         ], offset: 0)
@@ -239,7 +239,7 @@ struct SleepAnalysisTests {
 
     @Test("A night without source stages is not scoreable")
     func classicNightIsNotScoreable() {
-        let night = SleepAnalysis.measure(session(
+        let night = SleepAnalysis.measure(Self.session(
             from: 0, to: 420,
             stages: [Self.stage(.asleep, from: 0, to: 420)],
             sourceStages: false
@@ -254,7 +254,7 @@ struct SleepAnalysisTests {
     @Test("A sparsely covered night is not scoreable")
     func sparseNightIsNotScoreable() {
         // Eight hours in bed, one hour of stages recorded.
-        let night = SleepAnalysis.measure(session(from: 0, to: 480, stages: [
+        let night = SleepAnalysis.measure(Self.session(from: 0, to: 480, stages: [
             Self.stage(.light, from: 0, to: 60)
         ]))
 
@@ -265,7 +265,7 @@ struct SleepAnalysisTests {
 
     @Test("Missing overnight heart rate is warned about, not hidden")
     func missingRestorationSignalsWarns() {
-        let night = SleepAnalysis.measure(session(from: 0, to: 420, stages: [
+        let night = SleepAnalysis.measure(Self.session(from: 0, to: 420, stages: [
             Self.stage(.light, from: 0, to: 420)
         ]))
 
@@ -276,7 +276,7 @@ struct SleepAnalysisTests {
 
     @Test("Source platform and device survive analysis")
     func provenanceIsPreserved() {
-        let night = SleepAnalysis.measure(session(from: 0, to: 420, stages: [
+        let night = SleepAnalysis.measure(Self.session(from: 0, to: 420, stages: [
             Self.stage(.light, from: 0, to: 420)
         ]))
 

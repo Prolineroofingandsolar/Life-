@@ -442,49 +442,70 @@ private struct SleepScoreCard: View {
     private var card: some View {
         HealthCard {
             if let breakdown = breakdown {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(spacing: 6) {
-                        Text(breakdown.title)
-                            .font(.footnote.weight(.medium))
-                            .foregroundColor(.secondary)
-                        // Confidence is stated in full below the components, so
-                        // a separate badge here would only repeat it.
-                    }
-                    HStack(alignment: .lastTextBaseline, spacing: 8) {
-                        Text("\(breakdown.total)")
-                            .font(.system(size: 34, weight: .bold, design: .rounded))
-                        Text(breakdown.label)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundColor(breakdown.tone.colour)
-                        Spacer()
-                    }
-                    rankLine
-                    // Components exist only for Life's own estimate. An
-                    // official score is shown exactly as the source gave it,
-                    // with nothing added, so there is no working to show.
-                    if let estimate = breakdown.estimate {
-                        SleepScoreBar(title: "Duration", earned: estimate.components.duration, colour: .indigo)
-                        SleepScoreBar(title: "Continuity", earned: estimate.components.continuity, colour: .teal)
-                        SleepScoreBar(title: "Restorative sleep", earned: estimate.components.stages, colour: .purple)
-                        SleepScoreBar(title: "Latency", earned: estimate.components.latency, colour: .blue)
-                        SleepScoreBar(title: "Consistency", earned: estimate.components.consistency, colour: AppTheme.primary)
-                        confidenceLine(estimate)
-                    }
-                    calibrationSection(breakdown)
-                    googleScoreButton
-                    provenanceLine(breakdown)
-                    disclaimer(breakdown)
-                }
+                scored(breakdown)
             } else {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("No estimated score for this night")
-                        .font(.subheadline.weight(.semibold))
-                    Text(unscoreableReason)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                unscored
             }
+        }
+    }
+
+    /// Kept small deliberately. `SettingsView` hit *"unable to type-check this
+    /// expression in reasonable time"* from a single body with fewer moving
+    /// parts than this card, so each section is its own builder.
+    private func scored(_ breakdown: HealthInsights.SleepScoreBreakdown) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            header(breakdown)
+            rankLine
+            // Components exist only for Life's own estimate. An official score
+            // is shown exactly as the source gave it, with nothing added, so
+            // there is no working to show.
+            componentBars(breakdown.estimate)
+            calibrationSection(breakdown)
+            googleScoreButton
+            provenanceLine(breakdown)
+            disclaimer(breakdown)
+        }
+    }
+
+    private func header(_ breakdown: HealthInsights.SleepScoreBreakdown) -> some View {
+        // Pulled out of the interpolation so the type checker sees a plain
+        // String rather than resolving it inside a view builder.
+        let total = String(breakdown.total)
+        return VStack(alignment: .leading, spacing: 6) {
+            Text(breakdown.title)
+                .font(.footnote.weight(.medium))
+                .foregroundColor(.secondary)
+            HStack(alignment: .lastTextBaseline, spacing: 8) {
+                Text(total)
+                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                Text(breakdown.label)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(breakdown.tone.colour)
+                Spacer()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func componentBars(_ estimate: SleepScore.Result?) -> some View {
+        if let estimate {
+            SleepScoreBar(title: "Duration", earned: estimate.components.duration, colour: .indigo)
+            SleepScoreBar(title: "Continuity", earned: estimate.components.continuity, colour: .teal)
+            SleepScoreBar(title: "Restorative sleep", earned: estimate.components.stages, colour: .purple)
+            SleepScoreBar(title: "Latency", earned: estimate.components.latency, colour: .blue)
+            SleepScoreBar(title: "Consistency", earned: estimate.components.consistency, colour: AppTheme.primary)
+            confidenceLine(estimate)
+        }
+    }
+
+    private var unscored: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("No estimated score for this night")
+                .font(.subheadline.weight(.semibold))
+            Text(unscoreableReason)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -492,11 +513,18 @@ private struct SleepScoreCard: View {
     /// data, so it's the line to trust if it and the score ever disagree.
     @ViewBuilder
     private var rankLine: some View {
-        if let rank = HealthInsights.nightRank(for: night, in: history, settings: settings) {
-            Text("\(ordinal(rank.rank)) best of your last \(rank.of) nights")
+        if let text = rankText {
+            Text(text)
                 .font(.footnote)
                 .foregroundColor(.secondary)
         }
+    }
+
+    private var rankText: String? {
+        guard let rank = HealthInsights.nightRank(for: night, in: history, settings: settings) else {
+            return nil
+        }
+        return ordinal(rank.rank) + " best of your last " + String(rank.of) + " nights"
     }
 
     private func ordinal(_ value: Int) -> String {
@@ -526,11 +554,11 @@ private struct SleepScoreCard: View {
     @ViewBuilder
     private func confidenceLine(_ estimate: SleepScore.Result) -> some View {
         HStack(spacing: 6) {
-            Text("Confidence: \(estimate.confidence.rawValue.capitalized)")
+            Text("Confidence: " + estimate.confidence.rawValue.capitalized)
                 .font(.caption2)
                 .foregroundColor(estimate.confidence == .high ? .secondary : .orange)
             if !estimate.missingFields.isEmpty {
-                Text("· missing \(estimate.missingFields.joined(separator: ", "))")
+                Text("· missing " + estimate.missingFields.joined(separator: ", "))
                     .font(.caption2)
                     .foregroundColor(Color(.tertiaryLabel))
             }
@@ -544,20 +572,26 @@ private struct SleepScoreCard: View {
         if let adjustment = breakdown.adjustment, adjustment.isPersonalised {
             VStack(alignment: .leading, spacing: 3) {
                 Divider().padding(.vertical, 2)
-                InfoRow(label: "Original estimate", value: "\(adjustment.baseScore)")
-                InfoRow(
-                    label: "Personal adjustment",
-                    value: adjustment.correction >= 0
-                        ? "+\(Int(adjustment.correction.rounded()))"
-                        : "\(Int(adjustment.correction.rounded()))"
-                )
-                InfoRow(label: "Final estimate", value: "\(adjustment.adjustedScore)")
-                Text("Personalised using \(adjustment.stage.comparisonCount) Google Health comparisons")
+                InfoRow(label: "Original estimate", value: String(adjustment.baseScore))
+                InfoRow(label: "Personal adjustment", value: Self.signed(adjustment.correction))
+                InfoRow(label: "Final estimate", value: String(adjustment.adjustedScore))
+                Text(Self.personalisedNote(adjustment.stage.comparisonCount))
                     .font(.caption2)
                     .foregroundColor(.secondary)
             }
             .font(.footnote)
         }
+    }
+
+    /// "+4" / "-6". Built outside the view builder so the ternary and the
+    /// rounding aren't type-checked as part of a `Text` expression.
+    private static func signed(_ value: Double) -> String {
+        let whole = Int(value.rounded())
+        return whole >= 0 ? "+" + String(whole) : String(whole)
+    }
+
+    private static func personalisedNote(_ count: Int) -> String {
+        "Personalised using " + String(count) + " Google Health comparisons"
     }
 
     @ViewBuilder
@@ -574,12 +608,19 @@ private struct SleepScoreCard: View {
         .buttonStyle(.plain)
         .foregroundColor(AppTheme.primary)
 
-        if let comparison = existingComparison {
-            Text("Google Health scored this night \(comparison.googleScore). Difference: \(comparison.baseScore - comparison.googleScore).")
+        if let text = comparisonNote {
+            Text(text)
                 .font(.caption2)
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    private var comparisonNote: String? {
+        guard let comparison = existingComparison else { return nil }
+        let difference = comparison.baseScore - comparison.googleScore
+        return "Google Health scored this night " + String(comparison.googleScore)
+            + ". Difference: " + String(difference) + "."
     }
 
     @ViewBuilder

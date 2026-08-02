@@ -86,7 +86,7 @@ struct SleepScoreTests {
 
     @Test("All available data produces a high-confidence score")
     func allDataPresent() {
-        let result = SleepScore.calculate(features: features(), baselines: Self.baselines)
+        let result = SleepScore.calculate(features: Self.features(), baselines: Self.baselines)
         #expect(result != nil)
         #expect(result?.confidence == .high)
         #expect((result?.score ?? 0) > 70)
@@ -97,7 +97,7 @@ struct SleepScoreTests {
     @Test("Missing heart rate uses the neutral value and lowers confidence")
     func missingHeartRate() {
         let result = SleepScore.calculate(
-            features: features(hrDelta: nil, missing: ["heartRate"]),
+            features: Self.features(hrDelta: nil, missing: ["heartRate"]),
             baselines: Self.baselines
         )
         #expect(result?.components.sleepingHeartRate == SleepScore.neutralComponentValue)
@@ -107,7 +107,7 @@ struct SleepScoreTests {
     @Test("Missing HRV uses the neutral value")
     func missingHRV() {
         let result = SleepScore.calculate(
-            features: features(hrvDelta: nil, missing: ["hrv"]),
+            features: Self.features(hrvDelta: nil, missing: ["hrv"]),
             baselines: Self.baselines
         )
         #expect(result?.components.hrv == SleepScore.neutralComponentValue)
@@ -116,7 +116,7 @@ struct SleepScoreTests {
     @Test("Missing SpO2 uses the neutral value rather than assuming healthy")
     func missingSpO2() {
         let result = SleepScore.calculate(
-            features: features(spo2: nil, missing: ["spo2"]),
+            features: Self.features(spo2: nil, missing: ["spo2"]),
             baselines: Self.baselines
         )
         #expect(result?.components.oxygenSaturation == SleepScore.neutralComponentValue)
@@ -125,7 +125,7 @@ struct SleepScoreTests {
     @Test("Missing respiratory rate uses the neutral value")
     func missingRespiratory() {
         let result = SleepScore.calculate(
-            features: features(respiratoryDelta: nil, missing: ["respiratoryRate"]),
+            features: Self.features(respiratoryDelta: nil, missing: ["respiratoryRate"]),
             baselines: Self.baselines
         )
         #expect(result?.components.respiratoryRate == SleepScore.neutralComponentValue)
@@ -134,7 +134,7 @@ struct SleepScoreTests {
     @Test("Missing temperature uses the neutral value")
     func missingTemperature() {
         let result = SleepScore.calculate(
-            features: features(temperatureDelta: nil, missing: ["temperature"]),
+            features: Self.features(temperatureDelta: nil, missing: ["temperature"]),
             baselines: Self.baselines
         )
         #expect(result?.components.temperatureStability == SleepScore.neutralComponentValue)
@@ -142,7 +142,7 @@ struct SleepScoreTests {
 
     @Test("Missing movement lowers confidence but imposes no ceiling")
     func missingMovementNoCeiling() {
-        let subject = features(missing: ["movement"])
+        let subject = Self.features(missing: ["movement"])
         let ceilings = SleepScore.applicableCeilings(features: subject)
         #expect(ceilings.contains { $0.reason.contains("movement") } == false)
         #expect(ceilings.contains { $0.limit == 88 } == false)
@@ -154,7 +154,7 @@ struct SleepScoreTests {
     @Test("Missing stages produces no score")
     func missingStages() {
         let result = SleepScore.calculate(
-            features: features(light: nil, deep: nil, rem: nil),
+            features: Self.features(light: nil, deep: nil, rem: nil),
             baselines: Self.baselines
         )
         #expect(result == nil)
@@ -164,7 +164,7 @@ struct SleepScoreTests {
 
     @Test("No personal baseline gives neutral physiological components")
     func noBaseline() {
-        var subject = features(hrDelta: nil, hrvDelta: nil, respiratoryDelta: nil, temperatureDelta: nil)
+        var subject = Self.features(hrDelta: nil, hrvDelta: nil, respiratoryDelta: nil, temperatureDelta: nil)
         subject.missingFields = ["personalBaseline"]
         let result = SleepScore.calculate(features: subject, baselines: Self.noBaselines)
 
@@ -225,7 +225,7 @@ struct SleepScoreTests {
             appliedCeilings: [], missingFields: []
         )
         result.score = 90
-        let adjusted = SleepScoreCalibration.apply(model: model, to: result, features: features())
+        let adjusted = SleepScoreCalibration.apply(model: model, to: result, features: Self.features())
         #expect(adjusted.baseScore == 90, "the base score is never overwritten")
         #expect(adjusted.adjustedScore < 90)
         #expect(abs(adjusted.adjustedScore - 78) <= 2)
@@ -286,7 +286,7 @@ struct SleepScoreTests {
             confidence: .high, weightedScoreBeforeCeilings: 88,
             appliedCeilings: [], missingFields: []
         )
-        let adjusted = SleepScoreCalibration.apply(model: model, to: result, features: features())
+        let adjusted = SleepScoreCalibration.apply(model: model, to: result, features: Self.features())
 
         #expect(adjusted.baseScore == 88)
         #expect(adjusted.adjustedScore != adjusted.baseScore)
@@ -297,7 +297,7 @@ struct SleepScoreTests {
 
     @Test("An invalid Google score is rejected")
     func invalidGoogleScore() {
-        let subject = features()
+        let subject = Self.features()
         #expect(SleepComparisonValidator.validateEntry(googleScore: 101, features: subject, existing: [:]) == .scoreOutOfRange)
         #expect(SleepComparisonValidator.validateEntry(googleScore: -1, features: subject, existing: [:]) == .scoreOutOfRange)
         #expect(SleepComparisonValidator.validateEntry(googleScore: 76, features: subject, existing: [:]) == nil)
@@ -305,21 +305,21 @@ struct SleepScoreTests {
 
     @Test("A duplicate comparison for the same night is rejected")
     func duplicateComparison() {
-        let subject = features()
+        let subject = Self.features()
         let existing = [subject.dayKey: Self.comparison(day: 1, base: 80, google: 75)]
         #expect(SleepComparisonValidator.validateEntry(googleScore: 76, features: subject, existing: existing) == .duplicate)
     }
 
     @Test("A nap can't be used as a comparison")
     func napExcluded() {
-        var subject = features()
+        var subject = Self.features()
         subject.isNap = true
         #expect(SleepComparisonValidator.validateEntry(googleScore: 76, features: subject, existing: [:]) == .isNap)
     }
 
     @Test("A night without stages can't be used as a comparison")
     func stagelessExcluded() {
-        var subject = features(light: nil, deep: nil, rem: nil)
+        var subject = Self.features(light: nil, deep: nil, rem: nil)
         subject.hasStages = false
         #expect(SleepComparisonValidator.validateEntry(googleScore: 76, features: subject, existing: [:]) == .missingStages)
     }
@@ -330,15 +330,15 @@ struct SleepScoreTests {
         pair.sleepRecordID = "rec-original"
         pair.minutesAsleep = 450
 
-        var changed = features()
+        var changed = Self.features()
         changed.sourceRecordID = "rec-reimported"
         #expect(SleepComparisonValidator.validateForTraining(pair, against: changed) == .sessionChanged)
 
-        var driftedDuration = features(asleep: 500)
+        var driftedDuration = Self.features(asleep: 500)
         driftedDuration.sourceRecordID = "rec-original"
         #expect(SleepComparisonValidator.validateForTraining(pair, against: driftedDuration) == .durationMismatch)
 
-        var unchanged = features()
+        var unchanged = Self.features()
         unchanged.sourceRecordID = "rec-original"
         #expect(SleepComparisonValidator.validateForTraining(pair, against: unchanged) == nil)
     }
@@ -370,8 +370,8 @@ struct SleepScoreTests {
 
     @Test("Calibration records carry the scoring model version they were made under")
     func recordsCarryModelVersion() {
-        let result = SleepScore.calculate(features: features(), baselines: Self.baselines)!
-        let pair = SleepScoreComparison(features: features(), result: result, googleScore: 76)
+        let result = SleepScore.calculate(features: Self.features(), baselines: Self.baselines)!
+        let pair = SleepScoreComparison(features: Self.features(), result: result, googleScore: 76)
         #expect(pair.modelVersion == SleepScore.modelVersion)
         #expect(pair.baseScore == result.score)
     }
@@ -389,7 +389,7 @@ struct SleepScoreTests {
 
     @Test("The score is a plain number with no percent sign")
     func noPercentSign() {
-        let result = SleepScore.calculate(features: features(), baselines: Self.baselines)
+        let result = SleepScore.calculate(features: Self.features(), baselines: Self.baselines)
         let rendered = "\(result?.score ?? 0)"
         #expect(rendered.contains("%") == false)
         #expect(result?.title == "Estimated Sleep Score")
@@ -399,7 +399,7 @@ struct SleepScoreTests {
 
     @Test("Diagnostics capture components, ceilings, calibration and versions")
     func diagnostics() {
-        let subject = features(asleep: 432, inBed: 498, awakenings: 2, interruption: 37, restless: 24, latency: 29)
+        let subject = Self.features(asleep: 432, inBed: 498, awakenings: 2, interruption: 37, restless: 24, latency: 29)
         guard let result = SleepScore.calculate(features: subject, baselines: Self.baselines) else {
             Issue.record("expected a score")
             return
