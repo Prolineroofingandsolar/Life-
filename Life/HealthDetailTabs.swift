@@ -39,6 +39,36 @@ struct HealthSleepTab: View {
         return values.reduce(0, +) / Double(values.count)
     }
 
+    /// The stacked bars, grouped into weeks or months on the longer ranges.
+    ///
+    /// Each grouped bar is the **average night** in that bucket, not the sum of
+    /// its nights — a week's sleep added together would be a 50-hour bar next
+    /// to 8-hour ones.
+    private var chartStagePoints: [SleepStagePoint] {
+        guard let bucket = range.bucket else { return stagePoints }
+        let calendar = Calendar.current
+
+        var totals: [String: (date: Date, stage: String, minutes: [Int])] = [:]
+        for point in stagePoints {
+            guard let start = calendar.dateInterval(of: bucket, for: point.date)?.start else { continue }
+            let key = "\(start.timeIntervalSince1970)-\(point.stage)"
+            var entry = totals[key] ?? (start, point.stage, [])
+            entry.minutes.append(point.minutes)
+            totals[key] = entry
+        }
+
+        return totals.values
+            .map { entry in
+                SleepStagePoint(
+                    id: "\(entry.date.timeIntervalSince1970)-\(entry.stage)",
+                    date: entry.date,
+                    stage: entry.stage,
+                    minutes: entry.minutes.reduce(0, +) / max(1, entry.minutes.count)
+                )
+            }
+            .sorted { $0.date < $1.date }
+    }
+
     private var stagePoints: [SleepStagePoint] {
         var out: [SleepStagePoint] = []
         for night in nights {
@@ -66,14 +96,18 @@ struct HealthSleepTab: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+                // Above the empty check on purpose. It used to sit inside the
+                // `else`, so picking a range with no data hid the control you
+                // needed to pick a wider one — a dead end you could only escape
+                // by leaving the screen.
+                HealthRangePicker(range: $range)
                 if nights.isEmpty {
                     HealthEmptyCard(
                         icon: "bed.double",
                         title: "No sleep data",
-                        message: "Nothing recorded for this range. Sleep needs to be written into Apple Health by your watch or tracker."
+                        message: "Nothing recorded in the \(range.label). Try a wider range, or check your tracker is syncing."
                     )
                 } else {
-                    HealthRangePicker(range: $range)
                     summaryCard
                     stageChartCard
                     splitCard
@@ -115,17 +149,22 @@ struct HealthSleepTab: View {
         }
     }
 
+    private var stageChartTitle: String {
+        guard let caption = range.bucketCaption else { return "Nightly breakdown" }
+        return "Breakdown · " + caption
+    }
+
     @ViewBuilder
     private var stageChartCard: some View {
-        let points = stagePoints
+        let points = chartStagePoints
         if !points.isEmpty {
             HealthCard {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Nightly breakdown")
+                    Text(stageChartTitle)
                         .font(.subheadline.weight(.semibold))
                     Chart(points) { point in
                         BarMark(
-                            x: .value("Night", point.date, unit: .day),
+                            x: .value("Night", point.date, unit: range.bucket ?? .day),
                             y: .value("Minutes", point.minutes)
                         )
                         .foregroundStyle(by: .value("Stage", point.stage))
@@ -218,14 +257,15 @@ struct HealthRecoveryTab: View {
                 HeartRateZonesCard(day: today)
                 WorkoutsCard(store: heartRate)
                 metricChips
+                // Above the empty check: see the note in `HealthSleepTab`.
+                HealthRangePicker(range: $range)
                 if points.isEmpty {
                     HealthEmptyCard(
                         icon: metric.icon,
                         title: "No \(metric.rawValue) data",
-                        message: "Nothing recorded for this range. Not every tracker measures every metric — check what yours writes into Apple Health."
+                        message: "Nothing recorded in the \(range.label). Try a wider range — and note that not every tracker measures every metric."
                     )
                 } else {
-                    HealthRangePicker(range: $range)
                     currentCard
                     chartCard
                     statsCard
@@ -299,13 +339,24 @@ struct HealthRecoveryTab: View {
         }
     }
 
+    /// Grouped into weeks or months on the longer ranges. Ninety daily marks
+    /// across a phone screen is a smear rather than a trend.
+    private var chartPoints: [(date: Date, value: Double)] {
+        HealthInsights.grouped(points, by: range.bucket)
+    }
+
+    private var chartTitle: String {
+        guard let caption = range.bucketCaption else { return "Trend · " + range.label }
+        return "Trend · " + range.label + " · " + caption
+    }
+
     @ViewBuilder
     private var chartCard: some View {
-        let data = points
+        let data = chartPoints
         if data.count > 1 {
             HealthCard {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Trend · \(range.label)")
+                    Text(chartTitle)
                         .font(.subheadline.weight(.semibold))
                     Chart {
                         ForEach(Array(data.enumerated()), id: \.offset) { _, point in
@@ -384,22 +435,36 @@ struct HealthActivityTab: View {
         }
     }
 
+    /// Follows the range picker. This was pinned at eight weeks of the whole
+    /// history regardless of the selection, so the weekly chart never moved
+    /// when you changed range — it looked broken because it was.
     private var weeks: [HealthInsights.WeekTotal] {
-        HealthInsights.weeklyTotals(history, metric: metric, weeks: 8)
+        HealthInsights.weeklyTotals(history, metric: metric, weeks: range.weeksToShow)
+    }
+
+    /// Grouped on the longer ranges — see `HealthRecoveryTab.chartPoints`.
+    private var chartPoints: [(date: Date, value: Double)] {
+        HealthInsights.grouped(points, by: range.bucket)
+    }
+
+    private var dailyChartTitle: String {
+        guard let caption = range.bucketCaption else { return "Daily · " + range.label }
+        return range.label.prefix(1).uppercased() + range.label.dropFirst() + " · " + caption
     }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 metricChips
+                // Above the empty check: see the note in `HealthSleepTab`.
+                HealthRangePicker(range: $range)
                 if points.isEmpty {
                     HealthEmptyCard(
                         icon: metric.icon,
                         title: "No \(metric.rawValue.lowercased()) data",
-                        message: "Nothing recorded for this range yet."
+                        message: "Nothing recorded in the \(range.label). Try a wider range."
                     )
                 } else {
-                    HealthRangePicker(range: $range)
                     weekComparisonCard
                     dailyChartCard
                     weeklyChartCard
@@ -427,23 +492,33 @@ struct HealthActivityTab: View {
         }
     }
 
+    /// The real calendar week, not the last entry in the list.
+    ///
+    /// `weeklyTotals` leaves out weeks with no readings, so reading the final
+    /// element as "this week" showed *last* week's total under that heading
+    /// every Monday before the first sync — and compared it against the week
+    /// before that.
+    private var thisWeek: (thisWeek: Double, lastWeek: Double?) {
+        HealthInsights.weekOnWeek(history, metric: metric)
+    }
+
     @ViewBuilder
     private var weekComparisonCard: some View {
-        let recent = weeks.suffix(2)
+        let figures = thisWeek
         HealthCard {
             VStack(alignment: .leading, spacing: 6) {
                 Text("This week")
                     .font(.caption)
                     .foregroundColor(.secondary)
                 HStack(alignment: .lastTextBaseline, spacing: 4) {
-                    Text(metric.format(recent.last?.total ?? 0))
+                    Text(metric.format(figures.thisWeek))
                         .font(.system(size: 30, weight: .bold, design: .rounded))
                     Text(metric.unit)
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
-                if recent.count == 2, let previous = recent.first, previous.total > 0 {
-                    weekDelta(current: recent.last?.total ?? 0, previous: previous.total)
+                if let previous = figures.lastWeek, previous > 0 {
+                    weekDelta(current: figures.thisWeek, previous: previous)
                 }
             }
         }
@@ -460,16 +535,16 @@ struct HealthActivityTab: View {
 
     @ViewBuilder
     private var dailyChartCard: some View {
-        let data = points
+        let data = chartPoints
         if data.count > 1 {
             HealthCard {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Daily · \(range.label)")
+                    Text(dailyChartTitle)
                         .font(.subheadline.weight(.semibold))
                     Chart {
                         ForEach(Array(data.enumerated()), id: \.offset) { _, point in
                             BarMark(
-                                x: .value("Date", point.date, unit: .day),
+                                x: .value("Date", point.date, unit: range.bucket ?? .day),
                                 y: .value(metric.rawValue, point.value)
                             )
                             .foregroundStyle(metric.colour)

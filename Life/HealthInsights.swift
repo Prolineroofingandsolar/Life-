@@ -31,6 +31,41 @@ enum HealthRange: String, CaseIterable, Identifiable {
         case .all:        return "all time"
         }
     }
+
+    /// How charts group points at this range, or nil for one point per day.
+    ///
+    /// Ninety daily marks in the width of a phone is a smear, not a trend, and
+    /// a year of them is worse. Past a month the charts group into weeks and
+    /// then months so the shape is actually readable.
+    var bucket: Calendar.Component? {
+        switch self {
+        case .week, .month: return nil
+        case .threeMonth:   return .weekOfYear
+        case .all:          return .month
+        }
+    }
+
+    /// Says what each mark represents, so a grouped chart doesn't look like a
+    /// daily one with suspiciously smooth data.
+    var bucketCaption: String? {
+        switch self {
+        case .week, .month: return nil
+        case .threeMonth:   return "weekly average"
+        case .all:          return "monthly average"
+        }
+    }
+
+    /// How many weeks of weekly totals to show at this range. Nil is all of
+    /// them. A week-long range still shows several bars — one bar is not a
+    /// chart.
+    var weeksToShow: Int? {
+        switch self {
+        case .week:       return 4
+        case .month:      return 6
+        case .threeMonth: return 13
+        case .all:        return nil
+        }
+    }
 }
 
 // MARK: - Recovery Metrics
@@ -324,12 +359,15 @@ enum HealthInsights {
         var id: Date { weekStart }
     }
 
-    /// Totals per calendar week, oldest first, for the last `weeks` weeks.
-    /// Weeks with no readings at all are omitted rather than shown as zero.
+    /// Totals per calendar week, oldest first. Weeks with no readings at all
+    /// are omitted rather than shown as zero — nothing recorded is a gap, not a
+    /// week of no activity.
+    ///
+    /// `weeks` nil returns every week on file.
     static func weeklyTotals(
         _ days: [ActivityDay],
         metric: ActivityMetric,
-        weeks: Int = 8
+        weeks: Int? = nil
     ) -> [WeekTotal] {
         let calendar = Calendar.current
         var totals: [Date: Double] = [:]
@@ -340,11 +378,59 @@ enum HealthInsights {
             totals[week, default: 0] += value
         }
 
-        return totals
+        let ordered = totals
             .map { WeekTotal(weekStart: $0.key, total: $0.value) }
             .sorted { $0.weekStart < $1.weekStart }
-            .suffix(weeks)
-            .map { $0 }
+
+        guard let weeks else { return ordered }
+        return Array(ordered.suffix(weeks))
+    }
+
+    /// This calendar week's total and the previous week's.
+    ///
+    /// Keyed to the actual weeks rather than to whichever entries happen to be
+    /// last in the list. `weeklyTotals` omits weeks with no readings, so taking
+    /// the final two elements labelled *last* week's figure as "this week"
+    /// every Monday morning, and compared it against the week before that.
+    static func weekOnWeek(
+        _ days: [ActivityDay],
+        metric: ActivityMetric
+    ) -> (thisWeek: Double, lastWeek: Double?) {
+        let calendar = Calendar.current
+        guard let thisStart = calendar.dateInterval(of: .weekOfYear, for: Date())?.start,
+              let lastStart = calendar.date(byAdding: .weekOfYear, value: -1, to: thisStart)
+        else { return (0, nil) }
+
+        let totals = weeklyTotals(days, metric: metric)
+        return (
+            totals.first { $0.weekStart == thisStart }?.total ?? 0,
+            totals.first { $0.weekStart == lastStart }?.total
+        )
+    }
+
+    /// Groups daily points into coarser buckets so a long range reads as a
+    /// trend rather than a smear.
+    ///
+    /// Each bucket is the **mean of its days**, never their sum. A weekly bar
+    /// holding seven days added together would be seven times taller than the
+    /// daily bars it replaces, so the Y axis would silently change meaning when
+    /// you moved the range picker.
+    static func grouped(
+        _ points: [(date: Date, value: Double)],
+        by component: Calendar.Component?
+    ) -> [(date: Date, value: Double)] {
+        guard let component else { return points }
+        let calendar = Calendar.current
+
+        var buckets: [Date: [Double]] = [:]
+        for point in points {
+            guard let start = calendar.dateInterval(of: component, for: point.date)?.start else { continue }
+            buckets[start, default: []].append(point.value)
+        }
+
+        return buckets
+            .map { (date: $0.key, value: $0.value.reduce(0, +) / Double($0.value.count)) }
+            .sorted { $0.date < $1.date }
     }
 
     /// Days in the last week where active minutes met the goal.
