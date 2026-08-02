@@ -1289,28 +1289,32 @@ final class AppState {
         guard !days.isEmpty else { return }
 
         for incoming in days where !incoming.dayKey.isEmpty {
-            var day = healthDays[incoming.dayKey] ?? HealthDay(dayKey: incoming.dayKey)
-            if let v = incoming.sleepMin { day.sleepMin = v }
-            if let v = incoming.deepMin { day.deepMin = v }
-            if let v = incoming.remMin { day.remMin = v }
-            if let v = incoming.lightMin { day.lightMin = v }
-            if let v = incoming.awakeMin { day.awakeMin = v }
-            if let v = incoming.bedtime { day.bedtime = v }
-            if let v = incoming.wakeTime { day.wakeTime = v }
-            if let v = incoming.restingHr { day.restingHr = v }
-            if let v = incoming.hrvMs { day.hrvMs = v }
-            if let v = incoming.respiratoryRate { day.respiratoryRate = v }
-            if let v = incoming.spo2Pct { day.spo2Pct = v }
-            if let v = incoming.wristTempC { day.wristTempC = v }
-            if let v = incoming.vo2Max { day.vo2Max = v }
-            if let v = incoming.activeEnergyKcal { day.activeEnergyKcal = v }
-            if let v = incoming.exerciseMinutes { day.exerciseMinutes = v }
-            if let v = incoming.distanceKm { day.distanceKm = v }
-            if let v = incoming.flights { day.flights = v }
-            healthDays[incoming.dayKey] = day
+            let existing = healthDays[incoming.dayKey] ?? HealthDay(dayKey: incoming.dayKey)
+            healthDays[incoming.dayKey] = HealthDay.merging(incoming, onto: existing)
         }
 
         pruneHealthDays()
+        save()
+    }
+
+    /// Stores a day's heart-rate range and mean, derived from the sample curve
+    /// that `HeartRateStore` holds in memory.
+    ///
+    /// Writes only when a figure actually moved. This is called after every
+    /// poll while the Health tab is open, and saving on each tick would push a
+    /// Firestore write a minute for numbers that barely change.
+    func recordHeartRateAggregates(dayKey: String, min: Double, max: Double, average: Double) {
+        guard !dayKey.isEmpty else { return }
+        var day = healthDays[dayKey] ?? HealthDay(dayKey: dayKey)
+
+        let rounded = (min.rounded(), max.rounded(), (average * 10).rounded() / 10)
+        guard day.hrMin != rounded.0 || day.hrMax != rounded.1 || day.hrAverage != rounded.2 else {
+            return
+        }
+        day.hrMin = rounded.0
+        day.hrMax = rounded.1
+        day.hrAverage = rounded.2
+        healthDays[dayKey] = day
         save()
     }
 

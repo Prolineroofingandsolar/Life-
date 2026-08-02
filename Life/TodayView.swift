@@ -308,6 +308,16 @@ private struct CareSection: View {
     /// The latest resting HR and HRV, plus how far the resting HR sits from its
     /// own 7-day baseline. The delta is nil until there's enough history to
     /// compare against, so the tile never shows a meaningless figure.
+    /// "Steps · Fitbit · 10,000 goal". Naming the device matters here: the
+    /// iPhone and the tracker give different counts, and without knowing which
+    /// one produced the number there's no way to tell a quiet day from a day
+    /// the phone stayed on the desk.
+    @MainActor private var stepsLabel: String {
+        let source = HealthSync.source(for: healthSettings)
+        let goal = "\(settings.stepGoal.formatted()) goal"
+        return source == .none ? "Steps · " + goal : "Steps · " + source.rawValue + " · " + goal
+    }
+
     private var recovery: (restingHr: Double?, hrvMs: Double?, hrDelta: Double?) {
         // Recovery metrics are recorded overnight, so today's record usually has
         // them; fall back to the most recent day that does.
@@ -360,7 +370,7 @@ private struct CareSection: View {
 
                 TodayStatBox(
                     icon: "figure.walk", iconColor: AppTheme.primary,
-                    value: today.steps.formatted(), label: "Steps · \(settings.stepGoal.formatted()) goal",
+                    value: today.steps.formatted(), label: stepsLabel,
                     done: today.steps >= settings.stepGoal
                 )
 
@@ -455,7 +465,7 @@ private struct CareSection: View {
 
         // Today's step count comes straight from HealthKit on the Apple Health
         // path so the Move ring stays live between the coarser daily merges.
-        if HealthSync.activeSource == .appleHealth {
+        if HealthSync.source(for: appState.healthSettings) == .appleHealth {
             appState.syncSteps(await hkManager.fetchStepsForToday())
         }
     }

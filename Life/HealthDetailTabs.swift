@@ -184,8 +184,16 @@ struct HealthRecoveryTab: View {
     @Environment(AppState.self) private var appState
     @State private var metric: RecoveryMetric = .restingHr
     @State private var range: HealthRange = .month
+    @State private var healthKit = HealthKitManager()
+
+    /// Computed, not stored — see the note in `HealthView`.
+    private var heartRate: HeartRateStore { HeartRateStore.shared }
 
     private var history: [HealthDay] { appState.healthHistory }
+
+    /// Today's record, for the zone totals. Nil until the first sync of the day
+    /// brings one back.
+    private var today: HealthDay? { appState.healthDays[Date().dayKey] }
 
     private var points: [(date: Date, value: Double)] {
         let cutoffKey: String? = range.days.flatMap { days in
@@ -206,6 +214,9 @@ struct HealthRecoveryTab: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+                HeartRateCurveCard(store: heartRate)
+                HeartRateZonesCard(day: today)
+                WorkoutsCard(store: heartRate)
                 metricChips
                 if points.isEmpty {
                     HealthEmptyCard(
@@ -222,6 +233,9 @@ struct HealthRecoveryTab: View {
             }
             .padding(16)
         }
+        // The Health tab owns the polling timer; this only covers the case of
+        // landing here with nothing loaded yet.
+        .task { await heartRate.refresh(healthKit: healthKit, appState: appState) }
     }
 
     // MARK: Cards

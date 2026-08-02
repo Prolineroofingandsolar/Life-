@@ -223,6 +223,29 @@ final class GoogleHealthService {
             }
         }
 
+        // Zone minutes are a daily total of a few integers, so unlike the raw
+        // heart-rate samples they're cheap enough to store and worth having for
+        // every day rather than only the one on screen.
+        await attempt("heart rate zones") {
+            for point in try await list(.interval("timeInHeartRateZone"), start: start, end: end) {
+                guard let body = point["timeInHeartRateZone"] as? [String: Any],
+                      let key = Self.dayKey(fromInterval: body["interval"]) else { continue }
+                var d = day(key)
+                for entry in body["timeInHeartRateZoneValues"] as? [[String: Any]] ?? [] {
+                    guard let name = entry["heartRateZone"] as? String,
+                          let zone = HeartRateZone(rawValue: name),
+                          let minutes = Self.durationMinutes(entry["duration"]) else { continue }
+                    switch zone {
+                    case .light:    d.hrZoneLightMin = (d.hrZoneLightMin ?? 0) + minutes
+                    case .moderate: d.hrZoneModerateMin = (d.hrZoneModerateMin ?? 0) + minutes
+                    case .vigorous: d.hrZoneVigorousMin = (d.hrZoneVigorousMin ?? 0) + minutes
+                    case .peak:     d.hrZonePeakMin = (d.hrZonePeakMin ?? 0) + minutes
+                    }
+                }
+                byDay[key] = d
+            }
+        }
+
         await attempt("steps") {
             for (key, value) in try await intervalTotals(.interval("steps"), field: "count", start: start, end: end) where value > 0 {
                 result.steps[key] = Int(value)
@@ -260,6 +283,75 @@ final class GoogleHealthService {
 
         result.days = byDay.values.filter { !$0.isEmpty }
         return result
+    }
+
+    // MARK: - Heart rate
+
+    /// Individual timestamped heart-rate readings for one day.
+    ///
+    /// Deliberately **not** part of `sync()`. `heartRate` is a sample type —
+    /// up to 1,440 points a day — and the ninety-day window `sync()` uses would
+    /// be a six-figure point count for a curve nobody scrolls back through.
+    /// This is fetched on demand for the day being looked at, and held in
+    /// memory by `HeartRateStore` rather than stored.
+    func heartRateSamples(on day: Date) async throws -> [HeartRateSample] {
+        guard GoogleHealthConfig.isConfigured, auth.isConnected else { return [] }
+
+        var out: [HeartRateSample] = []
+        for point in try await list(.sample("heartRate"), start: day, end: day) {
+            guard let body = point["heartRate"] as? [String: Any],
+                  let bpm = Self.double(body["beatsPerMinute"]),
+                  let time = Self.instant(fromSampleTime: body["sampleTime"]) else { continue }
+            out.append(HeartRateSample(time: time, bpm: bpm, source: .fitbit))
+        }
+        return out.sorted { $0.time < $1.time }
+    }
+
+    /// Workouts recorded on a day.
+    ///
+    /// Parsed defensively: `metricsSummary` is documented as carrying
+    /// performance statistics but its exact heart-rate fields aren't pinned
+    /// down in the discovery document, so a missing average or maximum comes
+    /// back nil and the caller derives them from the sample curve instead.
+    func exerciseSessions(on day: Date) async throws -> [ExerciseSession] {
+        guard GoogleHealthConfig.isConfigured, auth.isConnected else { return [] }
+
+        var out: [ExerciseSession] = []
+        for point in try await list(.interval("exercise"), start: day, end: day) {
+            guard let body = point["exercise"] as? [String: Any],
+                  let interval = body["interval"] as? [String: Any],
+                  let start = Self.instant(fromISO: interval["startTime"]),
+                  let end = Self.instant(fromISO: interval["endTime"]) else { continue }
+
+            let summary = body["metricsSummary"] as? [String: Any] ?? [:]
+            out.append(ExerciseSession(
+                id: (point["dataPointId"] as? String) ?? "\(start.timeIntervalSince1970)",
+                start: start,
+                end: end,
+                name: Self.exerciseName(body),
+                activeMinutes: Self.durationMinutes(body["activeDuration"]),
+                averageBpm: Self.double(summary["averageHeartRateBeatsPerMinute"]),
+                maximumBpm: Self.double(summary["maxHeartRateBeatsPerMinute"]),
+                // Spelling of the calorie field isn't pinned down in the
+                // discovery document I could reach, so both plausible names are
+                // tried and a miss simply leaves it off the row.
+                kcal: Self.double(summary["totalCaloriesKcal"])
+                    ?? Self.double(summary["activeCaloriesKcal"])
+            ))
+        }
+        return out.sorted { $0.start < $1.start }
+    }
+
+    /// "Outdoor Run" if the source named it, otherwise the enum tidied up:
+    /// `RUNNING` → "Running", `HIGH_INTENSITY_INTERVAL_TRAINING` → "High
+    /// Intensity Interval Training".
+    private static func exerciseName(_ body: [String: Any]) -> String {
+        if let display = body["displayName"] as? String, !display.isEmpty { return display }
+        guard let raw = body["exerciseType"] as? String, !raw.isEmpty else { return "Workout" }
+        return raw
+            .split(separator: "_")
+            .map { $0.prefix(1).uppercased() + $0.dropFirst().lowercased() }
+            .joined(separator: " ")
     }
 
     // MARK: - Fetch helpers
@@ -457,6 +549,31 @@ final class GoogleHealthService {
             return date.dayKey
         }
         return nil
+    }
+
+    /// The absolute instant a sample was taken.
+    ///
+    /// `physicalTime` is required here, not merely preferred: `civilTime` is
+    /// wall-clock without an offset, and "how long ago was this reading" is
+    /// meaningless unless it's anchored to a real instant. A civil-only sample
+    /// is dropped rather than guessed at with the device's current zone, which
+    /// would silently misreport the age by hours after travelling.
+    private static func instant(fromSampleTime raw: Any?) -> Date? {
+        guard let sampleTime = raw as? [String: Any] else { return nil }
+        return instant(fromISO: sampleTime["physicalTime"])
+    }
+
+    private static func instant(fromISO raw: Any?) -> Date? {
+        guard let text = raw as? String else { return nil }
+        return rfc3339.date(from: text)
+    }
+
+    /// Google's `google-duration` format: seconds with a trailing "s", as a
+    /// string — `"1800s"` is thirty minutes.
+    private static func durationMinutes(_ raw: Any?) -> Int? {
+        guard let text = raw as? String, text.hasSuffix("s"),
+              let seconds = Double(text.dropLast()) else { return nil }
+        return Int((seconds / 60).rounded())
     }
 
     /// `{"year": 2026, "month": 8, "day": 1}` → "2026-08-01".

@@ -7,6 +7,10 @@ final class HealthKitManager {
 
     private let store = HKHealthStore()
 
+    /// The running live heart-rate query, kept so it can be stopped. Only one
+    /// runs at a time.
+    private var heartRateQuery: HKAnchoredObjectQuery?
+
     /// Exposed so callers can ask about availability without importing HealthKit.
     static var isHealthDataAvailable: Bool { HKHealthStore.isHealthDataAvailable() }
 
@@ -25,6 +29,7 @@ final class HealthKitManager {
             .distanceWalkingRunning,
             .flightsClimbed,
             // Heart and recovery
+            .heartRate,
             .restingHeartRate,
             .heartRateVariabilitySDNN,
             .walkingHeartRateAverage,
@@ -113,6 +118,71 @@ final class HealthKitManager {
         )
         return Int(totals[Date().dayKey] ?? 0)
     }
+
+    // MARK: - Heart rate
+
+    /// Every heart-rate reading recorded on a day.
+    ///
+    /// A raw sample query rather than a statistics query, deliberately: the
+    /// warning on `fetchDailyMetrics` about double-counting applies to
+    /// *summing* across sources, and nothing here is summed. These points are
+    /// drawn as a curve, tagged by source, so two devices recording at once
+    /// show as two series rather than one inflated total.
+    func fetchHeartRateSamples(on day: Date) async -> [(date: Date, value: Double)] {
+        guard HKHealthStore.isHealthDataAvailable() else { return [] }
+        let start = Calendar.current.startOfDay(for: day)
+        let end = Calendar.current.date(byAdding: .day, value: 1, to: start) ?? Date()
+        return await fetchQuantitySamples(
+            identifier: .heartRate,
+            unit: Self.bpm,
+            predicate: HKQuery.predicateForSamples(withStart: start, end: end, options: [])
+        )
+    }
+
+    /// Delivers heart-rate samples as HealthKit receives them.
+    ///
+    /// This is the only genuinely live path in the app. It fires within seconds
+    /// of a reading arriving from an Apple Watch or from heart-rate-capable
+    /// AirPods during a workout — as opposed to the Fitbit path, where
+    /// freshness is capped by how often the band syncs to Google.
+    ///
+    /// Does nothing if no such device is writing; that's the expected outcome
+    /// on a Fitbit-only setup, not a failure.
+    func startHeartRateUpdates(_ onSamples: @escaping ([(date: Date, value: Double)]) -> Void) {
+        guard HKHealthStore.isHealthDataAvailable(),
+              let type = HKQuantityType.quantityType(forIdentifier: .heartRate) else { return }
+        stopHeartRateUpdates()
+
+        // Today only: the point is what's happening now, and an unbounded
+        // predicate would hand back the entire history on the first callback.
+        let predicate = HKQuery.predicateForSamples(
+            withStart: Calendar.current.startOfDay(for: Date()), end: nil, options: []
+        )
+
+        func deliver(_ samples: [HKSample]?) {
+            let points = (samples as? [HKQuantitySample] ?? []).map {
+                (date: $0.startDate, value: $0.quantity.doubleValue(for: Self.bpm))
+            }
+            guard !points.isEmpty else { return }
+            onSamples(points)
+        }
+
+        let query = HKAnchoredObjectQuery(
+            type: type, predicate: predicate, anchor: nil, limit: HKObjectQueryNoLimit
+        ) { _, samples, _, _, _ in deliver(samples) }
+        // Without this the query answers once and never speaks again.
+        query.updateHandler = { _, samples, _, _, _ in deliver(samples) }
+
+        heartRateQuery = query
+        store.execute(query)
+    }
+
+    func stopHeartRateUpdates() {
+        if let heartRateQuery { store.stop(heartRateQuery) }
+        heartRateQuery = nil
+    }
+
+    private static let bpm = HKUnit.count().unitDivided(by: .minute())
 
     // MARK: - Daily Metrics
 

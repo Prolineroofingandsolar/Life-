@@ -609,6 +609,19 @@ struct HealthDay: Codable {
 
     // Heart and recovery.
     var restingHr: Double? = nil
+    /// The day's heart-rate range and mean, derived from the sample curve.
+    ///
+    /// Only these three numbers are kept. The samples they come from — up to
+    /// 1,440 a day — are held in memory by `HeartRateStore` and never stored,
+    /// because `StateSnapshot` is one Firestore document with a 1 MB ceiling.
+    var hrMin: Double? = nil
+    var hrMax: Double? = nil
+    var hrAverage: Double? = nil
+    /// Minutes spent in each heart-rate zone, from `timeInHeartRateZone`.
+    var hrZoneLightMin: Int? = nil
+    var hrZoneModerateMin: Int? = nil
+    var hrZoneVigorousMin: Int? = nil
+    var hrZonePeakMin: Int? = nil
     var hrvMs: Double? = nil
     var respiratoryRate: Double? = nil
     var spo2Pct: Double? = nil
@@ -642,6 +655,9 @@ struct HealthDay: Codable {
         case sleepRecordID = "ri"
         case sleepingHrAverage = "ha", sleepingHrMinimum = "hm", sleepingHrStability = "hs"
         case restingHr = "rh", hrvMs = "hv", respiratoryRate = "rr"
+        case hrMin = "hl", hrMax = "hh", hrAverage = "hg"
+        case hrZoneLightMin = "z1", hrZoneModerateMin = "z2"
+        case hrZoneVigorousMin = "z3", hrZonePeakMin = "z4"
         case spo2Pct = "ox", wristTempC = "tp", vo2Max = "vo"
         case breathingRem = "br", breathingDeep = "bd", breathingLight = "bl"
         case deepSleepHrvMs = "dh", tempBaselineC = "tb"
@@ -691,6 +707,42 @@ struct HealthDay: Codable {
             && spo2Pct == nil && wristTempC == nil && vo2Max == nil
             && activeEnergyKcal == nil && exerciseMinutes == nil
             && distanceKm == nil && flights == nil
+            && hrMin == nil && hrMax == nil && hrAverage == nil
+            && hrZoneLightMin == nil && hrZoneModerateMin == nil
+            && hrZoneVigorousMin == nil && hrZonePeakMin == nil
+    }
+
+    /// Overlays everything a sync actually returned onto what's already stored,
+    /// leaving stored values alone wherever the incoming record was nil.
+    ///
+    /// Done through the encoded form rather than field by field on purpose.
+    /// The field-by-field version silently dropped every property added after
+    /// it was written — a short seven-day sync was blanking latency,
+    /// awakenings, time in bed, stage coverage and every overnight vital that
+    /// a full import had found, because none of them were on its list. A list
+    /// you have to remember to extend is a list that will be wrong again.
+    ///
+    /// `JSONEncoder` omits nil optionals, so a key present in the incoming
+    /// dictionary is by definition a value the source returned.
+    static func merging(_ incoming: HealthDay, onto existing: HealthDay) -> HealthDay {
+        guard let existingData = try? JSONEncoder().encode(existing),
+              let incomingData = try? JSONEncoder().encode(incoming),
+              let existingObject = try? JSONSerialization.jsonObject(with: existingData),
+              let incomingObject = try? JSONSerialization.jsonObject(with: incomingData),
+              var merged = existingObject as? [String: Any],
+              let update = incomingObject as? [String: Any]
+        else {
+            // Encoding a struct of optionals shouldn't fail, but preferring the
+            // fresher record beats returning something half-merged.
+            return incoming
+        }
+
+        for (key, value) in update { merged[key] = value }
+
+        guard let mergedData = try? JSONSerialization.data(withJSONObject: merged),
+              let out = try? JSONDecoder().decode(HealthDay.self, from: mergedData)
+        else { return incoming }
+        return out
     }
 }
 
@@ -733,6 +785,30 @@ struct SleepNight: Codable {
     var hasStages: Bool { segments.contains { $0.stage != "ASLEEP" } }
 }
 
+/// Which device Life takes step counts — and the rest of the daily activity
+/// figures — from.
+///
+/// The iPhone and a wrist tracker both count steps and will never agree: the
+/// phone misses everything you do without it on you, and the band misses
+/// nothing. Letting whichever synced last win produces a number that jumps
+/// around, so exactly one of them is authoritative.
+enum StepSource: String, Codable, CaseIterable, Identifiable {
+    /// The previous behaviour: the wrist tracker whenever it's connected.
+    case automatic
+    case fitbit
+    case iphone
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .automatic: return "Automatic"
+        case .fitbit:    return "Fitbit"
+        case .iphone:    return "iPhone"
+        }
+    }
+}
+
 struct HealthSettings: Codable {
     var sleepGoalMinutes: Int = 480
     var exerciseGoalMinutes: Int = 30
@@ -740,9 +816,15 @@ struct HealthSettings: Codable {
     /// Set once the first full-history import has run, so the 5-minute
     /// foreground sync only ever pulls a short recent window.
     var hasBackfilled: Bool = false
+    /// Which device's step count to trust. The iPhone and a wrist tracker both
+    /// count steps and never agree — the phone misses everything you do
+    /// without it in your pocket — so exactly one of them wins rather than
+    /// whichever synced last.
+    var stepSource: StepSource = .automatic
 
     enum CodingKeys: String, CodingKey {
         case sleepGoalMinutes, exerciseGoalMinutes, showRecoveryTile, hasBackfilled
+        case stepSource
     }
 
     init() {}
@@ -757,6 +839,11 @@ struct HealthSettings: Codable {
         exerciseGoalMinutes = try c.decodeIfPresent(Int.self, forKey: .exerciseGoalMinutes) ?? 30
         showRecoveryTile = try c.decodeIfPresent(Bool.self, forKey: .showRecoveryTile) ?? true
         hasBackfilled = try c.decodeIfPresent(Bool.self, forKey: .hasBackfilled) ?? false
+        // Decoded through its raw value rather than the enum so a value written
+        // by a future version doesn't throw and fail the whole snapshot.
+        stepSource = StepSource(
+            rawValue: try c.decodeIfPresent(String.self, forKey: .stepSource) ?? ""
+        ) ?? .automatic
     }
 }
 

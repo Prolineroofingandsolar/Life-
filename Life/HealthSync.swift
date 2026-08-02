@@ -20,7 +20,28 @@ enum HealthSync {
         case none = "no source"
     }
 
-    static var activeSource: Source {
+    /// The device the user has chosen, falling back to what's actually
+    /// available.
+    ///
+    /// An explicit choice is honoured even when the other source is also
+    /// connected — that's the whole point of choosing. It's only ignored when
+    /// the chosen device isn't there at all, because reporting no steps would
+    /// be worse than reporting the other device's.
+    static func source(for settings: HealthSettings) -> Source {
+        switch settings.stepSource {
+        case .fitbit where GoogleHealthService.shared.isConnected:
+            return .fitbit
+        case .iphone where HKHealthStoreAvailability.isAvailable:
+            return .appleHealth
+        default:
+            return automaticSource
+        }
+    }
+
+    /// Fitbit whenever it's connected: it's the device actually on the wrist,
+    /// and Apple Health would otherwise contribute an iPhone-only step count
+    /// that's lower than the truth.
+    static var automaticSource: Source {
         if GoogleHealthService.shared.isConnected { return .fitbit }
         if HKHealthStoreAvailability.isAvailable { return .appleHealth }
         return .none
@@ -45,7 +66,7 @@ enum HealthSync {
         healthKit: HealthKitManager,
         daysBack: Int
     ) async -> Outcome {
-        switch activeSource {
+        switch source(for: appState.healthSettings) {
         case .fitbit:      return await syncFitbit(appState: appState, daysBack: daysBack)
         case .appleHealth: return await syncAppleHealth(appState: appState, healthKit: healthKit, daysBack: daysBack)
         case .none:        return Outcome(source: .none, dayCount: 0, message: nil)

@@ -12,10 +12,17 @@ import SwiftUI
 struct HealthView: View {
 
     @Environment(AppState.self) private var appState
+    @Environment(\.scenePhase) private var scenePhase
     @State private var isSyncing = false
     @State private var syncMessage: String? = nil
     @State private var sources: [String] = []
     @State private var healthKit = HealthKitManager()
+
+    /// Computed rather than a stored `let`: `HeartRateStore` is main-actor
+    /// isolated, and a stored property's default value is evaluated outside
+    /// that isolation. Reached from `body` and from the lifecycle closures, all
+    /// of which are already on the main actor.
+    private var heartRate: HeartRateStore { HeartRateStore.shared }
 
     private var health: [HealthDay] { appState.healthHistory }
     private var activity: [ActivityDay] { appState.activityHistory }
@@ -48,6 +55,18 @@ struct HealthView: View {
                 ToolbarItem(placement: .topBarTrailing) { syncPill }
             }
             .task { await loadSources() }
+            // Polling runs only while this screen is actually in front of you.
+            // It never makes a reading arrive sooner — the band decides that —
+            // it only saves a manual pull once one has landed.
+            .onAppear { heartRate.start(healthKit: healthKit, appState: appState) }
+            .onDisappear { heartRate.stop() }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active {
+                    heartRate.start(healthKit: healthKit, appState: appState)
+                } else {
+                    heartRate.stop()
+                }
+            }
         }
     }
 
@@ -296,6 +315,8 @@ struct HealthView: View {
             HealthCard {
                 VStack(alignment: .leading, spacing: 12) {
                     HealthCardHeader(title: "Vitals")
+                    HeartRateNowRow(store: heartRate)
+                    Divider()
                     HStack(alignment: .top, spacing: 0) {
                         vitalMetric(.restingHr, title: "Resting HR", icon: "heart.fill", colour: .pink)
                         vitalMetric(.hrv, title: "HRV", icon: "waveform.path.ecg", colour: .purple)
@@ -442,7 +463,7 @@ struct HealthView: View {
     @MainActor
     private func loadSources() async {
         guard sources.isEmpty else { return }
-        switch HealthSync.activeSource {
+        switch HealthSync.source(for: appState.healthSettings) {
         case .fitbit:      sources = ["Fitbit"]
         case .appleHealth: sources = await healthKit.fetchDataSources()
         case .none:        sources = []
@@ -458,12 +479,80 @@ struct HealthView: View {
             // 150-requests-per-hour budget is why it's a year here and a week
             // on the automatic path, not a year everywhere.
             let outcome = await HealthSync.run(appState: appState, healthKit: healthKit, daysBack: 365)
-            if HealthSync.activeSource == .appleHealth {
+            if HealthSync.source(for: appState.healthSettings) == .appleHealth {
                 sources = await healthKit.fetchDataSources()
             }
             isSyncing = false
             syncMessage = outcome.message
         }
+    }
+}
+
+// MARK: - Current heart rate
+
+/// The latest heart rate, with its age stated rather than implied.
+///
+/// This is deliberately not called "live" unless it is. On a Fitbit-only setup
+/// the freshest number obtainable is whatever the band last synced to Google —
+/// usually five to thirty minutes old — and presenting that as a current pulse
+/// would be a lie the user can't check. A reading from an Apple Watch or from
+/// heart-rate-capable AirPods mid-workout arrives within seconds, and only then
+/// does the LIVE badge appear.
+struct HeartRateNowRow: View {
+
+    let store: HeartRateStore
+
+    private var reading: HeartRateSample? { store.latest }
+
+    private var bpm: String {
+        guard let reading else { return "—" }
+        return String(Int(reading.bpm.rounded()))
+    }
+
+    /// "Fitbit · 12 min ago", or the reason there's nothing to show.
+    private var caption: String {
+        guard let reading, let age = store.latestAgeDescription else {
+            if store.isLoading { return "Checking…" }
+            if let message = store.message { return message }
+            return "No readings yet today"
+        }
+        return reading.source.label + " · " + age
+    }
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Image(systemName: "heart.fill")
+                .font(.system(size: 15))
+                .foregroundColor(.pink)
+            figure
+            Spacer(minLength: 8)
+            if store.isLive { liveBadge }
+        }
+    }
+
+    private var figure: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text(bpm)
+                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                Text("bpm")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            Text(caption)
+                .font(.caption2)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var liveBadge: some View {
+        Text("LIVE")
+            .font(.system(size: 9, weight: .bold))
+            .foregroundColor(.white)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(Capsule().fill(Color.pink))
     }
 }
 

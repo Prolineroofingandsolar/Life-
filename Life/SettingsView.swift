@@ -379,6 +379,25 @@ private struct HealthSettingsSection: View {
         )
     }
 
+    private var stepSource: Binding<StepSource> {
+        Binding(
+            get: { appState.healthSettings.stepSource },
+            set: { value in appState.setHealthSettings { $0.stepSource = value } }
+        )
+    }
+
+    /// What "Automatic" currently resolves to, so the setting isn't opaque.
+    @MainActor private var resolvedSource: String {
+        HealthSync.source(for: settings).rawValue
+    }
+
+    @MainActor private var stepSourceFooter: String {
+        "The iPhone and your tracker both count steps and will never agree — "
+            + "the phone misses everything you do without it on you. Life uses one of them, "
+            + "not both. Automatic currently means " + resolvedSource + ". "
+            + "Days already recorded keep the figures they were saved with."
+    }
+
     var body: some View {
         Section {
             Stepper("Sleep Goal: \(sleepGoalText)", value: sleepGoal, in: 240...720, step: 15)
@@ -388,6 +407,18 @@ private struct HealthSettingsSection: View {
             Text("Health")
         } footer: {
             Text("Sleep, heart rate, HRV and activity are read from Apple Health. Anything your tracker writes there shows up under Body ▸ Vitals.")
+        }
+
+        Section {
+            Picker("Activity source", selection: stepSource) {
+                ForEach(StepSource.allCases) { source in
+                    Text(source.label).tag(source)
+                }
+            }
+        } header: {
+            Text("Steps")
+        } footer: {
+            Text(stepSourceFooter)
         }
     }
 }
