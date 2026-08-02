@@ -315,9 +315,14 @@ final class GoogleHealthService {
     /// Page size is capped at 25 for sleep by the API, so paging isn't optional
     /// for any range longer than a few weeks.
     private func list(_ type: DataType, start: Date, end: Date) async throws -> [[String: Any]] {
-        let isDaily = type.timeField == "date"
-        let from = isDaily ? Self.isoDay.string(from: start) : Self.isoDay.string(from: start)
-        let to = isDaily ? Self.isoDay.string(from: end) : Self.isoDay.string(from: end)
+        // The upper bound is exclusive, so it has to be *tomorrow* rather than
+        // today or nothing recorded today ever comes back. That bit hardest on
+        // sleep, which filters on `civil_end_time`: last night ends this
+        // morning, so an exclusive bound of today's date silently hid the most
+        // recent night — permanently, on every sync.
+        let dayAfterEnd = Calendar.current.date(byAdding: .day, value: 1, to: end) ?? end
+        let from = Self.isoDay.string(from: start)
+        let to = Self.isoDay.string(from: dayAfterEnd)
         let filter = "\(type.filterField) >= \"\(from)\" AND \(type.filterField) < \"\(to)\""
 
         var out: [[String: Any]] = []
