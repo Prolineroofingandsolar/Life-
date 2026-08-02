@@ -97,16 +97,29 @@ final class GoogleHealthService {
         var byDay: [String: HealthDay] = [:]
         var result = SyncResult()
         var authFailed = false
+        var forbidden = 0
+        var succeeded = 0
 
         func day(_ key: String) -> HealthDay { byDay[key] ?? HealthDay(dayKey: key) }
 
+        /// Runs one metric's fetch, tolerating its failure.
+        ///
+        /// Only a dead token (401) stops the run. A 403 means *this* data type
+        /// isn't permitted — a scope the grant doesn't cover, or a type the
+        /// project hasn't enabled — and it says nothing about the next one.
+        ///
+        /// Treating 403 as a session-wide failure was a real bug: adding a
+        /// single unpermitted type silently cost every metric declared below
+        /// it, and then threw away the ones that had already worked. Sleep,
+        /// steps and every vital disappeared because one new call was refused.
         func attempt(_ name: String, _ work: () async throws -> Void) async {
             guard !authFailed else { return }
             do {
                 try await work()
+                succeeded += 1
             } catch let error as GoogleHealthError {
                 if case .http(401, _) = error { authFailed = true }
-                if case .http(403, _) = error { authFailed = true }
+                if case .http(403, _) = error { forbidden += 1 }
                 result.failures.append(name)
             } catch {
                 result.failures.append(name)
@@ -223,29 +236,6 @@ final class GoogleHealthService {
             }
         }
 
-        // Zone minutes are a daily total of a few integers, so unlike the raw
-        // heart-rate samples they're cheap enough to store and worth having for
-        // every day rather than only the one on screen.
-        await attempt("heart rate zones") {
-            for point in try await list(.interval("timeInHeartRateZone"), start: start, end: end) {
-                guard let body = point["timeInHeartRateZone"] as? [String: Any],
-                      let key = Self.dayKey(fromInterval: body["interval"]) else { continue }
-                var d = day(key)
-                for entry in body["timeInHeartRateZoneValues"] as? [[String: Any]] ?? [] {
-                    guard let name = entry["heartRateZone"] as? String,
-                          let zone = HeartRateZone(rawValue: name),
-                          let minutes = Self.durationMinutes(entry["duration"]) else { continue }
-                    switch zone {
-                    case .light:    d.hrZoneLightMin = (d.hrZoneLightMin ?? 0) + minutes
-                    case .moderate: d.hrZoneModerateMin = (d.hrZoneModerateMin ?? 0) + minutes
-                    case .vigorous: d.hrZoneVigorousMin = (d.hrZoneVigorousMin ?? 0) + minutes
-                    case .peak:     d.hrZonePeakMin = (d.hrZonePeakMin ?? 0) + minutes
-                    }
-                }
-                byDay[key] = d
-            }
-        }
-
         await attempt("steps") {
             for (key, value) in try await intervalTotals(.interval("steps"), field: "count", start: start, end: end) where value > 0 {
                 result.steps[key] = Int(value)
@@ -277,8 +267,38 @@ final class GoogleHealthService {
             }
         }
 
-        if authFailed, let first = result.failures.first {
-            throw GoogleHealthError.http(403, "failed on \(first)")
+        // Last deliberately. Zone minutes are the newest and least certain call
+        // here, and anything whose permissions aren't proven belongs at the end
+        // where a refusal costs nothing else.
+        await attempt("heart rate zones") {
+            for point in try await list(.interval("timeInHeartRateZone"), start: start, end: end) {
+                guard let body = point["timeInHeartRateZone"] as? [String: Any],
+                      let key = Self.dayKey(fromInterval: body["interval"]) else { continue }
+                var d = day(key)
+                for entry in body["timeInHeartRateZoneValues"] as? [[String: Any]] ?? [] {
+                    guard let name = entry["heartRateZone"] as? String,
+                          let zone = HeartRateZone(rawValue: name),
+                          let minutes = Self.durationMinutes(entry["duration"]) else { continue }
+                    switch zone {
+                    case .light:    d.hrZoneLightMin = (d.hrZoneLightMin ?? 0) + minutes
+                    case .moderate: d.hrZoneModerateMin = (d.hrZoneModerateMin ?? 0) + minutes
+                    case .vigorous: d.hrZoneVigorousMin = (d.hrZoneVigorousMin ?? 0) + minutes
+                    case .peak:     d.hrZonePeakMin = (d.hrZonePeakMin ?? 0) + minutes
+                    }
+                }
+                byDay[key] = d
+            }
+        }
+
+        // A revoked or expired grant refuses everything; a missing scope
+        // refuses one type. Only the first is worth failing the whole sync for
+        // — otherwise partial data beats none, and `failures` already names
+        // what didn't come through.
+        if authFailed || (forbidden > 0 && succeeded == 0) {
+            throw GoogleHealthError.http(
+                authFailed ? 401 : 403,
+                "failed on \(result.failures.first ?? "every data type")"
+            )
         }
 
         result.days = byDay.values.filter { !$0.isEmpty }
