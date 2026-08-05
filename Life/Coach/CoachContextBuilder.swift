@@ -30,9 +30,36 @@ enum CoachContextBuilder {
         var tasks: Bool = true
         var habits: Bool = true
         /// When false, tasks and habits are counted but never named.
-        var includeTitles: Bool = true
+        ///
+        /// Defaults to false, matching `CoachSettings.shareTitles`. Two
+        /// cautious defaults that disagree are one cautious default and one
+        /// trap: any caller taking the default would have started sending the
+        /// words while the settings screen showed the switch as off.
+        var includeTitles: Bool = false
 
-        static let all = Permissions()
+        /// Everything, titles included. Explicit rather than `Permissions()`,
+        /// so it stays true to its name if a default changes.
+        static let all: Permissions = {
+            var permissions = Permissions()
+            permissions.includeTitles = true
+            return permissions
+        }()
+
+        /// The user's settings, expressed as what may be sent.
+        ///
+        /// One translation, in one place. The alternative — each call site
+        /// reading `settings.allowTasks` and remembering to check it — is how a
+        /// category ends up being sent by the one path that forgot.
+        init(_ settings: CoachSettings) {
+            health = settings.allowHealth
+            activity = settings.allowActivity
+            training = settings.allowTraining
+            tasks = settings.allowTasks
+            habits = settings.allowHabits
+            includeTitles = settings.shareTitles
+        }
+
+        init() {}
     }
 
     /// The most candidates worth sending.
@@ -44,7 +71,7 @@ enum CoachContextBuilder {
 
     static func build(
         appState: AppState,
-        permissions: Permissions = .all,
+        permissions: Permissions = Permissions(),
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> CoachContext {

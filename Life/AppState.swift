@@ -79,6 +79,7 @@ struct StateSnapshot: Codable {
     var sleepNights: [String: SleepNight]? = nil
     /// Manually entered Google Health scores paired with our estimates.
     var sleepComparisons: [String: SleepScoreComparison]? = nil
+    var coachSettings: CoachSettings? = nil
 }
 
 // MARK: - Snapshot Merging
@@ -147,6 +148,16 @@ extension StateSnapshot {
         // winner never set one.
         if out.userName.isEmpty { out.userName = loser.userName }
 
+        // Consent is never un-given by a merge. If either device recorded that
+        // the user agreed, that agreement stands — the alternative is a stale
+        // snapshot silently revoking it and re-prompting.
+        if var coach = out.coachSettings {
+            coach.hasConsented = coach.hasConsented || (loser.coachSettings?.hasConsented ?? false)
+            out.coachSettings = coach
+        } else {
+            out.coachSettings = loser.coachSettings
+        }
+
         return out
     }
 
@@ -209,6 +220,7 @@ final class AppState {
     var healthSettings: HealthSettings = HealthSettings()
     var sleepNights: [String: SleepNight] = [:]
     var sleepComparisons: [String: SleepScoreComparison] = [:]
+    var coachSettings: CoachSettings = CoachSettings()
 
     // MARK: Computed Properties
 
@@ -399,7 +411,8 @@ final class AppState {
             healthDays: healthDays,
             healthSettings: healthSettings,
             sleepNights: sleepNights,
-            sleepComparisons: sleepComparisons
+            sleepComparisons: sleepComparisons,
+            coachSettings: coachSettings
         )
     }
 
@@ -430,6 +443,7 @@ final class AppState {
         healthSettings = snapshot.healthSettings ?? HealthSettings()
         sleepNights = snapshot.sleepNights ?? [:]
         sleepComparisons = snapshot.sleepComparisons ?? [:]
+        coachSettings = snapshot.coachSettings ?? CoachSettings()
     }
 
     // MARK: Cloud Sync
@@ -1684,6 +1698,11 @@ final class AppState {
         guard healthDays.count > Self.healthDayRetention else { return }
         let keep = Set(healthDays.keys.sorted().suffix(Self.healthDayRetention))
         healthDays = healthDays.filter { keep.contains($0.key) }
+    }
+
+    func setCoachSettings(_ transform: (inout CoachSettings) -> Void) {
+        transform(&coachSettings)
+        save()
     }
 
     func setHealthSettings(_ transform: (inout HealthSettings) -> Void) {

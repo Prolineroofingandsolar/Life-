@@ -1014,6 +1014,114 @@ struct WorkoutSettings: Codable {
     var goalWeightKg: Double? = nil
 }
 
+// MARK: - Coach Settings
+
+/// Everything the user controls about the coach.
+///
+/// Defaults are the cautious ones. `cloudEnabled` is false and `hasConsented`
+/// is false, so a fresh install sends nothing anywhere until the consent screen
+/// has been read and accepted — the feature works from the first launch, on
+/// local rules only, and the network is opt-in rather than opt-out.
+///
+/// Decoded key by key like `HealthSettings`, for the same reason: Swift's
+/// synthesised decoder throws on a missing key, and a throw here fails the
+/// whole `StateSnapshot`, which `AppState.load()` reads as first launch and
+/// answers by seeding defaults over the user's data.
+struct CoachSettings: Codable, Equatable {
+
+    /// Master switch. Off means no coach at all, not even local suggestions.
+    var enabled: Bool = true
+
+    /// Whether the coach may use the network. Off means `LocalCoach` only —
+    /// deterministic, private, free, and noticeably less insightful.
+    var cloudEnabled: Bool = false
+
+    /// Set once the consent screen has been accepted. Separate from
+    /// `cloudEnabled` so that turning the cloud off and on again doesn't
+    /// re-prompt, and so revoking consent can force a re-read.
+    var hasConsented: Bool = false
+
+    var morningBriefingEnabled: Bool = true
+    var eveningReviewEnabled: Bool = true
+
+    var style: Style = .supportive
+
+    /// Which categories the coach may draw on. Off means the data is not
+    /// merely ignored — it is never sent.
+    var allowHealth: Bool = true
+    var allowActivity: Bool = true
+    var allowTraining: Bool = true
+    var allowTasks: Bool = true
+    var allowHabits: Bool = true
+
+    /// Whether task and habit names may leave the device.
+    ///
+    /// Defaults to false. A task title is free text and routinely names a real
+    /// person — "Call Mrs Hargreaves about her roof" — so the cautious default
+    /// is to send the counts and withhold the words. The coach can still say
+    /// "you have two important tasks left"; it needs this on to say which.
+    var shareTitles: Bool = false
+
+    /// Categories the user would rather not be nudged about.
+    var mutedCategories: [String] = []
+
+    enum Style: String, Codable, CaseIterable, Identifiable {
+        case supportive, concise, direct
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .supportive: return "Supportive"
+            case .concise:    return "Concise"
+            case .direct:     return "Direct"
+            }
+        }
+        /// Appended to the prompt. Kept short — a long style instruction eats
+        /// the token budget the actual data needs.
+        var instruction: String {
+            switch self {
+            case .supportive: return "Be warm and encouraging."
+            case .concise:    return "Be brief. Two sentences at most."
+            case .direct:     return "Be plain and direct. No preamble."
+            }
+        }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case enabled, cloudEnabled, hasConsented
+        case morningBriefingEnabled, eveningReviewEnabled, style
+        case allowHealth, allowActivity, allowTraining, allowTasks, allowHabits
+        case shareTitles, mutedCategories
+    }
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
+        cloudEnabled = try c.decodeIfPresent(Bool.self, forKey: .cloudEnabled) ?? false
+        hasConsented = try c.decodeIfPresent(Bool.self, forKey: .hasConsented) ?? false
+        morningBriefingEnabled = try c.decodeIfPresent(Bool.self, forKey: .morningBriefingEnabled) ?? true
+        eveningReviewEnabled = try c.decodeIfPresent(Bool.self, forKey: .eveningReviewEnabled) ?? true
+        // Through the raw value so a style written by a future version doesn't
+        // throw and take the whole snapshot with it.
+        style = Style(rawValue: try c.decodeIfPresent(String.self, forKey: .style) ?? "") ?? .supportive
+        allowHealth = try c.decodeIfPresent(Bool.self, forKey: .allowHealth) ?? true
+        allowActivity = try c.decodeIfPresent(Bool.self, forKey: .allowActivity) ?? true
+        allowTraining = try c.decodeIfPresent(Bool.self, forKey: .allowTraining) ?? true
+        allowTasks = try c.decodeIfPresent(Bool.self, forKey: .allowTasks) ?? true
+        allowHabits = try c.decodeIfPresent(Bool.self, forKey: .allowHabits) ?? true
+        shareTitles = try c.decodeIfPresent(Bool.self, forKey: .shareTitles) ?? false
+        mutedCategories = try c.decodeIfPresent([String].self, forKey: .mutedCategories) ?? []
+    }
+
+    /// May the coach make a network call right now?
+    ///
+    /// All three must hold. Consent alone isn't enough, and neither is the
+    /// toggle — this is the single place that answers the question so no call
+    /// site has to remember the combination.
+    var mayUseCloud: Bool { enabled && cloudEnabled && hasConsented }
+}
+
 // MARK: - Workout Programs / Splits
 
 struct ProgramDay: Codable, Identifiable {
