@@ -63,6 +63,18 @@ export async function generateJSON(request: GeminiRequest): Promise<GeminiResult
     },
   };
 
+  // Trimmed at the point of use.
+  //
+  // `functions:secrets:set` reads from stdin, so a pasted key can arrive with
+  // a trailing newline. A header value containing one is invalid, the key is
+  // dropped in transit, and Gemini answers 401 — "missing key" — for a key
+  // that is perfectly valid. Indistinguishable from a revoked credential
+  // without knowing to look.
+  const apiKey = request.apiKey.trim();
+  if (!apiKey) {
+    throw new GeminiError(401, "no API key was supplied to the request");
+  }
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), request.timeoutMs);
 
@@ -74,7 +86,7 @@ export async function generateJSON(request: GeminiRequest): Promise<GeminiResult
         "Content-Type": "application/json",
         // Header rather than a query parameter: query strings turn up in
         // access logs and proxy traces, and this one is a credential.
-        "x-goog-api-key": request.apiKey,
+        "x-goog-api-key": apiKey,
       },
       body: JSON.stringify(body),
       signal: controller.signal,
@@ -85,7 +97,16 @@ export async function generateJSON(request: GeminiRequest): Promise<GeminiResult
 
   if (!response.ok) {
     // The body can echo the request, so it is not surfaced to the client or
-    // logged. Only the status travels.
+    // logged. Only the status travels — plus, on an auth failure, the shape of
+    // the key. Its length and whether it needed trimming are exactly what
+    // distinguishes "revoked" from "arrived mangled", and neither reveals the
+    // key itself.
+    if (response.status === 401 || response.status === 400) {
+      console.error(
+        `[gemini] auth failure ${response.status}: key length ${apiKey.length}` +
+        `, untrimmed length ${request.apiKey.length}, model "${request.model}"`
+      );
+    }
     throw new GeminiError(response.status);
   }
 
