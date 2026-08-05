@@ -760,7 +760,11 @@ private struct ExerciseCardContent: View {
     /// places had to agree on what a set was. They didn't, which is how a set
     /// could show a warm-up badge while still being counted as a working set.
     private struct SetRowPlan: Identifiable {
-        let set: LoggedSet
+        /// Deliberately not named `set`. As the first token inside a computed
+        /// property's braces, `set` is parsed as the start of a setter
+        /// definition rather than as a property reference, so `var id: String
+        /// { set.id }` fails to compile.
+        let loggedSet: LoggedSet
         let kind: SetKind
         /// Position among the working sets, for the numeric label. Nil for sets
         /// that don't take a number.
@@ -769,16 +773,16 @@ private struct ExerciseCardContent: View {
         let isIndented: Bool
         let showsDivider: Bool
 
-        var id: String { set.id }
+        var id: String { loggedSet.id }
 
         var label: String {
-            if set.isFailure { return "F" }
+            if loggedSet.isFailure { return "F" }
             if kind != .normal { return kind.badge }
             return number.map { String($0) } ?? "–"
         }
 
         var labelColour: Color {
-            if set.isFailure { return .red }
+            if loggedSet.isFailure { return .red }
             return kind == .normal ? .secondary : kind.badgeColour
         }
     }
@@ -806,7 +810,7 @@ private struct ExerciseCardContent: View {
             // the card doesn't end on a rule.
             let isLast = index == sets.count - 1
             out.append(SetRowPlan(
-                set: set,
+                loggedSet: set,
                 kind: kind,
                 number: number,
                 previous: previous,
@@ -822,15 +826,15 @@ private struct ExerciseCardContent: View {
         SetRow(
             sessionId: sessionId,
             exerciseId: sessionExercise.id,
-            set: row.set,
+            set: row.loggedSet,
             setLabel: row.label,
             labelColor: row.labelColour,
             exerciseKind: exercise?.kind ?? .weight,
             prevSet: row.previous,
             isDropSet: row.kind == .drop,
-            onDone: { onSetDone(row.set.id) },
+            onDone: { onSetDone(row.loggedSet.id) },
             onAddDropSet: {
-                appState.addDropSet(sessionId: sessionId, exerciseId: sessionExercise.id, afterSetId: row.set.id)
+                appState.addDropSet(sessionId: sessionId, exerciseId: sessionExercise.id, afterSetId: row.loggedSet.id)
                 HapticManager.impact(.light)
             }
         )
