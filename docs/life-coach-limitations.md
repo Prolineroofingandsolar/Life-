@@ -60,6 +60,20 @@ hardcoded to 10,000 in `Models.swift` and read in four places, but there is
 nowhere in the app to change it. The coach inherits that, so its activity advice
 is against a goal the user never chose.
 
+### The coach proposes, it never acts
+
+Ask Coach can now offer changes — add a task, complete one, log a habit or
+water, plan a workout. Every one is a button. The model returns a description
+of an intent; `CoachActions` is the only thing that performs one, it is only
+reached from a tap, and it checks the proposal against real app data both
+before the button is drawn and again before the change is made. There is no
+path from a model response to a mutation that doesn't pass through a finger.
+
+Five kinds are implemented. Editing a task's text, deleting anything, changing
+goals or settings, and anything touching body or health records are all
+deliberately absent — the first two because an undo stack doesn't exist yet,
+the rest because they are the user's own measurements.
+
 ### Ask Coach has no memory
 
 Each question is answered from the current context alone. It cannot follow up —

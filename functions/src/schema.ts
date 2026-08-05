@@ -82,6 +82,129 @@ export const RECOMMENDATION_SCHEMA = {
   ],
 } as const;
 
+/**
+ * The changes the coach may *offer* to make.
+ *
+ * Offer, not make. The brief this feature was built to is explicit that the
+ * coach never modifies tasks, training or goals on its own, and nothing here
+ * relaxes that: a proposal is a button the person taps, and the app is what
+ * performs the change. The model produces a description of an intent, never an
+ * instruction that executes.
+ *
+ * Closed for the same reason `ACTION_TYPES` is closed. Every entry corresponds
+ * to a method the app already exposes, and an unrecognised one is refused
+ * rather than ignored — a proposal the app can't perform must not reach a
+ * button that appears to perform it.
+ */
+export const PROPOSAL_TYPES = [
+  "addTask",
+  "completeTask",
+  "addHabitLog",
+  "logWater",
+  "planWorkout",
+] as const;
+
+export const MAX_PROPOSALS = 3;
+export const MAX_ANSWER_CHARS = 1200;
+export const MAX_PROPOSAL_TITLE_CHARS = 80;
+
+/**
+ * The answer to a question, plus anything the coach offers to do about it.
+ *
+ * `proposals` is required rather than optional so "nothing to offer" is an
+ * empty array the model has to produce deliberately, not an absence that could
+ * equally mean it forgot.
+ */
+export const ASK_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    summary: { type: "STRING" },
+    proposals: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          type: { type: "STRING", enum: [...PROPOSAL_TYPES] },
+          /** What the button says. Imperative: "Add 'Call the plumber'". */
+          label: { type: "STRING" },
+          /** For addTask and planWorkout. */
+          title: { type: "STRING", nullable: true },
+          /** For addTask: one of the app's list ids, from the context. */
+          listId: { type: "STRING", nullable: true },
+          /** For addTask: today, tomorrow or thisWeek. */
+          due: { type: "STRING", enum: ["today", "tomorrow", "thisWeek"], nullable: true },
+          /** For completeTask, addHabitLog, planWorkout: an id from the data. */
+          targetId: { type: "STRING", nullable: true },
+          /** For logWater and addHabitLog. */
+          count: { type: "INTEGER", nullable: true },
+        },
+        required: ["type", "label"],
+      },
+    },
+    safetyNotice: { type: "STRING", nullable: true },
+  },
+  required: ["summary", "proposals"],
+} as const;
+
+/**
+ * Checks an answer before it is returned.
+ *
+ * Proposals are checked for shape and for a closed type only. Whether a
+ * `targetId` names a real task is checked in the app, which is the side that
+ * holds the task list — the server sees only what was in the prompt, so a check
+ * here would be a guess dressed as a guarantee.
+ */
+export function validateAsk(value: unknown): ValidationResult {
+  if (typeof value !== "object" || value === null) {
+    return { ok: false, reason: "not an object" };
+  }
+  const v = value as Record<string, unknown>;
+
+  if (typeof v.summary !== "string" || v.summary.trim().length === 0) {
+    return { ok: false, reason: "missing answer" };
+  }
+  if (v.summary.length > MAX_ANSWER_CHARS) {
+    return { ok: false, reason: `answer exceeds ${MAX_ANSWER_CHARS} characters` };
+  }
+
+  const proposals = v.proposals ?? [];
+  if (!Array.isArray(proposals)) {
+    return { ok: false, reason: "proposals must be an array" };
+  }
+  if (proposals.length > MAX_PROPOSALS) {
+    return { ok: false, reason: `more than ${MAX_PROPOSALS} proposals` };
+  }
+
+  for (const raw of proposals) {
+    if (typeof raw !== "object" || raw === null) {
+      return { ok: false, reason: "proposal is not an object" };
+    }
+    const p = raw as Record<string, unknown>;
+    if (!PROPOSAL_TYPES.includes(p.type as (typeof PROPOSAL_TYPES)[number])) {
+      return { ok: false, reason: `unsupported proposal type: ${String(p.type)}` };
+    }
+    if (typeof p.label !== "string" || p.label.trim().length === 0) {
+      return { ok: false, reason: "proposal has no label" };
+    }
+    if (p.label.length > MAX_PROPOSAL_TITLE_CHARS) {
+      return { ok: false, reason: "proposal label too long" };
+    }
+    if (p.title !== undefined && p.title !== null) {
+      if (typeof p.title !== "string" || p.title.length > MAX_PROPOSAL_TITLE_CHARS) {
+        return { ok: false, reason: "proposal title too long" };
+      }
+    }
+  }
+
+  // Same reasoning as the recommendation check: a URL in a model response is a
+  // prompt-injection signature, not a feature.
+  if (/https?:\/\//i.test(JSON.stringify(v))) {
+    return { ok: false, reason: "response contained a URL" };
+  }
+
+  return { ok: true };
+}
+
 export const BRIEFING_SCHEMA = {
   type: "OBJECT",
   properties: {

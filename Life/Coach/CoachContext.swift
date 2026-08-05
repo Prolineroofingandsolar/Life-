@@ -134,6 +134,11 @@ struct CoachContext: Codable, Equatable, Sendable {
 
     struct Training: Codable, Equatable, Sendable {
         var plannedWorkout: String?
+        /// Routines the coach may offer to schedule, each with the id it must
+        /// quote. Only sent when training data is allowed, and capped — the
+        /// coach offers at most one workout, so a full library would be paying
+        /// to transmit what it can't use.
+        var routines: [Named] = []
         var lastWorkoutDaysAgo: Int?
         /// Derived from recent volume against the user's own recent norm, not
         /// from an absolute scale — "moderate" means moderate for them.
@@ -145,7 +150,21 @@ struct CoachContext: Codable, Equatable, Sendable {
         }
     }
 
+    /// An id and the name that goes with it, for the things the coach may
+    /// offer to act on.
+    struct Named: Codable, Equatable, Sendable {
+        var id: String
+        var name: String
+    }
+
     struct Tasks: Codable, Equatable, Sendable {
+        /// The lists a new task could go in.
+        ///
+        /// Sent only when titles are allowed, and for the same reason: a list
+        /// is named by the user and "Divorce" is as plausible a list name as
+        /// "Work". With it off the coach can still offer to add a task; the app
+        /// files it under Personal rather than asking the coach to choose.
+        var lists: [Named] = []
         var importantRemaining: Int
         var totalRemainingToday: Int
         var nextDeadline: Date?

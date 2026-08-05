@@ -410,7 +410,7 @@ final class CoachService {
         _ question: String,
         context: CoachContext,
         settings: CoachSettings
-    ) async throws -> String {
+    ) async throws -> CoachAnswer {
         guard settings.enabled else { throw CoachError.disabled }
         guard settings.mayUseCloud else { throw CoachError.disabled }
         guard usage.canAffordCall() else {
@@ -438,6 +438,21 @@ final class CoachService {
               let summary = (value["summary"] as? String) ?? (value["body"] as? String) else {
             throw CoachError.invalidResponse("no answer")
         }
-        return summary
+        return CoachAnswer(text: summary, proposals: proposals(from: value))
+    }
+
+    /// Decodes the offered actions, dropping any the app doesn't implement.
+    ///
+    /// One bad proposal never costs the answer. The text is what was asked for
+    /// and the proposals are a convenience on top, so a kind this version
+    /// doesn't recognise — a newer server, a model ignoring the enum — is
+    /// discarded on its own rather than failing the response. The alternative
+    /// is an error message where a perfectly good answer should be.
+    private func proposals(from value: [String: Any]) -> [CoachProposal] {
+        guard let raw = value["proposals"] as? [[String: Any]] else { return [] }
+        return raw.prefix(3).compactMap { item in
+            guard let data = try? JSONSerialization.data(withJSONObject: item) else { return nil }
+            return try? JSONDecoder().decode(CoachProposal.self, from: data)
+        }
     }
 }

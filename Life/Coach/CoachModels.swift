@@ -268,3 +268,105 @@ struct CoachBriefing: Codable, Equatable, Sendable {
     /// underlying figures actually change.
     var contextHash: String = ""
 }
+
+// MARK: - Proposals
+
+/// A change the coach offers to make, which the person then makes.
+///
+/// The distinction is the whole design. The brief this feature was built to
+/// says the coach never modifies tasks, training or goals on its own, and a
+/// proposal keeps that promise while still being useful: the model describes an
+/// intent, the app renders it as a button, and nothing happens until it is
+/// tapped. There is no path from a model response to a mutation that doesn't
+/// pass through a finger.
+///
+/// The kinds are a closed set, mapped one-to-one onto methods `AppState`
+/// already exposes. An unrecognised kind decodes to nil and the proposal is
+/// dropped — a proposal the app can't perform must never reach a button that
+/// looks like it can.
+enum CoachProposalKind: String, Codable, CaseIterable, Sendable {
+    case addTask
+    case completeTask
+    case addHabitLog
+    case logWater
+    case planWorkout
+}
+
+struct CoachProposal: Codable, Equatable, Sendable, Identifiable {
+
+    var id: String { "\(kind.rawValue)-\(label)-\(targetId ?? title ?? "")" }
+
+    let kind: CoachProposalKind
+    /// What the button says.
+    let label: String
+    /// For `addTask` and `planWorkout`.
+    let title: String?
+    /// For `addTask`: one of the app's list ids.
+    let listId: String?
+    /// For `addTask`: today, tomorrow or thisWeek.
+    let due: String?
+    /// For `completeTask`, `addHabitLog`, `planWorkout`: an id from the data
+    /// the coach was given. Checked against reality by `CoachActions` before
+    /// anything is shown, because the server has no task list to check against.
+    let targetId: String?
+    let count: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case type, label, title, listId, due, targetId, count
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        guard let kind = CoachProposalKind(
+            rawValue: try c.decodeIfPresent(String.self, forKey: .type) ?? ""
+        ) else {
+            throw CoachProposalError.unsupportedKind
+        }
+        self.kind = kind
+        self.label = try c.decodeIfPresent(String.self, forKey: .label) ?? ""
+        self.title = try c.decodeIfPresent(String.self, forKey: .title)
+        self.listId = try c.decodeIfPresent(String.self, forKey: .listId)
+        self.due = try c.decodeIfPresent(String.self, forKey: .due)
+        self.targetId = try c.decodeIfPresent(String.self, forKey: .targetId)
+        self.count = try c.decodeIfPresent(Int.self, forKey: .count)
+    }
+
+    init(
+        kind: CoachProposalKind,
+        label: String,
+        title: String? = nil,
+        listId: String? = nil,
+        due: String? = nil,
+        targetId: String? = nil,
+        count: Int? = nil
+    ) {
+        self.kind = kind
+        self.label = label
+        self.title = title
+        self.listId = listId
+        self.due = due
+        self.targetId = targetId
+        self.count = count
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(kind.rawValue, forKey: .type)
+        try c.encode(label, forKey: .label)
+        try c.encodeIfPresent(title, forKey: .title)
+        try c.encodeIfPresent(listId, forKey: .listId)
+        try c.encodeIfPresent(due, forKey: .due)
+        try c.encodeIfPresent(targetId, forKey: .targetId)
+        try c.encodeIfPresent(count, forKey: .count)
+    }
+}
+
+enum CoachProposalError: Error {
+    case unsupportedKind
+}
+
+/// An answer, and anything the coach offered to do about it.
+struct CoachAnswer: Equatable, Sendable {
+    var text: String
+    var proposals: [CoachProposal] = []
+}

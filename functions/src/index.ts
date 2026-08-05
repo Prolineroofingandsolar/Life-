@@ -5,7 +5,9 @@ import { generateJSON, GeminiError } from "./gemini";
 import {
   RECOMMENDATION_SCHEMA,
   BRIEFING_SCHEMA,
+  ASK_SCHEMA,
   validateRecommendation,
+  validateAsk,
 } from "./schema";
 import { reserveCall, recordUsage, readUsage, LimitExceeded } from "./limits";
 
@@ -131,7 +133,17 @@ const MODE_INSTRUCTIONS: Record<Mode, string> = {
     "Write a short morning briefing: how they slept, how recovered they are, what matters today, and one thing to focus on.",
   eveningReview:
     "Write a short evening review: what got done, how the day went for activity and training, and one lesson or suggestion for tomorrow.",
-  ask: "Answer the question using only the data provided. If the data does not cover it, say so rather than guessing.",
+  ask:
+    "Answer the question using only the data provided. If the data does not " +
+    "cover it, say so rather than guessing.\n" +
+    "You may also offer up to three changes for the person to make. Offer one " +
+    "only when the question plainly calls for it — a question is usually a " +
+    "question, and a wall of buttons under every answer is noise. Never offer " +
+    "to complete a task or log a habit the person has not asked about: doing " +
+    "something on their behalf is their decision, and you are proposing, not " +
+    "acting. Use ids exactly as they appear in the data and never invent one; " +
+    "omit targetId if you do not have a real one. Return an empty proposals " +
+    "array when there is nothing worth offering.",
 };
 
 export const coach = onCall(
@@ -209,6 +221,14 @@ export const coach = onCall(
     }
 
     const isBriefing = mode === "morningBriefing" || mode === "eveningReview";
+    const isAsk = mode === "ask";
+
+    /** Each mode answers in its own shape. */
+    const responseSchema = isBriefing
+      ? BRIEFING_SCHEMA
+      : isAsk
+        ? ASK_SCHEMA
+        : RECOMMENDATION_SCHEMA;
 
     const userContent = [
       MODE_INSTRUCTIONS[mode],
@@ -228,7 +248,7 @@ export const coach = onCall(
         model: GEMINI_MODEL.value(),
         systemInstruction: SYSTEM_INSTRUCTION,
         userContent,
-        responseSchema: isBriefing ? BRIEFING_SCHEMA : RECOMMENDATION_SCHEMA,
+        responseSchema,
         maxOutputTokens: MAX_OUTPUT_TOKENS,
         temperature: 0.4,
         timeoutMs: REQUEST_TIMEOUT_MS,
@@ -237,7 +257,9 @@ export const coach = onCall(
       const cost = await recordUsage(uid, result.usage, limits.pricing);
 
       if (!isBriefing) {
-        const check = validateRecommendation(result.value);
+        const check = isAsk
+          ? validateAsk(result.value)
+          : validateRecommendation(result.value);
         if (!check.ok) {
           // Reported as data, not thrown. The app decides whether to ask for a
           // repair or fall back to its local suggestion, and it needs the

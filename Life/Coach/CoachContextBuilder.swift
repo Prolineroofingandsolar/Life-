@@ -330,6 +330,9 @@ enum CoachContextBuilder {
 
         return CoachContext.Training(
             plannedWorkout: planned?.routineName,
+            routines: appState.routines.prefix(maximumCandidates).map {
+                CoachContext.Named(id: $0.id, name: $0.name)
+            },
             lastWorkoutDaysAgo: lastDaysAgo,
             recentLoad: load(sessionsThisWeek: thisWeek.count),
             sessionsThisWeek: thisWeek.count
@@ -360,6 +363,7 @@ enum CoachContextBuilder {
         let outstanding = appState.tasks.filter { !$0.done }
         guard !outstanding.isEmpty else {
             return CoachContext.Tasks(
+                lists: taskLists(appState: appState, permissions: permissions),
                 importantRemaining: 0,
                 totalRemainingToday: 0,
                 nextDeadline: nil,
@@ -403,11 +407,19 @@ enum CoachContextBuilder {
         }
 
         return CoachContext.Tasks(
+            lists: taskLists(appState: appState, permissions: permissions),
             importantRemaining: important.count,
             totalRemainingToday: dueToday.count,
             nextDeadline: nextDeadline,
             topCandidates: Array(candidates)
         )
+    }
+
+    private static func taskLists(
+        appState: AppState, permissions: Permissions
+    ) -> [CoachContext.Named] {
+        guard permissions.includeTitles else { return [] }
+        return appState.taskLists.map { CoachContext.Named(id: $0.id, name: $0.name) }
     }
 
     // MARK: Habits

@@ -157,7 +157,7 @@ struct CoachSettingsSection: View {
         } header: {
             Text("What you see")
         } footer: {
-            Text("The briefing appears before midday and the review after six. One of each per day.")
+            Text("The briefing appears between four and midday, the review after six. One of each per day.")
         }
     }
 

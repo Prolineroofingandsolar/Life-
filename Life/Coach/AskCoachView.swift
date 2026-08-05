@@ -33,6 +33,13 @@ struct AskCoachView: View {
         let id = UUID()
         var speaker: Speaker
         var text: String
+        /// Changes the coach offered to make. Buttons, not instructions —
+        /// nothing here happens until it is tapped.
+        var proposals: [CoachProposal] = []
+        /// What tapping one did, once it has been tapped. Keyed by proposal id
+        /// so an applied offer becomes a confirmation in place rather than
+        /// vanishing, which would leave no record that anything happened.
+        var applied: [String: String] = [:]
     }
 
     /// Deliberately not called `State`. A nested type of that name shadows
@@ -102,7 +109,13 @@ struct AskCoachView: View {
                     }
 
                     ForEach(turns) { turn in
-                        TurnBubble(turn: turn).id(turn.id)
+                        VStack(alignment: .leading, spacing: 8) {
+                            TurnBubble(turn: turn)
+                            if !turn.proposals.isEmpty {
+                                proposalList(for: turn)
+                            }
+                        }
+                        .id(turn.id)
                     }
 
                     if state == .thinking {
@@ -263,7 +276,16 @@ struct AskCoachView: View {
         Task {
             do {
                 let answer = try await service.ask(question, context: context, settings: settings)
-                turns.append(Turn(speaker: .coach, text: answer))
+                turns.append(
+                    Turn(
+                        speaker: .coach,
+                        text: answer.text,
+                        // Filtered before anything is drawn. A proposal naming
+                        // a task that doesn't exist is dropped rather than
+                        // shown and then failed on tap.
+                        proposals: CoachActions.usable(answer.proposals, appState: appState)
+                    )
+                )
                 state = .idle
             } catch {
                 let coachError = error as? CoachError
@@ -276,6 +298,80 @@ struct AskCoachView: View {
                 )
             }
         }
+    }
+
+    // MARK: Proposals
+
+    /// The changes on offer, as buttons.
+    ///
+    /// Each one performs exactly what its label says and nothing else, and
+    /// turns into a plain confirmation once used — so the conversation keeps a
+    /// record of what was done rather than a button that looks pressable and
+    /// isn't.
+    @ViewBuilder
+    private func proposalList(for turn: Turn) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(turn.proposals) { proposal in
+                if let outcome = turn.applied[proposal.id] {
+                    HStack(spacing: 6) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.caption)
+                            .foregroundColor(.green)
+                            .accessibilityHidden(true)
+                        Text(outcome)
+                            .font(.footnote)
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(.horizontal, 4)
+                    .accessibilityElement(children: .combine)
+                } else {
+                    Button {
+                        apply(proposal, in: turn)
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: icon(for: proposal.kind))
+                                .font(.caption.weight(.semibold))
+                                .accessibilityHidden(true)
+                            Text(proposal.label)
+                                .font(.footnote.weight(.semibold))
+                                .multilineTextAlignment(.leading)
+                        }
+                        .foregroundColor(AppTheme.primary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(AppTheme.primary.opacity(0.12))
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Makes this change. Nothing is changed until you tap.")
+                }
+            }
+        }
+        .padding(.trailing, 40)
+    }
+
+    private func icon(for kind: CoachProposalKind) -> String {
+        switch kind {
+        case .addTask:      return "plus.circle"
+        case .completeTask: return "checkmark.circle"
+        case .addHabitLog:  return "flame"
+        case .logWater:     return "drop"
+        case .planWorkout:  return "dumbbell"
+        }
+    }
+
+    private func apply(_ proposal: CoachProposal, in turn: Turn) {
+        guard let index = turns.firstIndex(where: { $0.id == turn.id }) else { return }
+        guard let outcome = CoachActions.perform(proposal, appState: appState) else {
+            // Valid when the answer arrived, gone by the time it was tapped —
+            // completed on another device, most likely. Say so where the button
+            // was rather than failing silently.
+            turns[index].applied[proposal.id] = "That's no longer available."
+            return
+        }
+        turns[index].applied[proposal.id] = outcome
+        HapticManager.success()
     }
 
     private func isRetryable(_ error: CoachError?) -> Bool {

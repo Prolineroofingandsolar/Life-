@@ -24,6 +24,15 @@ struct CoachBriefingView: View {
         CoachContextBuilder.build(appState: appState, permissions: .init(settings))
     }
 
+    /// The hour a morning briefing may first appear.
+    ///
+    /// `hour < 12` alone put "Good morning — you slept 8h 28m" on screen at
+    /// 12:02 AM, two minutes into a day the person hadn't slept through yet,
+    /// describing the night before last. Midnight to four is the end of the
+    /// previous day by any reasonable reading, and a briefing then is wrong
+    /// twice over: wrong greeting, and last night's sleep hasn't happened.
+    private static let morningStartHour = 4
+
     /// Whether this briefing belongs on screen at all.
     ///
     /// Time-gated as well as switch-gated: an evening review at nine in the
@@ -33,8 +42,14 @@ struct CoachBriefingView: View {
         guard settings.enabled else { return false }
         let hour = Calendar.current.component(.hour, from: Date())
         switch kind {
-        case .morning: return settings.morningBriefingEnabled && hour < 12
-        case .evening: return settings.eveningReviewEnabled && hour >= 18
+        case .morning:
+            return settings.morningBriefingEnabled
+                && hour >= Self.morningStartHour
+                && hour < 12
+        case .evening:
+            // Runs to midnight and no further. After that it's tomorrow's
+            // small hours, and neither briefing belongs on screen.
+            return settings.eveningReviewEnabled && hour >= 18
         }
     }
 
