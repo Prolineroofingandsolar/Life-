@@ -17,7 +17,7 @@ struct AskCoachView: View {
 
     @State private var draft = ""
     @State private var turns: [Turn] = []
-    @State private var state: State = .idle
+    @State private var state: AskState = .idle
     @State private var showConsent = false
     @FocusState private var inputFocused: Bool
 
@@ -35,7 +35,11 @@ struct AskCoachView: View {
         var text: String
     }
 
-    enum State: Equatable {
+    /// Deliberately not called `State`. A nested type of that name shadows
+    /// SwiftUI's `@State` property wrapper inside this view, so every
+    /// `@State var` in the file stops compiling with a message that points at
+    /// the wrapper rather than at the enum that broke it.
+    enum AskState: Equatable {
         case idle
         case thinking
         /// Carries what to say and whether trying again is worth it — an

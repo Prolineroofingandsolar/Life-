@@ -135,6 +135,8 @@ struct SettingsView: View {
 
                 GoogleHealthSettingsSection()
 
+                CoachSettingsSection()
+
                 // Habit Reminders
                 Section("Habit Reminders") {
                     Toggle("Morning Summary", isOn: $careSettings.morningSummaryEnabled)

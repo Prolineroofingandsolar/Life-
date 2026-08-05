@@ -134,4 +134,14 @@ final class CoachCache {
         [Key.recommendation, Key.morning, Key.evening, Key.dismissedHashes]
             .forEach { defaults.removeObject(forKey: $0) }
     }
+
+    /// Clears the cache from outside the main actor, for UI test setup.
+    ///
+    /// A UI test that inherited the previous run's dismissed suggestion would
+    /// fail for a reason having nothing to do with the code under test, and
+    /// the failure would look intermittent rather than caused.
+    nonisolated static func resetForTesting(defaults: UserDefaults = .standard) {
+        [Key.recommendation, Key.morning, Key.evening, Key.dismissedHashes]
+            .forEach { defaults.removeObject(forKey: $0) }
+    }
 }

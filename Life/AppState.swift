@@ -563,12 +563,25 @@ final class AppState {
             seedDefaults()
         }
         loadPhotos()
+        resetCoachForUITestsIfNeeded()
         // Defer notification scheduling off the synchronous launch path.
         let habitsSnapshot = habits
         DispatchQueue.main.async { [weak self] in
             HabitReminderManager.shared.syncReminders(for: habitsSnapshot)
             self?.syncHabitReminderSummaries()
         }
+    }
+
+    /// Puts the coach back to its shipped defaults when launched by a UI test.
+    ///
+    /// Without this a test inherits whatever the simulator was left in — a
+    /// dismissed suggestion, consent already given — and fails for a reason
+    /// that has nothing to do with the change being tested. Guarded by a launch
+    /// argument the app is never started with in normal use.
+    private func resetCoachForUITestsIfNeeded() {
+        guard ProcessInfo.processInfo.arguments.contains("-CoachUITest") else { return }
+        coachSettings = CoachSettings()
+        CoachCache.resetForTesting()
     }
 
     /// Schedules (or cancels) the daily morning-summary and evening-nudge
