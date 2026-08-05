@@ -959,11 +959,26 @@ struct HealthSettings: Codable {
     /// When the quota is expected back, if the last sync hit the limit.
     var rateLimitedUntil: Date? = nil
 
+    /// Per metric, the moment its data was last successfully fetched through.
+    ///
+    /// This is what makes a sync incremental. Every sync used to re-request the
+    /// same fixed window — a year, or sixty days — for all fourteen metrics
+    /// regardless of what was already stored, which is an enormous number of
+    /// requests to spend re-downloading records the app already holds, and it
+    /// is why the hourly budget ran out before the end of the list.
+    ///
+    /// Keyed per metric rather than one timestamp for the lot, because they
+    /// don't stay in step: if steps was starved for a week while sleep synced
+    /// nightly, steps needs a week and sleep needs a day. A single watermark
+    /// would either re-fetch a week of sleep needlessly or leave six days of
+    /// steps permanently missing.
+    var metricSyncedThrough: [String: Date] = [:]
+
     enum CodingKeys: String, CodingKey {
         case sleepGoalMinutes, exerciseGoalMinutes, showRecoveryTile, hasBackfilled
         case stepSource
         case lastSyncedAt, lastSyncSource, lastSyncFailures
-        case lastSyncSkipped, rateLimitedUntil
+        case lastSyncSkipped, rateLimitedUntil, metricSyncedThrough
     }
 
     init() {}
@@ -988,6 +1003,7 @@ struct HealthSettings: Codable {
         lastSyncFailures = try c.decodeIfPresent([String].self, forKey: .lastSyncFailures) ?? []
         lastSyncSkipped = try c.decodeIfPresent([String].self, forKey: .lastSyncSkipped) ?? []
         rateLimitedUntil = try c.decodeIfPresent(Date.self, forKey: .rateLimitedUntil)
+        metricSyncedThrough = try c.decodeIfPresent([String: Date].self, forKey: .metricSyncedThrough) ?? [:]
     }
 }
 

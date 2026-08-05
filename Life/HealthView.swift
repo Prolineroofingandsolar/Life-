@@ -532,18 +532,14 @@ struct HealthView: View {
         }
     }
 
-    /// How far back a manual sync reaches.
+    /// How far back a manual sync is allowed to reach.
     ///
-    /// A year, once, to fill in history — and then sixty days, because a year
-    /// costs far more requests than the hourly budget allows and spending it on
-    /// data already stored is what starved the metrics at the end of the queue.
-    /// Every sync pulled 365 days of a dozen paginated types, ran out of quota
-    /// partway through, and the remainder — steps among them — was never
-    /// fetched. Sixty days is enough to catch any correction a tracker makes
-    /// after the fact while leaving budget for the whole list.
-    private var manualSyncDays: Int {
-        settings.hasBackfilled ? 60 : 365
-    }
+    /// A full year, but this is a ceiling rather than the amount of work: each
+    /// metric starts from its own watermark, so one that synced an hour ago
+    /// fetches a few days and only one that has never arrived fetches the year.
+    /// That is the point of the watermarks — the ceiling can stay generous
+    /// precisely because nothing re-downloads what is already stored.
+    private var manualSyncDays: Int { 365 }
 
     private func sync() {
         isSyncing = true

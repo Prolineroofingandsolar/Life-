@@ -106,7 +106,8 @@ enum HealthSync {
             let settings = appState.healthSettings
             let result = try await GoogleHealthService.shared.sync(
                 daysBack: daysBack,
-                retryFirst: settings.lastSyncSkipped + settings.lastSyncFailures
+                retryFirst: settings.lastSyncSkipped + settings.lastSyncFailures,
+                syncedThrough: settings.metricSyncedThrough
             )
             appState.mergeHealthDays(result.days)
             appState.mergeSleepNights(result.nights)
@@ -123,12 +124,17 @@ enum HealthSync {
                 $0.lastSyncFailures = result.failures
                 $0.lastSyncSkipped = result.skipped
                 $0.rateLimitedUntil = retryAt
+                // Merged, not replaced: this run only reports watermarks for
+                // the metrics it actually fetched, and the ones it skipped must
+                // keep the marks they already had or they'd re-download their
+                // whole history on the next attempt.
+                $0.metricSyncedThrough.merge(result.syncedThrough) { _, new in new }
             }
 
             return Outcome(
                 source: .fitbit,
                 dayCount: result.days.count,
-                message: message(for: result)
+                message: message(for: result, isFirstSync: settings.metricSyncedThrough.isEmpty)
             )
         } catch {
             let text = (error as? GoogleHealthError)?.errorDescription ?? error.localizedDescription
@@ -148,10 +154,17 @@ enum HealthSync {
     /// same on a chart — a gap — but they need opposite responses, so they are
     /// never lumped together here. Running out of quota isn't a fault to report
     /// as one; it's a queue, and it says where in the queue it stopped.
-    private static func message(for result: GoogleHealthService.SyncResult) -> String? {
+    private static func message(
+        for result: GoogleHealthService.SyncResult,
+        isFirstSync: Bool
+    ) -> String? {
         var parts: [String] = []
 
-        if result.days.isEmpty && result.steps.isEmpty && result.nights.isEmpty {
+        // Only worth saying on a first sync. Once the app holds history, a sync
+        // that returns nothing means there was nothing new since the last one —
+        // which is the normal, correct outcome of an incremental fetch, not a
+        // fault to warn about.
+        if isFirstSync && result.days.isEmpty && result.steps.isEmpty && result.nights.isEmpty {
             parts.append("Fitbit returned no data. If you've only just set the device up, it may not have synced to Fitbit's servers yet.")
         }
 
