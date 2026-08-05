@@ -81,6 +81,12 @@ struct TodayView: View {
                         habitsTotal: todayHabits.count,
                         workedOut: workedOutToday
                     )
+                    // The coach gets one card, near the top where a "next best
+                    // action" is worth reading — and exactly one. Everything
+                    // else it has to say is a tap away rather than another card
+                    // competing with the ones that already earn their place.
+                    CoachBriefingView(kind: .morning)
+                    CoachCard()
                     CareSection()
                     TodayWorkoutCard(plan: todaysPlan) {
                         if let active = appState.activeSession {
@@ -102,6 +108,9 @@ struct TodayView: View {
                     }
                     TodayTasksSection(tasks: todayTasks)
                     TodayHabitsSection(habits: todayHabits)
+                    // At the bottom, and only after six: a review of the day
+                    // belongs under the day, not above it.
+                    CoachBriefingView(kind: .evening)
                 }
                 .padding(.vertical, 8)
                 .id(dayToken)
