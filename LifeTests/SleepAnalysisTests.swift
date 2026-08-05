@@ -285,3 +285,79 @@ struct SleepAnalysisTests {
         #expect(night.provenance.displayLabel == "Fitbit")
     }
 }
+
+// MARK: - Rounding
+
+/// The five minutes between what the tracker said and what Life showed.
+///
+/// A staged night is thirty to fifty intervals. Rounding each to a whole minute
+/// before summing discards up to half a minute per interval, and those errors
+/// don't reliably cancel — the total drifted several minutes from the figure the
+/// band itself reported for the same night, from data both agreed on.
+struct SleepRoundingTests {
+
+    private static let base = SleepAnalysisTests.base
+
+    private static func at(_ seconds: Double) -> Date {
+        base.addingTimeInterval(seconds)
+    }
+
+    /// Forty consecutive 90-second stages. Rounding each gives 40 × 2 = 80
+    /// minutes; the truth is 60.
+    @Test("Fractional stages are summed before rounding, not after")
+    func fractionalStagesDoNotAccumulateError() {
+        var stages: [SleepInterval] = []
+        for index in 0..<40 {
+            let start = Double(index) * 90
+            stages.append(
+                SleepInterval(start: Self.at(start), end: Self.at(start + 90), stage: .light)
+            )
+        }
+
+        let night = SleepAnalysis.measure(
+            SleepSessionInput(
+                start: Self.at(0),
+                end: Self.at(3_600),
+                stages: stages,
+                isNap: false,
+                hasSourceStages: true,
+                provenance: SleepProvenance(
+                    platform: "GOOGLE_HEALTH", deviceName: "Fitbit", utcOffsetSeconds: 0
+                )
+            )
+        )
+
+        #expect(night.minutesAsleep == 60)
+        #expect(night.lightMinutes == 60)
+    }
+
+    /// The headline total is rounded from the true sum rather than from the
+    /// already-rounded parts, so three stages of 30 seconds each read as two
+    /// minutes and not zero.
+    @Test("The total is rounded from the sum, not from the rounded parts")
+    func totalIsRoundedOnce() {
+        let stages: [SleepInterval] = [
+            SleepInterval(start: Self.at(0), end: Self.at(40), stage: .deep),
+            SleepInterval(start: Self.at(40), end: Self.at(80), stage: .rem),
+            SleepInterval(start: Self.at(80), end: Self.at(120), stage: .light)
+        ]
+
+        let night = SleepAnalysis.measure(
+            SleepSessionInput(
+                start: Self.at(0),
+                end: Self.at(120),
+                stages: stages,
+                isNap: false,
+                hasSourceStages: true,
+                provenance: SleepProvenance(
+                    platform: "GOOGLE_HEALTH", deviceName: "Fitbit", utcOffsetSeconds: 0
+                )
+            )
+        )
+
+        // 120 seconds is exactly 2 minutes. Each part alone is 40 seconds and
+        // rounds to 1, so summing the rounded parts gives 3 — the total has to
+        // come from the seconds, not from the parts.
+        #expect(night.minutesAsleep == 2)
+    }
+}

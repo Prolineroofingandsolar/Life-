@@ -324,17 +324,36 @@ enum SleepAnalysis {
             return out
         }
 
+        // Accumulated in minutes-as-a-fraction and rounded once at the end,
+        // never per interval.
+        //
+        // A staged night is thirty to fifty intervals, and rounding each one to
+        // a whole minute before adding it up throws away up to half a minute
+        // per interval. Those errors don't cancel reliably — they accumulate
+        // into a total several minutes adrift of what the tracker itself
+        // reports for the identical night, which is exactly the sort of
+        // disagreement that makes a health app look untrustworthy when the
+        // underlying data was never in dispute.
+        var deep = 0.0, rem = 0.0, light = 0.0, generic = 0.0
         for interval in timeline {
-            let minutes = Int(interval.minutes.rounded())
             switch interval.stage {
-            case .deep:   out.deepMinutes += minutes
-            case .rem:    out.remMinutes += minutes
-            case .light:  out.lightMinutes += minutes
-            case .asleep: out.genericAsleepMinutes += minutes
+            case .deep:   deep += interval.minutes
+            case .rem:    rem += interval.minutes
+            case .light:  light += interval.minutes
+            case .asleep: generic += interval.minutes
             default:      break
             }
         }
-        out.minutesAsleep = out.deepMinutes + out.remMinutes + out.lightMinutes + out.genericAsleepMinutes
+        out.deepMinutes += Int(deep.rounded())
+        out.remMinutes += Int(rem.rounded())
+        out.lightMinutes += Int(light.rounded())
+        out.genericAsleepMinutes += Int(generic.rounded())
+
+        // Rounded from the true total rather than from the four rounded parts,
+        // so the headline figure is right even when the breakdown has to be
+        // whole minutes. The parts can therefore differ from the total by a
+        // minute — correct, and preferable to a total that is wrong.
+        out.minutesAsleep = Int((deep + rem + light + generic).rounded())
 
         let sleeping = timeline.filter { $0.stage.isSleeping }
         out.sleepStart = sleeping.first?.start
@@ -360,16 +379,20 @@ enum SleepAnalysis {
         // lying awake before sleep is latency, and awake after the last sleeping
         // stage is just being up.
         if let sleepStart = out.sleepStart, let sleepEnd = out.sleepEnd {
+            // Totalled before rounding, for the reason given above.
+            var interrupted = 0.0, restless = 0.0
             for interval in timeline where interval.stage.isInterruption {
                 guard interval.start >= sleepStart, interval.end <= sleepEnd else { continue }
                 let minutes = interval.minutes
                 if minutes > fullAwakeningThresholdMinutes {
                     out.fullAwakeningCount += 1
-                    out.interruptionMinutes += Int(minutes.rounded())
+                    interrupted += minutes
                 } else if minutes > 0 {
-                    out.restlessMinutes += Int(minutes.rounded())
+                    restless += minutes
                 }
             }
+            out.interruptionMinutes += Int(interrupted.rounded())
+            out.restlessMinutes += Int(restless.rounded())
         }
 
         out.stageTransitionCount = max(0, timeline.count - 1)

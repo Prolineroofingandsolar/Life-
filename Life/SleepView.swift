@@ -1,5 +1,4 @@
 import SwiftUI
-import Charts
 
 // MARK: - Sleep Stage
 
@@ -221,21 +220,12 @@ private struct SleepHypnogramCard: View {
     let night: SleepNight?
     let day: HealthDay
 
-    private var lanes: [String] {
-        guard let night, night.hasStages else { return [SleepStageKind.asleep.label] }
-        // Only show lanes the night actually used, so a chart isn't padded with
-        // empty rows.
-        let used = Set(night.segments.map { SleepStageKind(apiValue: $0.stage) })
-        return SleepStageKind.laneOrder.filter { used.contains($0) }.map(\.label)
-    }
-
     var body: some View {
         HealthCard {
             VStack(alignment: .leading, spacing: 10) {
                 header
                 if let night, !night.segments.isEmpty {
-                    chart(night)
-                    legend(night)
+                    SleepStageTimeline(night: night, lanes: laneKinds(night))
                 } else {
                     Text(unavailableMessage)
                         .font(.caption)
@@ -244,6 +234,12 @@ private struct SleepHypnogramCard: View {
                 }
             }
         }
+    }
+
+    private func laneKinds(_ night: SleepNight) -> [SleepStageKind] {
+        guard night.hasStages else { return [.asleep] }
+        let used = Set(night.segments.map { SleepStageKind(apiValue: $0.stage) })
+        return SleepStageKind.laneOrder.filter { used.contains($0) }
     }
 
     @ViewBuilder
@@ -269,44 +265,216 @@ private struct SleepHypnogramCard: View {
             : "Stage detail isn't kept for older nights — only the last 30 are stored in full."
     }
 
-    private func chart(_ night: SleepNight) -> some View {
-        Chart(night.segments) { segment in
-            RectangleMark(
-                xStart: .value("Start", segment.start),
-                xEnd: .value("End", segment.end),
-                y: .value("Stage", SleepStageKind(apiValue: segment.stage).label)
-            )
-            .foregroundStyle(SleepStageKind(apiValue: segment.stage).colour)
-            .cornerRadius(3)
-        }
-        .chartYScale(domain: lanes)
-        .chartXAxis {
-            AxisMarks(values: .stride(by: .hour, count: 2)) { _ in
-                AxisValueLabel(format: .dateTime.hour())
-                AxisGridLine()
-            }
-        }
-        .frame(height: 34 * CGFloat(max(lanes.count, 1)) + 20)
+}
+
+// MARK: - Stage timeline
+
+/// The hypnogram, drawn as one labelled track per stage.
+///
+/// Replaces a `Chart` with four rows sharing a single y-axis. That version was
+/// less work but read worse: the stage names sat in a cramped axis gutter, the
+/// bars were the same weight regardless of stage, and there was no way to ask
+/// what any particular block actually was. Each stage now gets its own titled
+/// track with its total beside the name — which is the number people are
+/// looking for when they look at this chart — and touching the chart reports
+/// the block under your finger.
+///
+/// Drawn by hand rather than with Swift Charts because the interaction wanted
+/// is a scrub across a shared time axis: one position selects in whichever
+/// track holds that moment, and the stages are already de-overlapped so exactly
+/// one can.
+private struct SleepStageTimeline: View {
+
+    let night: SleepNight
+    let lanes: [SleepStageKind]
+
+    @State private var selected: SleepSegment?
+
+    private var windowStart: Date { night.start ?? Date() }
+    private var windowEnd: Date { night.end ?? windowStart.addingTimeInterval(3600) }
+    private var windowSeconds: Double {
+        max(60, windowEnd.timeIntervalSince(windowStart))
     }
 
-    @ViewBuilder
-    private func legend(_ night: SleepNight) -> some View {
-        let used = SleepStageKind.laneOrder.filter { kind in
-            night.segments.contains { SleepStageKind(apiValue: $0.stage) == kind }
-        }
-        HStack(spacing: 12) {
-            ForEach(used, id: \.self) { kind in
-                HStack(spacing: 4) {
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(kind.colour)
-                        .frame(width: 10, height: 10)
-                    Text(kind.label)
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(lanes, id: \.self) { kind in
+                    lane(kind)
                 }
+            }
+            // Measured once here rather than per lane: every track spans the
+            // same width, so one number maps a touch anywhere in the block to a
+            // time on the shared axis.
+            .background {
+                GeometryReader { geometry in
+                    Color.clear
+                        .onAppear { laneWidth = geometry.size.width }
+                        .onChange(of: geometry.size.width) { _, width in laneWidth = width }
+                }
+            }
+            .contentShape(Rectangle())
+            .gesture(scrub)
+
+            axis
+            selectionRow
+        }
+    }
+
+    // MARK: Lanes
+
+    private func lane(_ kind: SleepStageKind) -> some View {
+        let segments = night.segments.filter { SleepStageKind(apiValue: $0.stage) == kind }
+        let total = segments.reduce(0) { $0 + $1.minutes }
+
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 4) {
+                Text(kind.label)
+                    .font(.system(size: 13, weight: .semibold))
+                Text("• \(HealthInsights.formatDuration(total))")
+                    .font(.system(size: 13))
+                    .foregroundColor(.secondary)
+            }
+
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.secondary.opacity(0.12))
+
+                    ForEach(segments) { segment in
+                        bar(segment, kind: kind, width: geometry.size.width)
+                    }
+
+                    if let selected, SleepStageKind(apiValue: selected.stage) != kind {
+                        // The scrub line continues through the tracks that
+                        // aren't selected, so it reads as one moment across the
+                        // whole night rather than a mark in one row.
+                        marker(at: selected.start, width: geometry.size.width)
+                    }
+                }
+            }
+            .frame(height: 22)
+            .contentShape(Rectangle())
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(kind.label), \(HealthInsights.formatDuration(total))")
+    }
+
+    private func bar(_ segment: SleepSegment, kind: SleepStageKind, width: CGFloat) -> some View {
+        let start = segment.start.timeIntervalSince(windowStart) / windowSeconds
+        let length = Double(segment.minutes) * 60 / windowSeconds
+        let isSelected = selected?.id == segment.id
+
+        return Capsule()
+            .fill(kind.colour)
+            .overlay(
+                Capsule()
+                    .strokeBorder(Color.primary.opacity(0.7), lineWidth: 2)
+                    .opacity(isSelected ? 1 : 0)
+            )
+            // A one-minute stage on an eight-hour night is a third of a point
+            // wide. Floored so brief REM and deep blocks stay visible — they are
+            // often the interesting part of the night, and a chart that drops
+            // them is worse than one that slightly overstates them.
+            .frame(width: max(3, width * length))
+            .offset(x: width * start)
+    }
+
+    private func marker(at time: Date, width: CGFloat) -> some View {
+        Rectangle()
+            .fill(Color.primary.opacity(0.25))
+            .frame(width: 1)
+            .offset(x: width * (time.timeIntervalSince(windowStart) / windowSeconds))
+    }
+
+    // MARK: Axis
+
+    private var axis: some View {
+        HStack {
+            axisLabel(windowStart, caption: "Asleep")
+            Spacer()
+            axisLabel(
+                windowStart.addingTimeInterval(windowSeconds / 2),
+                caption: nil,
+                alignment: .center
+            )
+            Spacer()
+            axisLabel(windowEnd, caption: "Awake", alignment: .trailing)
+        }
+    }
+
+    private func axisLabel(
+        _ time: Date, caption: String?, alignment: HorizontalAlignment = .leading
+    ) -> some View {
+        VStack(alignment: alignment, spacing: 1) {
+            Text(time.formatted(date: .omitted, time: .shortened))
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+            if let caption {
+                Text(caption)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(.secondary.opacity(0.7))
+            }
+        }
+    }
+
+    // MARK: Selection
+
+    /// What's under your finger. Kept in a fixed-height row so the cards below
+    /// don't jump when a block is selected and released.
+    private var selectionRow: some View {
+        HStack(spacing: 6) {
+            if let selected {
+                let kind = SleepStageKind(apiValue: selected.stage)
+                Circle()
+                    .fill(kind.colour)
+                    .frame(width: 8, height: 8)
+                Text(kind.label)
+                    .font(.system(size: 12, weight: .semibold))
+                Text("\(selected.start.formatted(date: .omitted, time: .shortened)) – \(selected.end.formatted(date: .omitted, time: .shortened))")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                Text("· \(HealthInsights.formatDuration(selected.minutes))")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.secondary)
+            } else {
+                Text("Touch the chart to read a stage.")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
             }
             Spacer()
         }
+        .frame(height: 16)
+        .animation(.none, value: selected?.id)
+    }
+
+    /// One gesture for every track.
+    ///
+    /// Per-segment tap targets were the obvious approach and the wrong one: a
+    /// two-minute block is under a point wide, which is untappable, and padding
+    /// it to a usable size would make neighbouring targets overlap. Scrubbing a
+    /// shared time axis has neither problem — every horizontal position resolves
+    /// to exactly one moment, and the stages are de-overlapped, so at most one
+    /// segment contains it.
+    private var scrub: some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                selected = segment(atX: value.location.x, width: laneWidth)
+            }
+    }
+
+    @State private var laneWidth: CGFloat = 1
+
+    private func segment(atX x: CGFloat, width: CGFloat) -> SleepSegment? {
+        guard width > 0 else { return nil }
+        let fraction = min(max(Double(x / width), 0), 1)
+        let time = windowStart.addingTimeInterval(fraction * windowSeconds)
+        return night.segments.first { $0.start <= time && time < $0.end }
+            // Past the last segment's end, or in a gap the source left: report
+            // the nearest block rather than nothing, so dragging never blanks.
+            ?? night.segments.min {
+                abs($0.start.timeIntervalSince(time)) < abs($1.start.timeIntervalSince(time))
+            }
     }
 }
 
