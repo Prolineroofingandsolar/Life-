@@ -140,15 +140,22 @@ final class CoachService {
     /// Injected so tests don't need a signed-in Firebase user.
     private let idTokenProvider: () async throws -> String?
 
+    /// Collaborators default to nil rather than to `.shared`.
+    ///
+    /// A default argument is evaluated in the caller's context, which is not
+    /// necessarily the main actor — so naming a main-actor-isolated singleton
+    /// there is an isolation violation, and an error outright under Swift 6.
+    /// Resolving nil inside the body works because the body *is* main-actor
+    /// isolated, this type being `@MainActor`.
     init(
         transport: CoachTransport = HTTPCoachTransport(),
-        cache: CoachCache = .shared,
-        usage: CoachUsage = .shared,
+        cache: CoachCache? = nil,
+        usage: CoachUsage? = nil,
         idTokenProvider: (() async throws -> String?)? = nil
     ) {
         self.transport = transport
-        self.cache = cache
-        self.usage = usage
+        self.cache = cache ?? .shared
+        self.usage = usage ?? .shared
         self.idTokenProvider = idTokenProvider ?? {
             guard AuthManager.isFirebaseReady, let user = Auth.auth().currentUser else { return nil }
             return try await user.getIDToken()
