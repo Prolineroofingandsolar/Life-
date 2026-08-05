@@ -187,6 +187,16 @@ extension StateSnapshot {
 @Observable
 final class AppState {
 
+    /// The app's one instance.
+    ///
+    /// Background work needs to reach the same state the UI is showing, and it
+    /// needs to reach it from `LifeApp.init()` — before any scene exists, since
+    /// `BGTaskScheduler.register` must happen before launch finishes. A
+    /// `@State` property can't be read that early. Tests still construct their
+    /// own instances; nothing here is enforced as a singleton beyond the app
+    /// agreeing to use this one.
+    static let shared = AppState()
+
     // MARK: Stored Properties
 
     var latestPR: (exerciseName: String, value: String)? = nil

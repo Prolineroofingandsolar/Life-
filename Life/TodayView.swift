@@ -423,7 +423,12 @@ private struct CareSection: View {
             healthSyncTask?.cancel()
             healthSyncTask = Task {
                 while !Task.isCancelled {
-                    try? await Task.sleep(nanoseconds: 5 * 60 * 1_000_000_000)
+                    // Two minutes rather than five. The sync is incremental —
+                    // each metric asks only for what it hasn't already got — so
+                    // a poll that finds nothing new costs a handful of requests
+                    // instead of a re-download, which is what made five minutes
+                    // the safe number before.
+                    try? await Task.sleep(nanoseconds: 2 * 60 * 1_000_000_000)
                     if !Task.isCancelled { await syncHealthFromApple() }
                 }
             }

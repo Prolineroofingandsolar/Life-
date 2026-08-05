@@ -73,10 +73,16 @@ It would need somewhere to accumulate before it could influence anything.
 
 ### Briefings need the app opened
 
-There is no background refresh and no notification. A morning briefing exists
-when you open the app before midday. The brief's "proactive" is satisfied in
-the sense that it appears without being asked for, not in the sense that it
-arrives.
+The coach itself has no background refresh and no notification. A morning
+briefing exists when you open the app before midday. The brief's "proactive" is
+satisfied in the sense that it appears without being asked for, not in the sense
+that it arrives.
+
+Health data *is* now refreshed in the background (`HealthBackgroundRefresh`), so
+the figures a briefing is built from are current when you open the app. Nothing
+generates the briefing itself while the app is closed — that would mean a Gemini
+call from a background wake-up, which is a cost and privacy decision worth
+making deliberately rather than inheriting.
 
 ### Local rules are simple
 

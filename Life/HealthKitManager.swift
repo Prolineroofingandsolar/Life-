@@ -5,11 +5,23 @@ import HealthKit
 
 final class HealthKitManager {
 
+    /// The instance the app's background machinery uses.
+    ///
+    /// Views each build their own, which is harmless for one-off queries, but
+    /// observer queries and background delivery have to outlive any view and be
+    /// registered exactly once — a second registration for the same type
+    /// replaces the first, so "whichever screen was last on top" is not an
+    /// acceptable owner.
+    static let shared = HealthKitManager()
+
     private let store = HKHealthStore()
 
     /// The running live heart-rate query, kept so it can be stopped. Only one
     /// runs at a time.
     private var heartRateQuery: HKAnchoredObjectQuery?
+
+    /// Long-lived observer queries, one per watched type.
+    private var observerQueries: [HKObserverQuery] = []
 
     /// Exposed so callers can ask about availability without importing HealthKit.
     static var isHealthDataAvailable: Bool { HKHealthStore.isHealthDataAvailable() }
@@ -59,6 +71,101 @@ final class HealthKitManager {
         } catch {
             return false
         }
+    }
+
+    // MARK: - Background delivery
+
+    /// The types worth waking the app for.
+    ///
+    /// Deliberately not every type Life reads. Each one costs a wake-up, and
+    /// iOS budgets those — asking to be woken for body-mass index and VO₂ max,
+    /// which change weekly at most, spends the allowance that steps and sleep
+    /// need. Body composition and the rest still arrive on the next ordinary
+    /// sync.
+    private var backgroundTypes: [HKSampleType] {
+        var types: [HKSampleType] = []
+        let identifiers: [HKQuantityTypeIdentifier] = [
+            .stepCount,
+            .activeEnergyBurned,
+            .appleExerciseTime,
+            .distanceWalkingRunning,
+            .restingHeartRate,
+            .heartRateVariabilitySDNN
+        ]
+        for id in identifiers {
+            if let type = HKQuantityType.quantityType(forIdentifier: id) { types.append(type) }
+        }
+        if let sleep = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) {
+            types.append(sleep)
+        }
+        return types
+    }
+
+    /// Starts watching HealthKit and asks iOS to wake Life when new data lands.
+    ///
+    /// Two halves that only work together. `enableBackgroundDelivery` is the
+    /// request to be woken; the `HKObserverQuery` is what iOS actually delivers
+    /// to. Enabling delivery without a running observer achieves nothing at
+    /// all, which is a quiet way to ship a feature that appears to exist.
+    ///
+    /// The observer survives the app being suspended and, for these types, the
+    /// app being terminated — iOS relaunches Life in the background to hand the
+    /// notification over. That is the whole point: data arrives without the app
+    /// having been opened.
+    ///
+    /// A note on frequency, because it sets expectations. `.immediate` is a
+    /// request, not a promise: iOS honours it for sleep and other episodic
+    /// types, and throttles cumulative ones like step count to roughly hourly
+    /// however often the samples themselves arrive. Nothing here can make a
+    /// step count update every minute in the background, and code that claimed
+    /// to would simply be wrong.
+    ///
+    /// `onChange` is called on a background task. It must call through to
+    /// whatever performs the sync and return when that is finished — the
+    /// completion handler below is what tells iOS the wake-up was used
+    /// properly, and failing to call it is how an app loses the privilege.
+    func startObservingHealthChanges(onChange: @escaping () async -> Void) {
+        guard HKHealthStore.isHealthDataAvailable() else { return }
+        stopObservingHealthChanges()
+
+        for type in backgroundTypes {
+            let query = HKObserverQuery(sampleType: type, predicate: nil) { _, completionHandler, error in
+                // Still acknowledged on error. Leaving it unacknowledged makes
+                // iOS retry with backoff and eventually stop delivering.
+                guard error == nil else {
+                    completionHandler()
+                    return
+                }
+                Task {
+                    await onChange()
+                    completionHandler()
+                }
+            }
+            observerQueries.append(query)
+            store.execute(query)
+
+            store.enableBackgroundDelivery(for: type, frequency: .immediate) { _, _ in
+                // Deliberately unreported. A refusal here means this device or
+                // this authorisation state doesn't support waking for the type,
+                // which is not a fault the user can act on, and the foreground
+                // sync still covers it.
+            }
+        }
+    }
+
+    func stopObservingHealthChanges() {
+        for query in observerQueries { store.stop(query) }
+        observerQueries.removeAll()
+    }
+
+    /// Withdraws the wake-up requests as well as stopping the observers, for
+    /// when the user turns background refresh off. Stopping the queries alone
+    /// would leave iOS still launching Life to deliver notifications nothing is
+    /// listening for.
+    func disableBackgroundDelivery() {
+        stopObservingHealthChanges()
+        guard HKHealthStore.isHealthDataAvailable() else { return }
+        store.disableAllBackgroundDelivery { _, _ in }
     }
 
     // MARK: - Import

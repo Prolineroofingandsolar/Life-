@@ -46,12 +46,23 @@
     <!-- App Group for widget sync -->
     <!-- App Group entitlement must be set in Entitlements file, not Info.plist -->
 
-    <!-- Background modes for notifications -->
+    <!-- Background modes.
+         `processing` accompanies the BGTaskScheduler identifier below;
+         `fetch` is what a BGAppRefreshTask runs under. -->
     <key>UIBackgroundModes</key>
     <array>
         <string>fetch</string>
+        <string>processing</string>
         <string>remote-notification</string>
         <string>location</string>
+    </array>
+
+    <!-- Background health refresh. Must match
+         HealthBackgroundRefresh.taskIdentifier exactly: BGTaskScheduler
+         traps at registration if the identifier isn't listed here. -->
+    <key>BGTaskSchedulerPermittedIdentifiers</key>
+    <array>
+        <string>uk.co.prolineroofingandsolar.life.health-refresh</string>
     </array>
 
     <!-- Location -->

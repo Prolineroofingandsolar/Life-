@@ -10,6 +10,8 @@ import SwiftUI
 /// add to it.
 struct GoogleHealthSettingsSection: View {
 
+    @Environment(AppState.self) private var appState
+
     @State private var clientID: String = GoogleHealthConfig.clientID
     @State private var isConnected: Bool = GoogleHealthTokenStore.isConnected
     @State private var isWorking = false
@@ -17,6 +19,43 @@ struct GoogleHealthSettingsSection: View {
     @FocusState private var clientIDFocused: Bool
 
     var body: some View {
+        Group {
+            connectionSection
+            backgroundSection
+        }
+    }
+
+    /// Whether Life may update health data while it isn't open.
+    private var backgroundSection: some View {
+        Section {
+            Toggle("Update in the background", isOn: backgroundBinding)
+                .accessibilityHint("Lets Life fetch new health data while the app is closed")
+        } header: {
+            Text("Background updates")
+        } footer: {
+            // Honest about what it can and can't promise. "Background refresh"
+            // reads as "live", and it isn't: iOS decides when a background
+            // fetch runs, and the tracker's own upload delay usually matters
+            // more than anything Life controls.
+            Text(appState.healthSettings.backgroundRefreshEnabled
+                 ? "Apple Health updates arrive as they're recorded. Fitbit is fetched when iOS allows it — usually several times a day, not continuously, and never sooner than your band has synced to Fitbit. Turn off Background App Refresh in iOS Settings to stop this entirely."
+                 : "Health data only updates while Life is open.")
+        }
+    }
+
+    private var backgroundBinding: Binding<Bool> {
+        Binding(
+            get: { appState.healthSettings.backgroundRefreshEnabled },
+            set: { value in
+                appState.setHealthSettings { $0.backgroundRefreshEnabled = value }
+                // Applied now rather than at the next launch, so turning it off
+                // actually stops the wake-ups it was turned off to stop.
+                HealthBackgroundRefresh.applySettings(appState: appState)
+            }
+        )
+    }
+
+    private var connectionSection: some View {
         Section {
             if isConnected {
                 connectedRows

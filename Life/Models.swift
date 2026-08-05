@@ -974,11 +974,20 @@ struct HealthSettings: Codable {
     /// steps permanently missing.
     var metricSyncedThrough: [String: Date] = [:]
 
+    /// Whether Life may refresh health data while it isn't open.
+    ///
+    /// On by default because a health app that only updates while you're
+    /// looking at it is most of the way to useless — but a switch, not a
+    /// given: this is the setting that decides whether the phone may be woken
+    /// and whether Life may use the network without being asked to.
+    var backgroundRefreshEnabled: Bool = true
+
     enum CodingKeys: String, CodingKey {
         case sleepGoalMinutes, exerciseGoalMinutes, showRecoveryTile, hasBackfilled
         case stepSource
         case lastSyncedAt, lastSyncSource, lastSyncFailures
         case lastSyncSkipped, rateLimitedUntil, metricSyncedThrough
+        case backgroundRefreshEnabled
     }
 
     init() {}
@@ -1004,6 +1013,7 @@ struct HealthSettings: Codable {
         lastSyncSkipped = try c.decodeIfPresent([String].self, forKey: .lastSyncSkipped) ?? []
         rateLimitedUntil = try c.decodeIfPresent(Date.self, forKey: .rateLimitedUntil)
         metricSyncedThrough = try c.decodeIfPresent([String: Date].self, forKey: .metricSyncedThrough) ?? [:]
+        backgroundRefreshEnabled = try c.decodeIfPresent(Bool.self, forKey: .backgroundRefreshEnabled) ?? true
     }
 }
 

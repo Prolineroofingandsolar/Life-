@@ -91,6 +91,31 @@ enum HealthSync {
         }
     }
 
+    /// How stale data has to be before returning to the app triggers a fetch.
+    ///
+    /// Short enough that the figures on screen are current, long enough that
+    /// flicking between apps doesn't produce a sync per switch — which on the
+    /// Fitbit path would spend the hourly request budget on nothing.
+    private static let stalenessThreshold: TimeInterval = 2 * 60
+
+    /// Syncs only if the last one was long enough ago to be worth it.
+    ///
+    /// Called when the app comes back to the foreground, which can happen many
+    /// times a minute.
+    @discardableResult
+    static func runIfStale(appState: AppState) async -> Outcome? {
+        let settings = appState.healthSettings
+        if let until = settings.rateLimitedUntil, until > Date() { return nil }
+        if let last = settings.lastSyncedAt,
+           Date().timeIntervalSince(last) < stalenessThreshold { return nil }
+
+        return await run(
+            appState: appState,
+            healthKit: HealthKitManager.shared,
+            daysBack: settings.hasBackfilled ? 7 : 365
+        )
+    }
+
     // MARK: Fitbit
 
     private static func syncFitbit(appState: AppState, daysBack: Int) async -> Outcome {

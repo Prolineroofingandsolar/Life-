@@ -8,6 +8,11 @@
 	<array>
 		<string>health-records</string>
 	</array>
+	<!-- Required for HKObserverQuery to wake the app in the background.
+	     Without it the observers only fire while Life is in the foreground,
+	     which is the feature not working rather than an error. -->
+	<key>com.apple.developer.healthkit.background-delivery</key>
+	<true/>
 	<key>com.apple.security.application-groups</key>
 	<array>
 		<string>group.uk.co.prolineroofingandsolar.life</string>
