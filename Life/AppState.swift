@@ -338,6 +338,21 @@ final class AppState {
     /// can't be started twice concurrently.
     private var cloudLoadInProgress: String?
 
+    /// True between asking Firestore for the account snapshot and applying the
+    /// answer, during which no upload may leave this device.
+    ///
+    /// This window is the whole reason a reinstall lost its workout history.
+    /// `loadFromCloud` enables sync by setting `cloudUserId` *before* awaiting
+    /// the download, so for the few hundred milliseconds that request is in
+    /// flight the app is a device that (a) holds nothing but freshly seeded
+    /// example data and (b) is allowed to upload. Anything calling `save()` in
+    /// that window — a step sync, a habit reminder refresh, one tap — queued an
+    /// upload of the seed state. The download then arrived and was applied
+    /// locally, but the queued upload fired two seconds later and wrote the
+    /// empty snapshot over the account. Local looked fine until the next
+    /// install; the account had already lost every session.
+    private var isLoadingFromCloud = false
+
     private var pendingSaveWork: DispatchWorkItem?
 
     /// Debounced save — coalesces rapid text-field changes (title, notes) into a single disk write.
@@ -348,7 +363,13 @@ final class AppState {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
-    func save() {
+    /// Persists to disk, refreshes the widgets, and queues a cloud upload.
+    ///
+    /// `markingUserData` records whether what's being saved is something the
+    /// person did. It decides, at the next sign-in, whether this device is
+    /// allowed to overwrite the account — so a sync that merely wrote today's
+    /// step count must not claim it. See `hasLocalUserData`.
+    func save(markingUserData: Bool = true) {
         pendingSaveWork?.cancel()
         pendingSaveWork = nil
         let snapshot = makeSnapshot()
@@ -356,11 +377,14 @@ final class AppState {
             UserDefaults.standard.set(data, forKey: PersistenceKey.appState)
         }
         localLastModified = Date()
-        if !isSeeding { hasLocalUserData = true }
+        if !isSeeding && markingUserData { hasLocalUserData = true }
         WidgetSync.sync(tasks: tasks, taskLists: taskLists)
         WidgetSync.syncHabits(habits: habits, todayKey: todayKey, streakFor: streakFor)
         syncHabitReminderSummaries()
-        if let uid = cloudUserId {
+        // Held while a download is in flight. Uploading here would race the
+        // snapshot being fetched, and this device is losing that race with
+        // whatever it happens to hold — which on a reinstall is nothing.
+        if let uid = cloudUserId, !isLoadingFromCloud {
             syncState = .syncing
             FirestoreSync.shared.scheduleUpload(snapshot, userId: uid)
         }
@@ -476,23 +500,35 @@ final class AppState {
         defer { cloudLoadInProgress = nil }
 
         cloudUserId = userId
-        await MainActor.run { syncState = .syncing }
+        await MainActor.run {
+            isLoadingFromCloud = true
+            syncState = .syncing
+        }
         do {
-            guard let downloaded = try await FirestoreSync.shared.download(userId: userId) else {
-                // Nothing stored for this account yet — seed it from here.
-                await MainActor.run {
-                    FirestoreSync.shared.scheduleUpload(makeSnapshot(), userId: userId)
-                    syncState = .synced(Date())
-                }
-                return
-            }
+            let downloaded = try await FirestoreSync.shared.download(userId: userId)
 
             await MainActor.run {
+                isLoadingFromCloud = false
+
+                guard let downloaded else {
+                    // Nothing stored for this account yet — seed it from here.
+                    FirestoreSync.shared.scheduleUpload(makeSnapshot(), userId: userId)
+                    syncState = .synced(Date())
+                    return
+                }
+
                 let local = makeSnapshot()
 
                 if !hasLocalUserData {
                     // This device has nothing worth keeping. Take the account's
                     // data whole rather than merging example data into it.
+                    //
+                    // Anything queued before now was built from the seed state,
+                    // so it is dropped rather than allowed to fire after the
+                    // real data lands. Belt and braces alongside the upload
+                    // suppression above: a save that slipped through on another
+                    // thread still cannot reach the account.
+                    FirestoreSync.shared.cancelPending()
                     apply(snapshot: downloaded.snapshot)
                     localLastModified = downloaded.updatedAt
                     hasLocalUserData = true
@@ -520,7 +556,15 @@ final class AppState {
         } catch {
             // Network unavailable — carry on with local data, but surface the
             // failure so the UI can show a "Sync failed" banner with retry.
-            await MainActor.run { syncState = .failed(error.localizedDescription) }
+            await MainActor.run {
+                isLoadingFromCloud = false
+                // A device that has never been used and could not read the
+                // account must not upload. We don't know what is up there, and
+                // what is down here is three example tasks. Sync stays off for
+                // this launch; the next one tries the download again.
+                if !hasLocalUserData { cloudUserId = nil }
+                syncState = .failed(error.localizedDescription)
+            }
         }
     }
 
@@ -1564,7 +1608,10 @@ final class AppState {
         var day = careDays[todayKey] ?? CareDay(dayKey: todayKey)
         day.steps = max(0, steps)
         careDays[todayKey] = day
-        save()
+        // Written by a tracker, not by the person. A fresh install that reads a
+        // step count before sign-in finishes must not be credited with holding
+        // real data — that is what lets a device overwrite an account.
+        save(markingUserData: false)
     }
 
     /// Backfills step counts for past days without touching anything else on
@@ -1584,7 +1631,7 @@ final class AppState {
             day.steps = key == todayKey ? max(day.steps, max(0, steps)) : max(0, steps)
             careDays[key] = day
         }
-        save()
+        save(markingUserData: false)
     }
 
     // MARK: - Health Mutations
@@ -1607,7 +1654,7 @@ final class AppState {
         }
 
         pruneHealthDays()
-        save()
+        save(markingUserData: false)
     }
 
     /// Stores a day's heart-rate range and mean, derived from the sample curve
@@ -1628,7 +1675,7 @@ final class AppState {
         day.hrMax = rounded.1
         day.hrAverage = rounded.2
         healthDays[dayKey] = day
-        save()
+        save(markingUserData: false)
     }
 
     /// Hypnogram segments are roughly thirty records a night against a handful
@@ -1648,7 +1695,7 @@ final class AppState {
             let keep = Set(sleepNights.keys.sorted().suffix(Self.sleepNightRetention))
             sleepNights = sleepNights.filter { keep.contains($0.key) }
         }
-        save()
+        save(markingUserData: false)
     }
 
     // MARK: - Sleep score comparisons

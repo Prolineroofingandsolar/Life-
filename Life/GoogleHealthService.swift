@@ -29,7 +29,7 @@ final class GoogleHealthService {
 
     /// A data type as named in the `DataPoint` union, with the two spellings the
     /// API needs and the filter field appropriate to its time model.
-    private struct DataType {
+    struct DataType {
         let camel: String
         /// Daily summaries filter on `.date`; interval types on
         /// `.interval.civil_start_time`. Sleep is special-cased to
@@ -552,20 +552,44 @@ final class GoogleHealthService {
 
     /// One reading from an interval data type, carrying the identity needed to
     /// recognise it if it turns up twice.
-    private struct IntervalPoint {
+    struct IntervalPoint {
         let dayKey: String
         /// A stable identity for this reading: the server's `dataPointId` when
         /// it sends one, otherwise the interval's own start and end. Two
         /// records with the same identity are the same measurement, however
         /// many times they arrive.
         let identity: String
+        /// Which app or device recorded this reading. Empty when the payload
+        /// doesn't say, in which case every point falls into one bucket and the
+        /// reduction behaves as though there were a single source.
+        let source: String
         /// How much of the day the interval covers, in seconds. Nil when the
         /// point carried no parseable absolute timestamps.
         let spanSeconds: Double?
         let value: Double
     }
 
-    private static func intervalPoint(
+    /// Which app or device a data point came from.
+    ///
+    /// The field name isn't pinned down in the discovery document I could
+    /// reach, and it has been spelled several ways across Google's fitness
+    /// APIs, so the plausible ones are tried in turn. A miss is safe: an
+    /// unattributed point joins the single unnamed bucket, which is exactly the
+    /// behaviour that existed before sources were considered at all.
+    static func sourceIdentity(_ point: [String: Any]) -> String {
+        for key in ["originDataSourceId", "dataSourceId", "dataOrigin", "originId"] {
+            if let value = point[key] as? String, !value.isEmpty { return value }
+            // Some shapes nest it as an object with a package or device name.
+            if let object = point[key] as? [String: Any] {
+                for inner in ["packageName", "name", "id", "dataSourceId"] {
+                    if let value = object[inner] as? String, !value.isEmpty { return value }
+                }
+            }
+        }
+        return ""
+    }
+
+    static func intervalPoint(
         _ point: [String: Any], type: DataType, value: ([String: Any]) -> Double?
     ) -> IntervalPoint? {
         guard let body = point[type.camel] as? [String: Any],
@@ -576,8 +600,14 @@ final class GoogleHealthService {
         let startText = interval?["startTime"] as? String
         let endText = interval?["endTime"] as? String
 
+        let source = sourceIdentity(point)
+
+        // The source is part of the identity as well as a grouping key. Two
+        // devices that both recorded 07:00–07:15 produce the same interval, and
+        // without the source in the key one of them would be discarded as a
+        // repeat of the other.
         let identity = (point["dataPointId"] as? String)
-            ?? "\(key)|\(startText ?? "?")|\(endText ?? "?")"
+            ?? "\(source)|\(key)|\(startText ?? "?")|\(endText ?? "?")"
 
         var span: Double?
         if let startText, let endText,
@@ -585,7 +615,9 @@ final class GoogleHealthService {
             span = to.timeIntervalSince(from)
         }
 
-        return IntervalPoint(dayKey: key, identity: identity, spanSeconds: span, value: value)
+        return IntervalPoint(
+            dayKey: key, identity: identity, source: source, spanSeconds: span, value: value
+        )
     }
 
     /// Turns a day's worth of interval readings into the one number for that
@@ -608,7 +640,24 @@ final class GoogleHealthService {
     /// 13,000 for a day on which 9,000 steps were taken. Any point spanning
     /// most of the day is treated as a snapshot of the day, and a day that has
     /// snapshots takes the **largest** of them instead of a sum.
-    private static func reduceToDailyTotals(_ points: [IntervalPoint]) -> [String: Double] {
+    ///
+    /// **Several sources.** A Google account collects from every app and device
+    /// connected to it, and more than one of them counts steps — a wrist
+    /// tracker and a phone will both report the same walk as their own set of
+    /// intervals. Those intervals are genuinely distinct records of the same
+    /// physical steps, so no amount of de-duplication catches them and the
+    /// day's total came out at roughly the sum of however many things were
+    /// connected. Each source is therefore totalled on its own, and the day
+    /// takes the **largest** source's total rather than the sum.
+    ///
+    /// Largest rather than an average or the first: the sources disagree
+    /// because they observe different amounts, not because one is inaccurate.
+    /// A phone left on a desk misses the walk entirely; the wrist tracker
+    /// misses nothing. The fuller record is the right one.
+    ///
+    /// `HealthKitManager.singleSourceSum` applies the same rule to the Apple
+    /// Health path, which has the identical problem for the identical reason.
+    static func reduceToDailyTotals(_ points: [IntervalPoint]) -> [String: Double] {
         // Collapse repeats first, so a duplicated point can neither be summed
         // twice nor be mistaken for a second snapshot.
         var unique: [String: IntervalPoint] = [:]
@@ -617,30 +666,39 @@ final class GoogleHealthService {
             unique[point.identity] = point
         }
 
-        var byDay: [String: [IntervalPoint]] = [:]
+        // Day → source → that source's readings.
+        var byDay: [String: [String: [IntervalPoint]]] = [:]
         for point in unique.values {
-            byDay[point.dayKey, default: []].append(point)
+            byDay[point.dayKey, default: [:]][point.source, default: []].append(point)
         }
 
         var out: [String: Double] = [:]
-        for (key, dayPoints) in byDay {
-            let snapshots = dayPoints.filter { isWholeDaySpan($0.spanSeconds) }
-            if let largest = snapshots.map(\.value).max() {
-                // A whole-day point is the day's running total. Anything
-                // shorter alongside it is one of the slices already inside it,
-                // so adding them would double-count.
-                out[key] = largest
-            } else {
-                out[key] = dayPoints.reduce(0) { $0 + $1.value }
-            }
+        for (key, bySource) in byDay {
+            let perSourceTotals = bySource.values.map { total(for: $0) }
+            // `max` and not `+`. When the payload carries no source at all
+            // there is one bucket and this is the bucket's own total, which is
+            // the previous behaviour exactly.
+            out[key] = perSourceTotals.max() ?? 0
         }
         return out
+    }
+
+    /// One source's total for one day.
+    static func total(for points: [IntervalPoint]) -> Double {
+        let snapshots = points.filter { isWholeDaySpan($0.spanSeconds) }
+        if let largest = snapshots.map(\.value).max() {
+            // A whole-day point is the day's running total. Anything shorter
+            // alongside it is one of the slices already inside it, so adding
+            // them would double-count.
+            return largest
+        }
+        return points.reduce(0) { $0 + $1.value }
     }
 
     /// True when an interval covers essentially a whole day. The threshold sits
     /// below 24h so a day shortened by a daylight-saving change, or a snapshot
     /// truncated at the moment of the sync, still counts.
-    private static func isWholeDaySpan(_ seconds: Double?) -> Bool {
+    static func isWholeDaySpan(_ seconds: Double?) -> Bool {
         guard let seconds else { return false }
         return seconds >= 20 * 3600
     }
@@ -729,7 +787,7 @@ final class GoogleHealthService {
     // resting heart rate), so every numeric read goes through these rather than
     // assuming a type.
 
-    private static func double(_ raw: Any?) -> Double? {
+    static func double(_ raw: Any?) -> Double? {
         if let d = raw as? Double { return d }
         if let i = raw as? Int { return Double(i) }
         if let s = raw as? String { return Double(s) }

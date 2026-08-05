@@ -192,8 +192,13 @@ final class HealthKitManager {
     /// raw sample queries. HealthKit stores a separate set of samples per
     /// writing source, so summing raw samples double-counts whenever two
     /// devices record the same metric — an iPhone and a wrist tracker both
-    /// logging steps, for instance. Statistics queries deduplicate across
-    /// sources; raw sample queries do not.
+    /// logging steps, for instance.
+    ///
+    /// A statistics query does *not* fix that on its own, which an earlier
+    /// version of this comment claimed and which is why totals were still
+    /// inflated: `sumQuantity()` adds every source together just as a manual
+    /// sum would. The de-duplication happens in `singleSourceSum`, which is why
+    /// cumulative queries below ask for `.separateBySource`.
     func fetchDailyMetrics(daysBack: Int = 30) async -> [String: HealthDay] {
         guard HKHealthStore.isHealthDataAvailable() else { return [:] }
 
@@ -572,11 +577,18 @@ final class HealthKitManager {
         let anchor = Calendar.current.startOfDay(for: startDate)
         let predicate = HKQuery.predicateForSamples(withStart: startDate, end: endDate, options: [])
 
+        let isCumulative = options.contains(.cumulativeSum)
+        // Asked for so each writing app or device can be totalled separately
+        // below. Without it `HKStatistics` has no per-source breakdown to give.
+        let queryOptions: HKStatisticsOptions = isCumulative
+            ? options.union(.separateBySource)
+            : options
+
         return await withCheckedContinuation { continuation in
             let query = HKStatisticsCollectionQuery(
                 quantityType: quantityType,
                 quantitySamplePredicate: predicate,
-                options: options,
+                options: queryOptions,
                 anchorDate: anchor,
                 intervalComponents: DateComponents(day: 1)
             )
@@ -587,16 +599,45 @@ final class HealthKitManager {
                 }
                 var result: [String: Double] = [:]
                 collection.enumerateStatistics(from: anchor, to: endDate) { statistics, _ in
-                    let quantity = options.contains(.cumulativeSum)
-                        ? statistics.sumQuantity()
-                        : statistics.averageQuantity()
+                    let quantity = isCumulative
+                        ? Self.singleSourceSum(statistics, unit: unit)
+                        : statistics.averageQuantity().map { $0.doubleValue(for: unit) }
                     guard let quantity else { return }
-                    result[statistics.startDate.dayKey] = quantity.doubleValue(for: unit)
+                    result[statistics.startDate.dayKey] = quantity
                 }
                 continuation.resume(returning: result)
             }
             store.execute(query)
         }
+    }
+
+    /// A day's total for a cumulative metric, counting only the source that
+    /// recorded the most of it.
+    ///
+    /// `statistics.sumQuantity()` adds up every sample in the interval from
+    /// every app and device that wrote one. That is the documented behaviour
+    /// and it is wrong for this app's purpose: an iPhone counting steps in a
+    /// pocket and a wrist tracker counting the same walk are two records of one
+    /// set of steps, and adding them reported a day at roughly double. The same
+    /// applies to distance and active energy, and it gets worse with each extra
+    /// device — the Fitbit app writing into Apple Health alongside the iPhone's
+    /// own motion data is exactly this case.
+    ///
+    /// The largest source wins rather than the sum or the average. They differ
+    /// because they observe different amounts, not because one is inaccurate: a
+    /// phone left on a desk misses the walk, the wrist tracker misses nothing.
+    /// This mirrors how the Health app itself resolves the same conflict, and
+    /// how `GoogleHealthService` resolves it on the Fitbit path.
+    private static func singleSourceSum(_ statistics: HKStatistics, unit: HKUnit) -> Double? {
+        guard let sources = statistics.sources, sources.count > 1 else {
+            // One source, or no breakdown available: the plain total is already
+            // the answer, and it is what earlier versions used throughout.
+            return statistics.sumQuantity()?.doubleValue(for: unit)
+        }
+        let perSource = sources.compactMap {
+            statistics.sumQuantity(for: $0)?.doubleValue(for: unit)
+        }
+        return perSource.max() ?? statistics.sumQuantity()?.doubleValue(for: unit)
     }
 
     private func fetchQuantitySamples(
