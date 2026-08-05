@@ -26,13 +26,26 @@ enum LocalCoach {
     static func recommend(from context: CoachContext) -> CoachRecommendation {
         // Ordered deliberately: recovery before effort, because advising a hard
         // session on a bad recovery day is the one mistake with a physical cost.
-        if let rest = restIfRecoveryIsDown(context) { return rest }
-        if let sleep = sleepIfShort(context) { return sleep }
-        if let missing = logMissingData(context) { return missing }
-        if let workout = plannedWorkout(context) { return workout }
-        if let task = importantTask(context) { return task }
-        if let habit = habitAtRisk(context) { return habit }
-        if let walk = walkIfBehindOnSteps(context) { return walk }
+        let rules: [(CoachContext) -> CoachRecommendation?] = [
+            restIfRecoveryIsDown,
+            sleepIfShort,
+            logMissingData,
+            plannedWorkout,
+            importantTask,
+            habitAtRisk,
+            walkIfBehindOnSteps
+        ]
+
+        for rule in rules {
+            guard let candidate = rule(context) else { continue }
+            // A muted category is skipped here rather than produced and then
+            // rejected by validation, so the next-best rule still gets a turn.
+            // Filtering only at the end would leave the user with "you're on
+            // track" whenever their top suggestion happened to be muted.
+            if context.mutedCategories.contains(candidate.category.rawValue) { continue }
+            return candidate
+        }
+
         return onTrack(context)
     }
 

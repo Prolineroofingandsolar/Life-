@@ -37,6 +37,9 @@ enum CoachContextBuilder {
         /// words while the settings screen showed the switch as off.
         var includeTitles: Bool = false
 
+        /// Categories the user has asked not to be nudged about.
+        var mutedCategories: [String] = []
+
         /// Everything, titles included. Explicit rather than `Permissions()`,
         /// so it stays true to its name if a default changes.
         static let all: Permissions = {
@@ -57,6 +60,7 @@ enum CoachContextBuilder {
             tasks = settings.allowTasks
             habits = settings.allowHabits
             includeTitles = settings.shareTitles
+            mutedCategories = settings.mutedCategories
         }
 
         init() {}
@@ -109,7 +113,8 @@ enum CoachContextBuilder {
             training: training,
             tasks: tasks,
             habits: habits,
-            dataWarnings: warnings
+            dataWarnings: warnings,
+            mutedCategories: permissions.mutedCategories
         )
     }
 

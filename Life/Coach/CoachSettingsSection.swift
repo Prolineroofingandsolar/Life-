@@ -14,6 +14,7 @@ struct CoachSettingsSection: View {
 
     @State private var showConsent = false
     @State private var showClearConfirmation = false
+    @State private var showResetConfirmation = false
     @State private var usage: CoachUsage.Snapshot?
     @State private var endpoint: String = CoachEndpoint.baseURL
     @FocusState private var endpointFocused: Bool
@@ -28,6 +29,7 @@ struct CoachSettingsSection: View {
                 usageSection
             }
             styleSection
+            mutedSection
             dataSection
             historySection
         }
@@ -146,6 +148,56 @@ struct CoachSettingsSection: View {
         }
     }
 
+    /// Categories to stop being nudged about.
+    ///
+    /// Distinct from the data switches below: this one still lets the coach
+    /// *use* the figures — a muted training category doesn't stop recovery
+    /// advice taking your training load into account — it only stops the
+    /// suggestion itself landing there.
+    private var mutedSection: some View {
+        Section {
+            ForEach(CoachCategory.allCases, id: \.rawValue) { category in
+                if category != .general {
+                    Toggle(label(for: category), isOn: mutedBinding(category))
+                }
+            }
+        } header: {
+            Text("Suggest about")
+        } footer: {
+            Text("Turn one off and the coach won't suggest anything in that area — it still uses the figures to inform the rest.")
+        }
+    }
+
+    private func label(for category: CoachCategory) -> String {
+        switch category {
+        case .sleep:     return "Sleep"
+        case .recovery:  return "Recovery"
+        case .activity:  return "Activity"
+        case .training:  return "Training"
+        case .tasks:     return "Tasks"
+        case .habits:    return "Habits"
+        case .nutrition: return "Nutrition"
+        case .general:   return "General"
+        }
+    }
+
+    /// Inverted on purpose: the row reads "Sleep" and is on when sleep
+    /// suggestions are wanted, while the model underneath stores what's muted.
+    /// A settings screen full of "Don't suggest sleep" toggles is a screen
+    /// nobody parses correctly.
+    private func mutedBinding(_ category: CoachCategory) -> Binding<Bool> {
+        Binding(
+            get: { !appState.coachSettings.mutedCategories.contains(category.rawValue) },
+            set: { wanted in
+                appState.setCoachSettings { settings in
+                    var muted = Set(settings.mutedCategories)
+                    if wanted { muted.remove(category.rawValue) } else { muted.insert(category.rawValue) }
+                    settings.mutedCategories = muted.sorted()
+                }
+            }
+        )
+    }
+
     private var dataSection: some View {
         Section {
             Toggle("Sleep and recovery", isOn: binding(\.allowHealth))
@@ -167,6 +219,9 @@ struct CoachSettingsSection: View {
         Section {
             Button("Clear coach history") { showClearConfirmation = true }
                 .accessibilityHint("Deletes cached suggestions and briefings")
+
+            Button("Reset coach preferences") { showResetConfirmation = true }
+                .accessibilityHint("Puts every coach setting back to its default")
 
             NavigationLink {
                 CoachEndpointView(endpoint: $endpoint)
@@ -190,6 +245,24 @@ struct CoachSettingsSection: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Your health, task and habit data is untouched. Only the coach's cached wording is removed.")
+        }
+        .confirmationDialog(
+            "Reset every coach setting?",
+            isPresented: $showResetConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Reset", role: .destructive) {
+                // Consent is withdrawn along with everything else, so the
+                // screen is read again before anything is sent. Resetting
+                // preferences while quietly keeping permission to transmit
+                // would be the wrong way round.
+                appState.setCoachSettings { $0 = CoachSettings() }
+                CoachCache.shared.clear()
+                HapticManager.success()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Including your consent to use AI, which you'll be asked for again.")
         }
         .sheet(isPresented: $showConsent) {
             CoachConsentView()

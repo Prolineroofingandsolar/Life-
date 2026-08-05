@@ -30,6 +30,14 @@ struct CoachContext: Codable, Equatable, Sendable {
     /// Anything the app knows is missing, partial or suspect. Never empty
     /// because a gap was silently filled — a gap is stated.
     var dataWarnings: [String]
+    /// Categories the user has asked not to be nudged about.
+    ///
+    /// Carried with the data rather than kept as a client-side filter, because
+    /// the model needs to know in order to pick a *different* good suggestion
+    /// rather than have its best one thrown away. The filter still exists —
+    /// see `CoachRecommendation.validate` — but as a backstop, not the
+    /// mechanism.
+    var mutedCategories: [String] = []
 
     enum TimeOfDay: String, Codable, Sendable {
         case morning, afternoon, evening

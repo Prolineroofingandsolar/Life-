@@ -295,6 +295,89 @@ struct CoachServiceTests {
         }
     }
 
+    // MARK: Muted categories
+
+    @Test("A muted category is refused even when the model returns it")
+    func mutedCategoryIsRefused() async {
+        var context = Self.context()
+        context.mutedCategories = ["activity"]
+
+        // The model is told what's muted, but being told is not a guarantee.
+        // The check exists so the preference means something regardless.
+        let transport = StubTransport([
+            .success(Self.validResponse()),
+            .success(Self.validResponse())
+        ])
+        let service = Self.service(transport: transport)
+
+        let outcome = await service.recommendation(for: context, settings: Self.cloudSettings())
+
+        #expect(outcome.recommendation.category != .activity)
+        #expect(outcome.recommendation.origin == .local)
+    }
+
+    // MARK: Cancellation
+
+    @Test("A cancelled request doesn't leave the card loading forever")
+    func cancellationIsHandled() async {
+        // A transport that never returns, standing in for a request the user
+        // navigated away from. The task is cancelled while it's in flight.
+        final class HangingTransport: CoachTransport, @unchecked Sendable {
+            func send(_ body: [String: Any], idToken: String) async throws -> [String: Any] {
+                try await Task.sleep(nanoseconds: 60_000_000_000)
+                return ["ok": true]
+            }
+        }
+
+        let service = Self.service(transport: HangingTransport())
+        let context = Self.context()
+
+        let task = Task {
+            await service.recommendation(for: context, settings: Self.cloudSettings())
+        }
+        // Long enough to be mid-flight, short enough not to slow the suite.
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        task.cancel()
+
+        let outcome = await task.value
+
+        // Cancellation surfaces as a thrown error inside the service, which
+        // takes the same path as any other failure: a local suggestion rather
+        // than a card stuck on a spinner.
+        #expect(outcome.recommendation.origin == .local)
+        #expect(!outcome.recommendation.headline.isEmpty)
+    }
+
+    // MARK: Secrets
+
+    @Test("No Gemini key is present in the app")
+    func noAPIKeyInTheBundle() throws {
+        // The key lives in Secret Manager and is read only by the Cloud
+        // Function. If it ever reached the app it could be extracted from the
+        // binary by anyone who downloaded it, and spent against the owner's
+        // billing account. This asserts the arrangement holds.
+        let bundle = Bundle(for: BundleMarker.self)
+
+        // Info.plist is where a key most plausibly ends up by accident, via a
+        // build setting or an xcconfig.
+        let info = bundle.infoDictionary ?? [:]
+        let plistText = String(describing: info)
+        #expect(!plistText.contains("GEMINI_API_KEY"))
+        // Google API keys begin "AIza". Searching for the shape catches a key
+        // pasted under any name at all.
+        #expect(!plistText.contains("AIza"))
+
+        // And nothing in the bundle's resources either.
+        let resources = bundle.paths(forResourcesOfType: "plist", inDirectory: nil)
+        for path in resources {
+            guard let contents = try? String(contentsOfFile: path, encoding: .utf8) else { continue }
+            #expect(!contents.contains("GEMINI_API_KEY"), "Found a Gemini key reference in \(path)")
+        }
+    }
+
+    /// Only exists to identify the test bundle for `Bundle(for:)`.
+    private final class BundleMarker {}
+
     // MARK: Cost ceiling
 
     @Test("Over the ceiling, no call is made")

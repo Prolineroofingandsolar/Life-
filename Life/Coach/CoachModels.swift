@@ -180,6 +180,10 @@ extension CoachRecommendation {
         /// on it would complete or reschedule the wrong thing.
         case unknownRelatedItem(String)
         case implausibleDuration(Int)
+        /// The user asked not to be nudged about this. Refused rather than
+        /// shown, so the preference means something even when the model
+        /// ignores it.
+        case mutedCategory(CoachCategory)
 
         var description: String {
             switch self {
@@ -193,6 +197,8 @@ extension CoachRecommendation {
                 return "It referred to \(id), which wasn't in the data sent."
             case .implausibleDuration(let minutes):
                 return "\(minutes) minutes isn't a sensible duration."
+            case .mutedCategory(let category):
+                return "You've asked not to be nudged about \(category.rawValue)."
             }
         }
     }
@@ -215,6 +221,10 @@ extension CoachRecommendation {
 
         if let durationMinutes, !Self.plausibleDurationMinutes.contains(durationMinutes) {
             return .implausibleDuration(durationMinutes)
+        }
+
+        if context.mutedCategories.contains(category.rawValue) {
+            return .mutedCategory(category)
         }
 
         if actionType.requiresRelatedItem {
