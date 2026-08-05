@@ -22,16 +22,29 @@ struct CoachSettingsSection: View {
     private var settings: CoachSettings { appState.coachSettings }
 
     var body: some View {
-        mainSection
-        if settings.enabled {
-            cloudSection
-            if settings.mayUseCloud {
-                usageSection
+        // Wrapped so the sheet has somewhere to live.
+        //
+        // `.sheet` was attached to one of the Sections below, and a Section
+        // inside a Form is not a reliable presentation host — the modifier is
+        // accepted and then quietly never fires. The visible symptom was the
+        // "Use AI" toggle springing back to off with no consent screen
+        // appearing, because the binding deliberately withholds consent until
+        // the screen has been read, and the screen never opened.
+        Group {
+            mainSection
+            if settings.enabled {
+                cloudSection
+                if settings.mayUseCloud {
+                    usageSection
+                }
+                styleSection
+                mutedSection
+                dataSection
+                historySection
             }
-            styleSection
-            mutedSection
-            dataSection
-            historySection
+        }
+        .sheet(isPresented: $showConsent) {
+            CoachConsentView()
         }
     }
 
@@ -263,9 +276,6 @@ struct CoachSettingsSection: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Including your consent to use AI, which you'll be asked for again.")
-        }
-        .sheet(isPresented: $showConsent) {
-            CoachConsentView()
         }
     }
 
