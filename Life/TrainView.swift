@@ -7,10 +7,9 @@ import PhotosUI
 struct TrainView: View {
 
     @Environment(AppState.self) private var appState
-    @State private var showActiveWorkout = false
     /// Captured when the workout sheet opens so it survives `finishSession`
     /// nulling `activeSession` (otherwise Finish → blank white page).
-    @State private var presentedWorkoutId: String?
+    @State private var presentedWorkout: PresentedWorkout?
     @State private var showExerciseLibrary = false
     @State private var showAddRoutine = false
     @State private var showBrowsePrograms = false
@@ -21,6 +20,7 @@ struct TrainView: View {
     @State private var sessionForDetail: WorkoutSession? = nil
     @State private var detailRoutine: Routine? = nil
     @State private var showAIRoutine = false
+    @State private var showQuickStartPicker = false
 
     private var finishedSessions: [WorkoutSession] {
         appState.sessions
@@ -41,12 +41,11 @@ struct TrainView: View {
                         }
                     )
                     .padding(.horizontal, 16)
-                    .padding(.top, 4)
 
                     // Resume active workout
                     if let active = appState.activeSession {
                         ResumeCard(session: active, pulse: pulseResume) {
-                            showActiveWorkout = true
+                            presentedWorkout = PresentedWorkout(id: active.id)
                         }
                         .padding(.horizontal, 16)
                         .onAppear { pulseResume = true }
@@ -61,13 +60,13 @@ struct TrainView: View {
                                 name: planned.routineName,
                                 routineId: planned.routineId
                             )
-                            showActiveWorkout = true
+                            presentedWorkout = appState.activeSession.map { PresentedWorkout(id: $0.id) }
                         }
                         .padding(.horizontal, 16)
                     } else if let suggested = appState.todaysSuggestedRoutine() {
                         TodayRoutineCard(routine: suggested) {
                             appState.startSession(name: suggested.name, routineId: suggested.id)
-                            showActiveWorkout = true
+                            presentedWorkout = appState.activeSession.map { PresentedWorkout(id: $0.id) }
                         }
                         .padding(.horizontal, 16)
                     }
@@ -87,28 +86,32 @@ struct TrainView: View {
                                     Image(systemName: "square.grid.2x2")
                                         .foregroundColor(AppTheme.trainAccent)
                                 }
+                                .accessibilityLabel("Browse training programs")
                                 Button { showPrograms = true } label: {
                                     Image(systemName: "calendar")
                                         .foregroundColor(AppTheme.trainAccent)
                                 }
+                                .accessibilityLabel("My programs")
                                 Button { showAIRoutine = true } label: {
                                     Image(systemName: "sparkles")
                                         .foregroundColor(AppTheme.trainAccent)
                                         .font(.system(size: 18))
                                 }
+                                .accessibilityLabel("Generate a routine")
                                 Button { showAddRoutine = true } label: {
                                     Image(systemName: "plus.circle.fill")
                                         .foregroundColor(AppTheme.trainAccent)
                                         .font(.system(size: 20))
                                 }
+                                .accessibilityLabel("New routine")
                             }
                         }
                         .padding(.horizontal, 16)
 
-                        // Quick Start
+                        // Quick Start opens the exercise picker; the workout
+                        // isn't created until something is chosen.
                         QuickStartCard {
-                            appState.startSession(name: "Quick Workout")
-                            showActiveWorkout = true
+                            showQuickStartPicker = true
                         }
                         .padding(.horizontal, 16)
 
@@ -126,7 +129,7 @@ struct TrainView: View {
                                         routine: routine,
                                         onStart: {
                                             appState.startSession(name: routine.name, routineId: routine.id)
-                                            showActiveWorkout = true
+                                            presentedWorkout = appState.activeSession.map { PresentedWorkout(id: $0.id) }
                                         },
                                         onTap: { detailRoutine = routine }
                                     )
@@ -139,9 +142,23 @@ struct TrainView: View {
                     // Volume by muscle
                     MuscleVolumeSection()
 
-                    Color.clear.frame(height: 80)
+                    // Clears the tab bar. 80pt was measured against a portrait
+                    // iPhone with a home indicator; in landscape the bar is
+                    // shorter and the inset is different again, so the constant
+                    // was wrong in every orientation but the one it was written
+                    // for — too much space below the content on some, the last
+                    // card cut off by the bar on others. The system knows the
+                    // real inset, so it supplies it.
+                    Color.clear
+                        .frame(height: 24)
+                        .accessibilityHidden(true)
                 }
-                .padding(.top, 8)
+                // Today, Tasks, Health and More all open with 8pt above their
+                // first card. Train carried 8 here plus another 4 on the week
+                // strip, which set its heading and everything under it 4pt lower
+                // than every other tab — enough to see when switching between
+                // them, and the only tab that didn't line up.
+                .padding(.vertical, 8)
             }
             .background(AppTheme.trainBg)
             .navigationTitle("Train")
@@ -152,20 +169,35 @@ struct TrainView: View {
                         Image(systemName: "chart.xyaxis.line")
                             .foregroundColor(AppTheme.trainAccent)
                     }
+                    .accessibilityLabel("Training progress")
                     Button { showExerciseLibrary = true } label: {
                         Image(systemName: "books.vertical")
                     }
+                    .accessibilityLabel("Exercise library")
                 }
             }
             .sheet(item: $sessionForDetail) { session in
                 NavigationStack { SessionDetailView(session: session) }
             }
-            .onChange(of: showActiveWorkout) { _, shown in
-                if shown { presentedWorkoutId = appState.activeSession?.id }
+
+            .sheet(item: $presentedWorkout) { workout in
+                ActiveWorkoutView(
+                    isPresented: Binding(
+                        get: { presentedWorkout != nil },
+                        set: { if !$0 { presentedWorkout = nil } }
+                    ),
+                    sessionId: workout.id
+                )
             }
-            .sheet(isPresented: $showActiveWorkout) {
-                if let id = presentedWorkoutId {
-                    ActiveWorkoutView(isPresented: $showActiveWorkout, sessionId: id)
+            // Quick Start used to create the workout on the tap and then show
+            // an empty session, so the timer was already running, the banner was
+            // already on every other tab, and backing out left a live workout
+            // with nothing in it that had to be found and discarded. Nothing is
+            // created until an exercise is picked; cancelling the picker leaves
+            // no trace.
+            .sheet(isPresented: $showQuickStartPicker) {
+                ExercisePickerSheet(title: "Choose an Exercise") { exerciseId in
+                    startQuickWorkout(with: exerciseId)
                 }
             }
             .sheet(isPresented: $showExerciseLibrary) { ExerciseLibraryView() }
@@ -175,7 +207,7 @@ struct TrainView: View {
                 RoutineDetailSheet(routine: routine) {
                     appState.startSession(name: routine.name, routineId: routine.id)
                     detailRoutine = nil
-                    showActiveWorkout = true
+                    presentedWorkout = appState.activeSession.map { PresentedWorkout(id: $0.id) }
                 }
             }
             .sheet(isPresented: $showBrowsePrograms) { BrowseProgramsSheet() }
@@ -188,6 +220,22 @@ struct TrainView: View {
                     PlanSessionSheet(date: date) { planDate = nil }
                 }
             }
+        }
+    }
+
+    /// Creates the Quick Start session around the exercise the user chose, then
+    /// opens it. Resuming an existing workout takes priority: `startSession`
+    /// refuses to replace one, so without this the picked exercise would be
+    /// dropped silently.
+    private func startQuickWorkout(with exerciseId: String) {
+        if let active = appState.activeSession {
+            appState.addExerciseToSession(sessionId: active.id, exerciseId: exerciseId)
+            presentedWorkout = PresentedWorkout(id: active.id)
+        } else {
+            appState.startSession(name: "Quick Workout")
+            guard let session = appState.activeSession else { return }
+            appState.addExerciseToSession(sessionId: session.id, exerciseId: exerciseId)
+            presentedWorkout = PresentedWorkout(id: session.id)
         }
     }
 }
@@ -1824,11 +1872,19 @@ private struct SessionSetRow: View {
     var body: some View {
         HStack {
             Group {
-                if set.isWarmup { Text("W").font(.caption.bold()).foregroundColor(.orange) }
-                else if set.isDropSet { Text("↓").font(.caption.bold()).foregroundColor(.purple) }
-                else { Text("\(index + 1)").font(.caption).foregroundColor(.secondary) }
+                // Same badge as the live workout row, off the same property, so
+                // a set doesn't change type between logging it and reading it
+                // back in the session history.
+                if set.kind == .normal {
+                    Text("\(index + 1)").font(.caption).foregroundColor(.secondary)
+                } else {
+                    Text(set.kind.badge)
+                        .font(.caption.bold())
+                        .foregroundColor(set.kind.badgeColour)
+                }
             }
             .frame(width: 20)
+            .accessibilityLabel(set.kind == .normal ? "Set \(index + 1)" : set.kind.label)
             if kind == .cardio {
                 Text(set.durationSec > 0
                      ? "\(set.durationSec / 60):\(String(format: "%02d", set.durationSec % 60))"

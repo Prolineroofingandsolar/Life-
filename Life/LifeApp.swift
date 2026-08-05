@@ -22,9 +22,17 @@ struct LifeApp: App {
                 .environmentObject(authManager)
                 .tint(AppTheme.primary)
                 .onChange(of: scenePhase) { _, phase in
-                    if phase == .active {
+                    switch phase {
+                    case .active:
                         // Apply any habit completions queued by the widget.
                         appState.drainPendingHabitCompletions()
+                    case .inactive, .background:
+                        // Saves are debounced by 0.4s and uploads by a further
+                        // 2s. Leaving the foreground is exactly when that
+                        // window gets cut short, so it's forced closed here.
+                        appState.flushPendingWrites()
+                    @unknown default:
+                        break
                     }
                 }
         }

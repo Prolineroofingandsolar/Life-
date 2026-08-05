@@ -246,7 +246,12 @@ struct HealthView: View {
     private var recoveryTrendCard: some View {
         HealthCard {
             VStack(alignment: .leading, spacing: 6) {
-                Text("HRV")
+                // Named for the window it covers. `hrvMs` is the whole-night
+                // mean and `deepSleepHrvMs` is an RMSSD taken during deep sleep
+                // only; they differ by a millisecond or two on the same night,
+                // and both were being shown as a bare "HRV" on different
+                // screens, which read as the app disagreeing with itself.
+                Text("HRV · overnight average")
                     .font(.subheadline.weight(.semibold))
                 if let latest = latestHealth({ $0.hrvMs }) {
                     HStack(alignment: .lastTextBaseline, spacing: 8) {
@@ -319,7 +324,7 @@ struct HealthView: View {
                     Divider()
                     HStack(alignment: .top, spacing: 0) {
                         vitalMetric(.restingHr, title: "Resting HR", icon: "heart.fill", colour: .pink)
-                        vitalMetric(.hrv, title: "HRV", icon: "waveform.path.ecg", colour: .purple)
+                        vitalMetric(.hrv, title: "HRV overnight", icon: "waveform.path.ecg", colour: .purple)
                         vitalMetric(.spo2, title: "SpO₂", icon: "drop.fill", colour: .blue)
                         vitalMetric(.wristTemp, title: "Temp", icon: "thermometer.medium", colour: .orange)
                     }
@@ -360,7 +365,7 @@ struct HealthView: View {
             HealthCard {
                 VStack(alignment: .leading, spacing: 10) {
                     HealthCardHeader(title: "Sources")
-                    InfoRow(label: "Reading from", value: HealthSync.source(for: settings).rawValue)
+                    InfoRow(label: "Reading from", value: HealthSync.source(for: settings).detailedName)
                     InfoRow(label: "Last updated", value: lastSyncedDescription)
                     appleSourceList
                     failuresLine
@@ -405,13 +410,16 @@ struct HealthView: View {
     }
 
     @ViewBuilder
+    /// Opens the overview, which is what the label promises. It used to open the
+    /// Sleep tab: one domain of four, presented as all of them.
     private var allDataLink: some View {
-        NavigationLink { HealthDetailView(initialTab: .sleep) } label: {
+        NavigationLink { HealthDetailView(initialTab: .overview) } label: {
             HealthCard {
                 HStack(spacing: 12) {
                     Image(systemName: "square.stack.3d.up.fill")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundColor(.secondary)
+                        .accessibilityHidden(true)
                     Text("View all health data")
                         .font(.system(size: 15, weight: .medium))
                         .foregroundColor(.primary)
@@ -419,10 +427,13 @@ struct HealthView: View {
                     Image(systemName: "chevron.right")
                         .font(.caption.weight(.semibold))
                         .foregroundColor(Color(.tertiaryLabel))
+                        .accessibilityHidden(true)
                 }
             }
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("View all health data")
+        .accessibilityHint("Shows every stored figure with the source it came from")
     }
 
     @ViewBuilder
@@ -599,26 +610,41 @@ struct HealthDetailView: View {
     let initialTab: DetailTab
     @State private var selectedTab: DetailTab
 
-    init(initialTab: DetailTab = .sleep) {
+    init(initialTab: DetailTab = .overview) {
         self.initialTab = initialTab
         _selectedTab = State(initialValue: initialTab)
     }
 
     enum DetailTab: String, CaseIterable, Identifiable {
+        case overview = "All"
         case sleep = "Sleep"
         case recovery = "Recovery"
         case activity = "Activity"
         var id: String { rawValue }
+
+        /// Spoken instead of the terse segment title, which on its own gives no
+        /// clue what "All" contains.
+        var accessibilityLabel: String {
+            switch self {
+            case .overview: return "All health data"
+            case .sleep:    return "Sleep"
+            case .recovery: return "Recovery"
+            case .activity: return "Activity"
+            }
+        }
     }
 
     var body: some View {
         VStack(spacing: 0) {
             Picker("Section", selection: $selectedTab) {
                 ForEach(DetailTab.allCases) { tab in
-                    Text(tab.rawValue).tag(tab)
+                    Text(tab.rawValue)
+                        .tag(tab)
+                        .accessibilityLabel(tab.accessibilityLabel)
                 }
             }
             .pickerStyle(.segmented)
+            .accessibilityLabel("Health data section")
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
 
@@ -632,6 +658,7 @@ struct HealthDetailView: View {
     @ViewBuilder
     private var content: some View {
         switch selectedTab {
+        case .overview: HealthOverviewTab()
         case .sleep:    SleepView()
         case .recovery: HealthRecoveryTab()
         case .activity: HealthActivityTab()

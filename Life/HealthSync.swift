@@ -18,6 +18,24 @@ enum HealthSync {
         case fitbit = "Fitbit"
         case appleHealth = "Apple Health"
         case none = "no source"
+
+        /// The provider this source corresponds to, so every screen naming it
+        /// spells it the same way. Nil for `.none`, which isn't a provider.
+        var provider: HealthProvider? {
+            switch self {
+            case .fitbit:      return .fitbit
+            case .appleHealth: return .appleHealth
+            case .none:        return nil
+            }
+        }
+
+        /// What the user reads. Routes through `HealthProvider` so "Fitbit",
+        /// "Google Health" and "Google Fit" can't reappear as three names for
+        /// one thing.
+        var displayName: String { provider?.displayName ?? "No source connected" }
+
+        /// The fuller attribution, for the Sources card and data check screen.
+        var detailedName: String { provider?.detailedName ?? "No source connected" }
     }
 
     /// The device the user has chosen, falling back to what's actually

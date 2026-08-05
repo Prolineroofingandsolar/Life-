@@ -419,6 +419,70 @@ struct Routine: Codable, Identifiable {
     var photoData: Data? = nil
 }
 
+// MARK: - Set Kind
+
+/// What a logged set is: an ordinary working set, a warm-up, a drop set, or one
+/// half of a superset.
+///
+/// These were four separate mechanisms with four different ways in. Warm-up was
+/// a boolean behind a long-press context menu; drop set was a boolean plus a
+/// "Add Drop Set" action that inserted a *new* row rather than changing the one
+/// in front of you; superset lived on the exercise and could only be created by
+/// pairing with whatever happened to be next. There was no way to look at a set
+/// and say what it was, and no single place to change it.
+///
+/// The four are now one property with one picker. The underlying booleans stay
+/// as the storage — see `LoggedSet.kind` — so every existing saved workout and
+/// every statistic that filters on `isWarmup` keeps working unchanged.
+enum SetKind: String, Codable, CaseIterable, Identifiable, Sendable {
+    case normal
+    case warmup
+    case drop
+    case superset
+
+    var id: String { rawValue }
+
+    /// The name in the picker.
+    var label: String {
+        switch self {
+        case .normal:   return "Normal"
+        case .warmup:   return "Warm-up"
+        case .drop:     return "Drop set"
+        case .superset: return "Superset"
+        }
+    }
+
+    /// The one- or two-character badge on the set row.
+    var badge: String {
+        switch self {
+        case .normal:   return ""
+        case .warmup:   return "W"
+        case .drop:     return "↓"
+        case .superset: return "S"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .normal:   return "circle"
+        case .warmup:   return "flame"
+        case .drop:     return "arrow.down.circle"
+        case .superset: return "arrow.triangle.2.circlepath"
+        }
+    }
+
+    /// Whether the set counts towards working volume, personal records and
+    /// progression. Warm-ups and drop sets are deliberately excluded: both are
+    /// performed at reduced load by design, and counting them drags every
+    /// average down and hides real progress.
+    var countsAsWorkingSet: Bool {
+        switch self {
+        case .normal, .superset: return true
+        case .warmup, .drop:     return false
+        }
+    }
+}
+
 struct LoggedSet: Codable, Identifiable {
     var id: String = UUID().uuidString
     var weight: Double = 0
@@ -433,6 +497,34 @@ struct LoggedSet: Codable, Identifiable {
     var completedAt: Date? = nil
     var rpe: Int? = nil
     var notes: String = ""
+    /// Marks a set performed back-to-back with another exercise.
+    ///
+    /// Optional rather than a plain `Bool` on purpose: Swift's synthesized
+    /// `Codable` calls `decode` for non-optional properties, so adding one here
+    /// would throw on every set saved before this version — and a decode failure
+    /// is treated as "first launch", which would wipe the whole save file. An
+    /// optional gets `decodeIfPresent` and reads back as nil.
+    var isSupersetSet: Bool? = nil
+
+    /// The set's type, derived from and written back to the stored flags.
+    ///
+    /// Reading is ordered rather than exclusive because the flags aren't
+    /// mutually exclusive in old data — a set could have been marked both warm-up
+    /// and drop by two different code paths. Warm-up wins that tie, being the
+    /// one that changes how the set is counted most.
+    var kind: SetKind {
+        get {
+            if isWarmup { return .warmup }
+            if isDropSet { return .drop }
+            if isSupersetSet == true { return .superset }
+            return .normal
+        }
+        set {
+            isWarmup = newValue == .warmup
+            isDropSet = newValue == .drop
+            isSupersetSet = newValue == .superset
+        }
+    }
 }
 
 struct SessionExercise: Codable, Identifiable {
@@ -526,6 +618,27 @@ struct CareDay: Codable {
     var lastBreakAt: Date? = nil
     var breaksTaken: Int = 0
     var steps: Int = 0
+
+    /// Combines two devices' record of the same day.
+    ///
+    /// Counters take the larger of the two rather than the preferred side's.
+    /// These only ever go up during a day, so a phone that hasn't synced since
+    /// this morning holding four glasses of water doesn't mean the day's count
+    /// dropped to four — it means that device stopped counting at four. The
+    /// same reasoning covers steps, which is why a sync catching a source
+    /// mid-import can't push the figure backwards.
+    static func merging(_ incoming: CareDay, onto existing: CareDay) -> CareDay {
+        var out = incoming
+        out.dayKey = incoming.dayKey.isEmpty ? existing.dayKey : incoming.dayKey
+        out.waterGlasses = max(incoming.waterGlasses, existing.waterGlasses)
+        out.breaksTaken = max(incoming.breaksTaken, existing.breaksTaken)
+        out.steps = max(incoming.steps, existing.steps)
+        // Whichever device logged more meals has the fuller list; meals aren't
+        // individually identified, so they can't be unioned safely.
+        out.meals = incoming.meals.count >= existing.meals.count ? incoming.meals : existing.meals
+        out.lastBreakAt = [incoming.lastBreakAt, existing.lastBreakAt].compactMap { $0 }.max()
+        return out
+    }
 }
 
 struct CareSettings: Codable {

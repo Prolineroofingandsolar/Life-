@@ -704,58 +704,34 @@ private struct ExerciseCardContent: View {
 
             Divider()
 
-            // Sets — working and drop sets rendered together
-            let sets = sessionExercise.sets
-            ForEach(Array(workingSetIndices(sets).enumerated()), id: \.element) { labelIdx, workingIdx in
-                let workingSet = sets[workingIdx]
-                // Working set row
-                SetRow(
-                    sessionId: sessionId,
-                    exerciseId: sessionExercise.id,
-                    set: workingSet,
-                    setLabel: setLabel(for: workingSet, number: labelIdx + 1),
-                    labelColor: setLabelColor(for: workingSet),
-                    exerciseKind: exercise?.kind ?? .weight,
-                    prevSet: previousSets.indices.contains(labelIdx) ? previousSets[labelIdx] : previousSets.last,
-                    isDropSet: false,
-                    onDone: { onSetDone(workingSet.id) },
-                    onAddDropSet: {
-                        appState.addDropSet(sessionId: sessionId, exerciseId: sessionExercise.id, afterSetId: workingSet.id)
-                        HapticManager.impact(.light)
-                    }
-                )
-
-                // Drop sets immediately after this working set
-                let drops = dropSetsAfter(index: workingIdx, in: sets)
-                ForEach(Array(drops.enumerated()), id: \.element.id) { dropIdx, drop in
+            // Sets, in the order they're stored. Drop sets are indented under
+            // whatever precedes them.
+            //
+            // The previous version drove the list from the indices of the
+            // *working* sets and hung drop sets off them, which meant a drop set
+            // with no working set before it — the first row of an exercise, say,
+            // once any set could be retyped — was never rendered at all. It
+            // stayed in the data, counted towards the workout, and was invisible.
+            ForEach(rows) { row in
+                if row.isIndented {
                     HStack(spacing: 0) {
                         VStack(spacing: 0) {
-                            Rectangle().fill(Color.purple.opacity(0.4)).frame(width: 2)
+                            Rectangle()
+                                .fill(row.kind.badgeColour.opacity(0.4))
+                                .frame(width: 2)
                         }
                         .frame(width: 14)
                         .padding(.leading, 14)
+                        .accessibilityHidden(true)
 
-                        SetRow(
-                            sessionId: sessionId,
-                            exerciseId: sessionExercise.id,
-                            set: drop,
-                            setLabel: "↓",
-                            labelColor: .purple,
-                            exerciseKind: exercise?.kind ?? .weight,
-                            prevSet: nil,
-                            isDropSet: true,
-                            onDone: { onSetDone(drop.id) },
-                            onAddDropSet: {
-                                appState.addDropSet(sessionId: sessionId, exerciseId: sessionExercise.id, afterSetId: drop.id)
-                                HapticManager.impact(.light)
-                            }
-                        )
+                        setRow(for: row)
                     }
-                    .background(Color.purple.opacity(0.04))
-                }
-
-                if workingIdx < sets.lastIndex(where: { !$0.isDropSet }) ?? 0 {
-                    Divider().padding(.leading, 14)
+                    .background(row.kind.badgeColour.opacity(0.04))
+                } else {
+                    setRow(for: row)
+                    if row.showsDivider {
+                        Divider().padding(.leading, 14)
+                    }
                 }
             }
 
@@ -776,32 +752,100 @@ private struct ExerciseCardContent: View {
         }
     }
 
-    // Returns indices of non-drop sets (working sets)
-    private func workingSetIndices(_ sets: [LoggedSet]) -> [Int] {
-        sets.indices.filter { !sets[$0].isDropSet }
-    }
+    // MARK: Row plan
 
-    // Returns drop sets immediately following the given index
-    private func dropSetsAfter(index: Int, in sets: [LoggedSet]) -> [LoggedSet] {
-        var result: [LoggedSet] = []
-        var i = index + 1
-        while i < sets.count && sets[i].isDropSet {
-            result.append(sets[i])
-            i += 1
+    /// One rendered set row, with everything the row needs already decided.
+    ///
+    /// Working out the label, the colour and the indent inline meant three
+    /// places had to agree on what a set was. They didn't, which is how a set
+    /// could show a warm-up badge while still being counted as a working set.
+    private struct SetRowPlan: Identifiable {
+        let set: LoggedSet
+        let kind: SetKind
+        /// Position among the working sets, for the numeric label. Nil for sets
+        /// that don't take a number.
+        let number: Int?
+        let previous: LoggedSet?
+        let isIndented: Bool
+        let showsDivider: Bool
+
+        var id: String { set.id }
+
+        var label: String {
+            if set.isFailure { return "F" }
+            if kind != .normal { return kind.badge }
+            return number.map { String($0) } ?? "–"
         }
-        return result
+
+        var labelColour: Color {
+            if set.isFailure { return .red }
+            return kind == .normal ? .secondary : kind.badgeColour
+        }
     }
 
-    private func setLabel(for set: LoggedSet, number: Int) -> String {
-        if set.isWarmup { return "W" }
-        if set.isFailure { return "F" }
-        return "\(number)"
+    private var rows: [SetRowPlan] {
+        let sets = sessionExercise.sets
+        var out: [SetRowPlan] = []
+        var workingNumber = 0
+
+        for (index, set) in sets.enumerated() {
+            let kind = set.kind
+            var number: Int?
+            var previous: LoggedSet?
+
+            if kind.countsAsWorkingSet {
+                workingNumber += 1
+                number = workingNumber
+                let previousIndex = workingNumber - 1
+                previous = previousSets.indices.contains(previousIndex)
+                    ? previousSets[previousIndex]
+                    : previousSets.last
+            }
+
+            // A divider goes under every top-level row except the last one, so
+            // the card doesn't end on a rule.
+            let isLast = index == sets.count - 1
+            out.append(SetRowPlan(
+                set: set,
+                kind: kind,
+                number: number,
+                previous: previous,
+                isIndented: kind == .drop,
+                showsDivider: !isLast
+            ))
+        }
+        return out
     }
 
-    private func setLabelColor(for set: LoggedSet) -> Color {
-        if set.isWarmup { return .orange }
-        if set.isFailure { return .red }
-        return .secondary
+    @ViewBuilder
+    private func setRow(for row: SetRowPlan) -> some View {
+        SetRow(
+            sessionId: sessionId,
+            exerciseId: sessionExercise.id,
+            set: row.set,
+            setLabel: row.label,
+            labelColor: row.labelColour,
+            exerciseKind: exercise?.kind ?? .weight,
+            prevSet: row.previous,
+            isDropSet: row.kind == .drop,
+            onDone: { onSetDone(row.set.id) },
+            onAddDropSet: {
+                appState.addDropSet(sessionId: sessionId, exerciseId: sessionExercise.id, afterSetId: row.set.id)
+                HapticManager.impact(.light)
+            }
+        )
+    }
+}
+
+extension SetKind {
+    /// The colour of the badge and of the indent rule beside a drop set.
+    var badgeColour: Color {
+        switch self {
+        case .normal:   return .secondary
+        case .warmup:   return .orange
+        case .drop:     return .purple
+        case .superset: return AppTheme.trainAccent
+        }
     }
 }
 
@@ -873,15 +917,54 @@ private struct SetRow: View {
         unit.convert(parsedWeight, to: .kg)
     }
 
+    /// Drives the set-type picker. Writing through `AppState` rather than
+    /// mutating the copy held here keeps the change on the stored session, which
+    /// is what the rest of the screen renders from.
+    private var kindBinding: Binding<SetKind> {
+        Binding(
+            get: { set.kind },
+            set: { newKind in
+                guard newKind != set.kind else { return }
+                appState.setSetKind(
+                    sessionId: sessionId, exerciseId: exerciseId, setId: set.id, kind: newKind
+                )
+                HapticManager.impact(.light)
+            }
+        )
+    }
+
+    private var accessibilityLabelForSet: String {
+        let kind = set.kind
+        let name = kind == .normal ? "Set \(setLabel)" : kind.label
+        return set.isFailure ? "\(name), taken to failure" : name
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
-                // Set label (44pt wide)
-                Text(setLabel)
-                    .font(setLabel.first?.isNumber == true ? .body.bold() : .callout.bold())
-                    .foregroundColor(labelColor)
-                    .frame(width: 44, alignment: .center)
-                    .padding(.leading, isDropSet ? 0 : 4)
+                // Set label — also the set-type picker.
+                //
+                // Changing a set's type used to need a long press on the row,
+                // and only offered warm-up; drop sets could only be added as new
+                // rows and supersets only existed at the exercise level. Tapping
+                // the number is the obvious gesture and it's now the one that
+                // works.
+                Menu {
+                    Picker("Set type", selection: kindBinding) {
+                        ForEach(SetKind.allCases) { kind in
+                            Label(kind.label, systemImage: kind.icon).tag(kind)
+                        }
+                    }
+                } label: {
+                    Text(setLabel)
+                        .font(setLabel.first?.isNumber == true ? .body.bold() : .callout.bold())
+                        .foregroundColor(labelColor)
+                        .frame(width: 44, height: 44, alignment: .center)
+                        .contentShape(Rectangle())
+                }
+                .padding(.leading, isDropSet ? 0 : 4)
+                .accessibilityLabel(accessibilityLabelForSet)
+                .accessibilityHint("Change the set type")
 
                 if exerciseKind == .cardio {
                     // Cardio: duration + distance fields
@@ -1026,20 +1109,20 @@ private struct SetRow: View {
             .background(set.done ? AppTheme.primary.opacity(0.08) : Color.clear)
             .animation(.easeInOut(duration: 0.2), value: set.done)
             .contextMenu {
-                if !set.isDropSet {
-                    Button {
-                        appState.updateSet(sessionId: sessionId, exerciseId: exerciseId, setId: set.id, isWarmup: !set.isWarmup)
-                    } label: {
-                        Label(set.isWarmup ? "Mark as Working Set" : "Mark as Warmup", systemImage: "flame")
+                // The same four types as the label picker, so a long press and a
+                // tap can't disagree about what a set can be.
+                Picker("Set type", selection: kindBinding) {
+                    ForEach(SetKind.allCases) { kind in
+                        Label(kind.label, systemImage: kind.icon).tag(kind)
                     }
-                    Button {
-                        appState.toggleSetFailure(sessionId: sessionId, exerciseId: exerciseId, setId: set.id)
-                    } label: {
-                        Label(set.isFailure ? "Clear Failure" : "Mark as Failure", systemImage: "xmark.circle")
-                    }
-                    Button { onAddDropSet() } label: {
-                        Label("Add Drop Set", systemImage: "arrow.down.circle")
-                    }
+                }
+                Button {
+                    appState.toggleSetFailure(sessionId: sessionId, exerciseId: exerciseId, setId: set.id)
+                } label: {
+                    Label(set.isFailure ? "Clear Failure" : "Mark as Failure", systemImage: "xmark.circle")
+                }
+                Button { onAddDropSet() } label: {
+                    Label("Add Drop Set Below", systemImage: "arrow.down.circle")
                 }
                 Button(role: .destructive) {
                     appState.removeSet(sessionId: sessionId, exerciseId: exerciseId, setId: set.id)
@@ -1255,10 +1338,41 @@ private struct RPEPicker: View {
 
 // MARK: - Exercise Picker Sheet
 
+/// Identifies the workout a sheet is showing.
+///
+/// The sheets that present `ActiveWorkoutView` were driven by a `Bool` with the
+/// session id held separately, and their bodies read `if let id = …`. When the
+/// id was nil — briefly, whenever the flag was set before the id — the sheet
+/// still presented, as an empty modal layer. Nothing was drawn, but it took the
+/// screen: VoiceOver moved into a modal containing no elements and there was no
+/// control to leave by. Presenting on the identifier itself means there is no
+/// sheet at all until there is something to show in it.
+struct PresentedWorkout: Identifiable, Equatable {
+    let id: String
+}
+
 struct ExercisePickerSheet: View {
     @Environment(AppState.self) private var appState
     @Environment(\.dismiss) private var dismiss
-    let sessionId: String
+
+    /// The session to add the chosen exercise to. Nil when the picker is being
+    /// used to choose an exercise *before* a session exists — Quick Start needs
+    /// an exercise in hand before it creates anything, so there is nothing to
+    /// add to yet.
+    var sessionId: String? = nil
+
+    /// What the title says. "Add Exercise" is wrong when the picker is the
+    /// first step of starting a workout rather than a change to one in progress.
+    var title: String = "Add Exercise"
+
+    /// Called with the chosen exercise id instead of adding it to a session.
+    /// Takes precedence over `sessionId` when both are supplied.
+    ///
+    /// Declared last so it can be passed as a trailing closure — the
+    /// synthesized memberwise initialiser takes its parameters in declaration
+    /// order, and a trailing closure always binds to the final one.
+    var onSelect: ((String) -> Void)? = nil
+
     @State private var searchText = ""
     @State private var equipmentFilter: ExerciseEquipment? = nil
     @State private var showCreateExercise = false
@@ -1293,8 +1407,7 @@ struct ExercisePickerSheet: View {
                         Section(muscle) {
                             ForEach(exs) { ex in
                                 Button {
-                                    appState.addExerciseToSession(sessionId: sessionId, exerciseId: ex.id)
-                                    dismiss()
+                                    choose(ex.id)
                                 } label: {
                                     HStack {
                                         Circle().fill(muscle.muscleColor).frame(width: 8, height: 8)
@@ -1310,7 +1423,7 @@ struct ExercisePickerSheet: View {
                 .listStyle(.insetGrouped)
             }
             .searchable(text: $searchText)
-            .navigationTitle("Add Exercise")
+            .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -1326,6 +1439,15 @@ struct ExercisePickerSheet: View {
                 AddExerciseSheet()
             }
         }
+    }
+
+    private func choose(_ exerciseId: String) {
+        if let onSelect {
+            onSelect(exerciseId)
+        } else if let sessionId {
+            appState.addExerciseToSession(sessionId: sessionId, exerciseId: exerciseId)
+        }
+        dismiss()
     }
 }
 

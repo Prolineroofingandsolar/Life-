@@ -8,6 +8,9 @@ import UIKit
 private enum PersistenceKey {
     static let appState = "life_app_state_v2"
     static let lastModified = "life_app_state_last_modified_v1"
+    /// True once the user has changed anything on this device. See
+    /// `AppState.hasLocalUserData`.
+    static let hasUserData = "life_app_state_has_user_data_v1"
 }
 
 // MARK: - Planned Session
@@ -76,6 +79,96 @@ struct StateSnapshot: Codable {
     var sleepNights: [String: SleepNight]? = nil
     /// Manually entered Google Health scores paired with our estimates.
     var sleepComparisons: [String: SleepScoreComparison]? = nil
+}
+
+// MARK: - Snapshot Merging
+
+extension StateSnapshot {
+
+    /// Combines two snapshots without discarding anything from either.
+    ///
+    /// Sign-in used to be a straight choice: whichever side had the later
+    /// timestamp replaced the other outright. That loses data in both
+    /// directions. Install the app on a new phone, log one workout before
+    /// signing in, and local was "newer" — so a year of history in the cloud was
+    /// overwritten by that single session. Sign in first instead and anything
+    /// recorded offline on the old phone was thrown away.
+    ///
+    /// Nothing is deleted here. Records are unioned by id; where both sides hold
+    /// the same id, `preferring` decides. Day-keyed health data merges field by
+    /// field, because a day can legitimately be half-recorded on each device —
+    /// steps synced on the phone, sleep synced on the tablet.
+    ///
+    /// The cost is that a record deleted on one device comes back if the other
+    /// device still has it and hasn't synced since. That is the right trade:
+    /// a resurrected workout is an annoyance the user can delete again, a
+    /// deleted year of history is not recoverable.
+    static func merged(preferring winner: StateSnapshot, with loser: StateSnapshot) -> StateSnapshot {
+        var out = winner
+
+        out.tasks = union(winner.tasks, loser.tasks)
+        out.taskLists = union(winner.taskLists, loser.taskLists)
+        out.bills = union(winner.bills, loser.bills)
+        out.incomes = union(winner.incomes, loser.incomes)
+        out.oneOffExpenses = union(winner.oneOffExpenses, loser.oneOffExpenses)
+        out.habits = union(winner.habits, loser.habits)
+        out.exercises = union(winner.exercises, loser.exercises)
+        out.routines = union(winner.routines, loser.routines)
+        out.sessions = union(winner.sessions, loser.sessions)
+        out.weightEntries = union(winner.weightEntries, loser.weightEntries)
+            .sorted { $0.date < $1.date }
+        out.bodyCompEntries = union(winner.bodyCompEntries, loser.bodyCompEntries)
+            .sorted { $0.date < $1.date }
+        out.bodyMeasurements = union(winner.bodyMeasurements, loser.bodyMeasurements)
+            .sorted { $0.date > $1.date }
+        out.achievements = union(winner.achievements, loser.achievements)
+        out.programs = union(winner.programs, loser.programs)
+        out.visitedLocations = union(winner.visitedLocations, loser.visitedLocations)
+        out.plannedSessions = union(winner.plannedSessions, loser.plannedSessions)
+        out.supplements = union(winner.supplements, loser.supplements)
+
+        out.careDays = merge(winner.careDays, loser.careDays) { win, lose in
+            CareDay.merging(win, onto: lose)
+        }
+        out.healthDays = merge(winner.healthDays ?? [:], loser.healthDays ?? [:]) { win, lose in
+            HealthDay.merging(win, onto: lose)
+        }
+        out.sleepNights = merge(winner.sleepNights ?? [:], loser.sleepNights ?? [:]) { win, lose in
+            // A night's stage list is one indivisible reading. Interleaving two
+            // versions of it would invent a hypnogram neither device recorded,
+            // so the more detailed one wins whole.
+            win.segments.count >= lose.segments.count ? win : lose
+        }
+        out.sleepComparisons = merge(winner.sleepComparisons ?? [:], loser.sleepComparisons ?? [:]) { win, _ in win }
+
+        // Settings and the user's name are single values, not collections:
+        // there is nothing to union, so the preferred side stands. `out` is a
+        // copy of `winner`, so this is already the case — except where the
+        // winner never set one.
+        if out.userName.isEmpty { out.userName = loser.userName }
+
+        return out
+    }
+
+    /// Union by id, keeping the preferred side's copy of anything in both.
+    private static func union<T: Identifiable>(_ preferred: [T], _ other: [T]) -> [T] {
+        var seen = Set(preferred.map(\.id))
+        var out = preferred
+        for item in other where !seen.contains(item.id) {
+            seen.insert(item.id)
+            out.append(item)
+        }
+        return out
+    }
+
+    /// Union of two day-keyed maps, combining the entries present in both.
+    private static func merge<Value>(
+        _ preferred: [String: Value],
+        _ other: [String: Value],
+        combine: (Value, Value) -> Value
+    ) -> [String: Value] {
+        preferred.merging(other) { win, lose in combine(win, lose) }
+    }
 }
 
 // MARK: - AppState
@@ -211,6 +304,28 @@ final class AppState {
         set { UserDefaults.standard.set(newValue, forKey: PersistenceKey.lastModified) }
     }
 
+    /// Whether anything on this device has been created or changed by the
+    /// person using it, as opposed to written by `seedDefaults`.
+    ///
+    /// This is the difference between a device with data and a device that has
+    /// merely been launched. A fresh install writes example tasks, bills and
+    /// habits and stamps `localLastModified` with the current time — which made
+    /// every new install look, at sign-in, like the device holding the newest
+    /// data. It then uploaded its three sample tasks over a real account.
+    /// That is the bug behind "my history disappeared when I reinstalled".
+    private var hasLocalUserData: Bool {
+        get { UserDefaults.standard.bool(forKey: PersistenceKey.hasUserData) }
+        set { UserDefaults.standard.set(newValue, forKey: PersistenceKey.hasUserData) }
+    }
+
+    /// Set while `seedDefaults` runs so its own save isn't mistaken for the
+    /// user doing something.
+    private var isSeeding = false
+
+    /// The account a `loadFromCloud` is currently running for, so the same one
+    /// can't be started twice concurrently.
+    private var cloudLoadInProgress: String?
+
     private var pendingSaveWork: DispatchWorkItem?
 
     /// Debounced save — coalesces rapid text-field changes (title, notes) into a single disk write.
@@ -229,6 +344,7 @@ final class AppState {
             UserDefaults.standard.set(data, forKey: PersistenceKey.appState)
         }
         localLastModified = Date()
+        if !isSeeding { hasLocalUserData = true }
         WidgetSync.sync(tasks: tasks, taskLists: taskLists)
         WidgetSync.syncHabits(habits: habits, todayKey: todayKey, streakFor: streakFor)
         syncHabitReminderSummaries()
@@ -236,6 +352,20 @@ final class AppState {
             syncState = .syncing
             FirestoreSync.shared.scheduleUpload(snapshot, userId: uid)
         }
+    }
+
+    /// Writes any queued change straight away rather than waiting out the
+    /// debounce windows.
+    ///
+    /// A save is debounced by 0.4s locally and the upload by a further 2s, so
+    /// up to 2.4 seconds of work existed only in memory at any moment. Anything
+    /// that ends the app's turn on screen — backgrounding it, swiping it away —
+    /// discarded that window. Called from the scene-phase change so the last
+    /// thing you did is on disk and on its way to the server before the app
+    /// stops running.
+    func flushPendingWrites() {
+        save()
+        FirestoreSync.shared.flushPending()
     }
 
     func taskList(for task: AppTask) -> TaskList? {
@@ -304,38 +434,91 @@ final class AppState {
 
     // MARK: Cloud Sync
 
+    /// Brings this device and the account into agreement, keeping everything
+    /// either of them holds.
+    ///
+    /// Three cases, and only one of them used to be handled correctly.
+    ///
+    /// *Nothing in the cloud yet* — first sign-in on this account. Local data
+    /// goes up as-is.
+    ///
+    /// *Cloud has data, this device has none of its own* — a reinstall, a new
+    /// phone, or an app update that cleared local storage. The cloud snapshot is
+    /// taken whole. Critically, "none of its own" means the user hasn't changed
+    /// anything: the example tasks and bills a fresh install writes don't count,
+    /// and used to be enough to make this device win and wipe the account.
+    ///
+    /// *Both have data* — they're merged rather than one chosen. Neither side
+    /// loses records, and the newer of the two decides any record they both
+    /// hold. See `StateSnapshot.merged(preferring:with:)`.
     func loadFromCloud(userId: String) async {
+        // Two things call this — the auth-state change and the launch-time
+        // check that covers an already-restored session — and on a cold start
+        // with a signed-in user they can both fire. Merging twice would give
+        // the same answer, but it would also download twice and race on
+        // `localLastModified`, so the second caller waits for nothing instead.
+        guard cloudLoadInProgress != userId else { return }
+        cloudLoadInProgress = userId
+        defer { cloudLoadInProgress = nil }
+
         cloudUserId = userId
         await MainActor.run { syncState = .syncing }
         do {
-            if let downloaded = try await FirestoreSync.shared.download(userId: userId) {
-                if localLastModified > downloaded.updatedAt {
-                    // This device has changes the cloud doesn't know about yet
-                    // (e.g. made while offline, or after another device's last
-                    // sync) — applying the cloud snapshot here would silently
-                    // discard them. Keep local data and push it up instead so
-                    // the cloud catches up.
-                    await MainActor.run {
-                        syncState = .syncing
-                        FirestoreSync.shared.scheduleUpload(makeSnapshot(), userId: userId)
-                    }
-                } else {
-                    await MainActor.run {
-                        apply(snapshot: downloaded.snapshot)
-                        localLastModified = downloaded.updatedAt
-                        syncState = .synced(Date())
-                    }
+            guard let downloaded = try await FirestoreSync.shared.download(userId: userId) else {
+                // Nothing stored for this account yet — seed it from here.
+                await MainActor.run {
+                    FirestoreSync.shared.scheduleUpload(makeSnapshot(), userId: userId)
+                    syncState = .synced(Date())
                 }
-            } else {
-                // First sign-in — upload existing local data to the cloud
-                FirestoreSync.shared.scheduleUpload(makeSnapshot(), userId: userId)
-                await MainActor.run { syncState = .synced(Date()) }
+                return
+            }
+
+            await MainActor.run {
+                let local = makeSnapshot()
+
+                if !hasLocalUserData {
+                    // This device has nothing worth keeping. Take the account's
+                    // data whole rather than merging example data into it.
+                    apply(snapshot: downloaded.snapshot)
+                    localLastModified = downloaded.updatedAt
+                    hasLocalUserData = true
+                    syncState = .synced(Date())
+                    // Persist the downloaded state to disk immediately so a
+                    // crash before the next change doesn't lose it — but don't
+                    // schedule an upload of what we just downloaded.
+                    persistLocally()
+                    return
+                }
+
+                let localIsNewer = localLastModified > downloaded.updatedAt
+                let merged = localIsNewer
+                    ? StateSnapshot.merged(preferring: local, with: downloaded.snapshot)
+                    : StateSnapshot.merged(preferring: downloaded.snapshot, with: local)
+
+                apply(snapshot: merged)
+                localLastModified = Date()
+                syncState = .syncing
+                // The merged result is new to both sides, so it has to go up
+                // even when the cloud copy was the newer of the two.
+                FirestoreSync.shared.scheduleUpload(merged, userId: userId)
+                persistLocally()
             }
         } catch {
             // Network unavailable — carry on with local data, but surface the
             // failure so the UI can show a "Sync failed" banner with retry.
             await MainActor.run { syncState = .failed(error.localizedDescription) }
         }
+    }
+
+    /// Writes the current state to disk without touching the cloud or the
+    /// modification stamp. Used after applying a downloaded snapshot, where
+    /// `save()` would schedule a pointless upload of what just arrived.
+    private func persistLocally() {
+        if let data = try? JSONEncoder().encode(makeSnapshot()) {
+            UserDefaults.standard.set(data, forKey: PersistenceKey.appState)
+        }
+        WidgetSync.sync(tasks: tasks, taskLists: taskLists)
+        WidgetSync.syncHabits(habits: habits, todayKey: todayKey, streakFor: streakFor)
     }
 
     func disableCloudSync() {
@@ -351,6 +534,14 @@ final class AppState {
            let snapshot = try? JSONDecoder().decode(StateSnapshot.self, from: data) {
             apply(snapshot: snapshot)
             if taskLists.isEmpty { taskLists = Self.defaultTaskLists }
+            // Devices that were already running before `hasUserData` existed
+            // have no value stored for it, which reads as false — and false
+            // means "safe to replace with the cloud copy". A device with a save
+            // file has been used, so it is credited with its data on first
+            // launch after upgrading.
+            if UserDefaults.standard.object(forKey: PersistenceKey.hasUserData) == nil {
+                hasLocalUserData = true
+            }
         } else {
             // First launch — seed default data
             exercises = WorkoutSeed.exercises
@@ -400,6 +591,12 @@ final class AppState {
     ]
 
     private func seedDefaults() {
+        // Everything written here is an example, not the user's data. The flag
+        // keeps `save()` from marking this device as holding real content,
+        // which is what decides whether it may overwrite an account at sign-in.
+        isSeeding = true
+        defer { isSeeding = false }
+
         taskLists = Self.defaultTaskLists
         tasks = [
             AppTask(title: "Reply to client email", listId: "work", dueDate: .today),
@@ -1007,6 +1204,38 @@ final class AppState {
         save()
     }
 
+    /// Changes what a set is — normal, warm-up, drop or superset — in one move.
+    ///
+    /// Marking a set as a superset also pairs its exercise with the next one in
+    /// the session if it isn't already paired, because a superset is by
+    /// definition two exercises alternated: labelling a set and leaving the
+    /// exercise unpaired would be a badge that means nothing. Where there is no
+    /// next exercise the set is still labelled, so the record is accurate even
+    /// though the pairing has to wait for something to pair with.
+    ///
+    /// Clearing a superset set back to normal deliberately leaves the exercise
+    /// pairing alone: other sets in the pair may still be supersets, and
+    /// unpairing the exercise would silently change them too.
+    func setSetKind(sessionId: String, exerciseId: String, setId: String, kind: SetKind) {
+        guard let sIdx = sessions.firstIndex(where: { $0.id == sessionId }),
+              let eIdx = sessions[sIdx].exercises.firstIndex(where: { $0.id == exerciseId }),
+              let setIdx = sessions[sIdx].exercises[eIdx].sets.firstIndex(where: { $0.id == setId })
+        else { return }
+
+        sessions[sIdx].exercises[eIdx].sets[setIdx].kind = kind
+
+        if kind == .superset, sessions[sIdx].exercises[eIdx].supersetGroupId == nil {
+            let next = eIdx + 1
+            if sessions[sIdx].exercises.indices.contains(next) {
+                let groupId = sessions[sIdx].exercises[next].supersetGroupId ?? UUID().uuidString
+                sessions[sIdx].exercises[eIdx].supersetGroupId = groupId
+                sessions[sIdx].exercises[next].supersetGroupId = groupId
+            }
+        }
+
+        save()
+    }
+
     func toggleSetDone(sessionId: String, exerciseId: String, setId: String) {
         guard let sIdx = sessions.firstIndex(where: { $0.id == sessionId }),
               let eIdx = sessions[sIdx].exercises.firstIndex(where: { $0.id == exerciseId }),
@@ -1185,11 +1414,27 @@ final class AppState {
 
     // MARK: - Body / Weight Mutations
 
-    func logBodyWeight(valueKg: Double, date: Date = Date()) {
-        let entry = WeightEntry(date: date, valueKg: valueKg)
+    /// Records a weigh-in, ignoring anything that isn't a plausible weight.
+    ///
+    /// The UI disables Add for an invalid entry, but this is also reached by the
+    /// Apple Health import, which forwards whatever HealthKit hands over. A
+    /// single 0 kg sample — they exist, usually from a scale mid-calibration —
+    /// used to be stored and then flattened the whole weight chart.
+    @discardableResult
+    func logBodyWeight(
+        valueKg: Double,
+        date: Date = Date(),
+        source: HealthProvider = .manual
+    ) -> Bool {
+        guard let valid = BodyMetricLimits.validate(valueKg, in: BodyMetricLimits.weightKg) else {
+            return false
+        }
+        var entry = WeightEntry(date: date, valueKg: valid)
+        entry.source = source.storageValue
         weightEntries.append(entry)
         weightEntries.sort { $0.date < $1.date }
         save()
+        return true
     }
 
     func deleteWeightEntry(id: String) {
@@ -1197,8 +1442,30 @@ final class AppState {
         save()
     }
 
+    /// Merges body composition readings, dropping any field that isn't a
+    /// possible measurement.
+    ///
+    /// Validation happens here rather than only in the entry form because this
+    /// is also the import path, and a rejected field has to be dropped
+    /// individually — a bad BMI shouldn't cost the body-fat reading recorded
+    /// alongside it.
     func mergeBodyCompEntries(_ newEntries: [BodyCompEntry]) {
-        for entry in newEntries {
+        for raw in newEntries {
+            var entry = raw
+            // Body fat is stored 0–1, so the range is checked in percent.
+            entry.bodyFatPct = raw.bodyFatPct.flatMap {
+                BodyMetricLimits.validate($0 * 100, in: BodyMetricLimits.bodyFatPercent).map { $0 / 100 }
+            }
+            entry.leanMassKg = raw.leanMassKg.flatMap {
+                BodyMetricLimits.validate($0, in: BodyMetricLimits.leanMassKg)
+            }
+            entry.bmi = raw.bmi.flatMap {
+                BodyMetricLimits.validate($0, in: BodyMetricLimits.bmi)
+            }
+
+            // Nothing survived validation, so there's nothing to record.
+            guard entry.bodyFatPct != nil || entry.leanMassKg != nil || entry.bmi != nil else { continue }
+
             // Match by date (same day)
             let key = entry.date.dayKey
             if let idx = bodyCompEntries.firstIndex(where: { $0.date.dayKey == key }) {
@@ -1219,8 +1486,19 @@ final class AppState {
         save()
     }
 
+    /// Sets — or with nil, clears — the goal weight.
+    ///
+    /// A goal of 0 is refused rather than stored. It was previously accepted and
+    /// then used as the denominator of the progress figure, so the goal read as
+    /// met the instant it was set.
     func setGoalWeight(kg: Double?) {
-        workoutSettings.goalWeightKg = kg
+        guard let kg else {
+            workoutSettings.goalWeightKg = nil
+            save()
+            return
+        }
+        guard let valid = BodyMetricLimits.validate(kg, in: BodyMetricLimits.goalWeightKg) else { return }
+        workoutSettings.goalWeightKg = valid
         save()
     }
 
@@ -1595,7 +1873,7 @@ final class AppState {
             .sorted { ($0.finishedAt ?? .distantPast) > ($1.finishedAt ?? .distantPast) }
             .compactMap { session in
                 guard let ex = session.exercises.first(where: { $0.exerciseId == exerciseId }) else { return nil }
-                let working = ex.sets.filter { $0.done && !$0.isWarmup }
+                let working = ex.sets.filter { $0.done && $0.kind.countsAsWorkingSet }
                 return working.isEmpty ? nil : working
             }
 
@@ -1879,7 +2157,7 @@ final class AppState {
             guard let fin = session.finishedAt else { continue }
             var best1RM = 0.0
             for ex in session.exercises where ex.exerciseId == exerciseId {
-                for set in ex.sets where set.done && !set.isWarmup {
+                for set in ex.sets where set.done && set.kind.countsAsWorkingSet {
                     best1RM = max(best1RM, set.weight * (1 + Double(set.reps) / 30.0))
                 }
             }
@@ -1924,8 +2202,29 @@ final class AppState {
 
     // MARK: - Body Measurements
 
+    /// Records a set of circumferences, dropping any that aren't positive and
+    /// plausible. A measurement of 0 or -30 cm is a typo, not a reading.
     func addBodyMeasurement(_ measurement: BodyMeasurement) {
-        bodyMeasurements.append(measurement)
+        func valid(_ value: Double?) -> Double? {
+            value.flatMap { BodyMetricLimits.validate($0, in: BodyMetricLimits.measurementCm) }
+        }
+
+        var m = measurement
+        m.chestCm = valid(measurement.chestCm)
+        m.waistCm = valid(measurement.waistCm)
+        m.hipsCm = valid(measurement.hipsCm)
+        m.leftArmCm = valid(measurement.leftArmCm)
+        m.rightArmCm = valid(measurement.rightArmCm)
+        m.leftThighCm = valid(measurement.leftThighCm)
+        m.rightThighCm = valid(measurement.rightThighCm)
+        m.neckCm = valid(measurement.neckCm)
+        m.shouldersCm = valid(measurement.shouldersCm)
+
+        let values = [m.chestCm, m.waistCm, m.hipsCm, m.leftArmCm, m.rightArmCm,
+                      m.leftThighCm, m.rightThighCm, m.neckCm, m.shouldersCm]
+        guard values.contains(where: { $0 != nil }) else { return }
+
+        bodyMeasurements.append(m)
         bodyMeasurements.sort { $0.date > $1.date }
         save()
     }
@@ -1996,7 +2295,7 @@ final class AppState {
 
         for session in sessions where session.finishedAt != nil {
             for exercise in session.exercises where exercise.exerciseId == exerciseId {
-                for set in exercise.sets where set.done && !set.isWarmup {
+                for set in exercise.sets where set.done && set.kind.countsAsWorkingSet {
                     if set.weight > bestWeight {
                         bestWeight = set.weight
                         bestReps = set.reps

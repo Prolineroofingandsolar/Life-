@@ -4,8 +4,8 @@ struct TodayView: View {
 
     @Environment(AppState.self) private var appState
     @State private var showSettings = false
-    @State private var showActiveWorkout = false
-    @State private var presentedWorkoutId: String?
+    @State private var presentedWorkout: PresentedWorkout?
+    @State private var showQuickStartPicker = false
     @State private var dayToken = UUID()
 
     private var greeting: String {
@@ -83,14 +83,19 @@ struct TodayView: View {
                     )
                     CareSection()
                     TodayWorkoutCard(plan: todaysPlan) {
-                        if appState.activeSession == nil {
-                            if let plan = todaysPlan {
-                                appState.startSession(name: plan.routineName, routineId: plan.routineId)
-                            } else {
-                                appState.startSession(name: "Quick Workout")
-                            }
+                        if let active = appState.activeSession {
+                            presentedWorkout = PresentedWorkout(id: active.id)
+                        } else if let plan = todaysPlan {
+                            appState.startSession(name: plan.routineName, routineId: plan.routineId)
+                            presentedWorkout = appState.activeSession.map { PresentedWorkout(id: $0.id) }
+                        } else {
+                            // No routine to start from, so there's nothing to
+                            // put in the workout yet. Same rule as Train's Quick
+                            // Start: pick the exercise first, and only then does
+                            // a workout — and its running timer — come into
+                            // existence.
+                            showQuickStartPicker = true
                         }
-                        showActiveWorkout = true
                     }
                     if !todaySupplements.isEmpty {
                         TodaySupplementsSection(supplements: todaySupplements)
@@ -114,18 +119,29 @@ struct TodayView: View {
                     } label: {
                         Image(systemName: "gear")
                     }
+                    .accessibilityLabel("Settings")
                 }
             }
             .sheet(isPresented: $showSettings) {
                 SettingsView()
             }
-            .onChange(of: showActiveWorkout) { _, shown in
-                if shown { presentedWorkoutId = appState.activeSession?.id }
-            }
-            .sheet(isPresented: $showActiveWorkout) {
-                if let id = presentedWorkoutId {
-                    ActiveWorkoutView(isPresented: $showActiveWorkout, sessionId: id)
+
+            .sheet(isPresented: $showQuickStartPicker) {
+                ExercisePickerSheet(title: "Choose an Exercise") { exerciseId in
+                    appState.startSession(name: "Quick Workout")
+                    guard let session = appState.activeSession else { return }
+                    appState.addExerciseToSession(sessionId: session.id, exerciseId: exerciseId)
+                    presentedWorkout = PresentedWorkout(id: session.id)
                 }
+            }
+            .sheet(item: $presentedWorkout) { workout in
+                ActiveWorkoutView(
+                    isPresented: Binding(
+                        get: { presentedWorkout != nil },
+                        set: { if !$0 { presentedWorkout = nil } }
+                    ),
+                    sessionId: workout.id
+                )
             }
         }
     }
@@ -315,7 +331,7 @@ private struct CareSection: View {
     @MainActor private var stepsLabel: String {
         let source = HealthSync.source(for: healthSettings)
         let goal = "\(settings.stepGoal.formatted()) goal"
-        return source == .none ? "Steps · " + goal : "Steps · " + source.rawValue + " · " + goal
+        return source == .none ? "Steps · " + goal : "Steps · " + source.displayName + " · " + goal
     }
 
     private var recovery: (restingHr: Double?, hrvMs: Double?, hrDelta: Double?) {

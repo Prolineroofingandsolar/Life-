@@ -55,6 +55,27 @@ final class FirestoreSync {
     private let queue = DispatchQueue(label: "uk.co.prolineroofingandsolar.life.FirestoreSync")
     private var debounceWork: DispatchWorkItem?
 
+    /// The most recent snapshot handed to `scheduleUpload`, kept so a debounced
+    /// write can be forced out early and so a failed upload has something to
+    /// retry with.
+    private var pendingSnapshot: (snapshot: StateSnapshot, userId: String)?
+
+    /// How many times the current upload has been retried. Reset on success and
+    /// whenever a newer snapshot arrives.
+    private var retryCount = 0
+
+    /// Increments every time a snapshot is queued, so an upload that finishes
+    /// after a newer one was scheduled can tell it is no longer the current
+    /// write and leave the queue alone.
+    private var uploadSequence = 0
+
+    /// A transient failure — no network on the train, a server hiccup — used to
+    /// leave the change sitting in memory with nothing to send it later. The
+    /// next save would have carried it, but "the next save" can be days away,
+    /// and in the meantime the account is missing data the device believes it
+    /// has already synced.
+    private static let maxRetries = 5
+
     /// Reused so JSONEncoder/Decoder setup is consistent and not re-built on
     /// every call (hot path during typing into a text field).
     private static let encoder: JSONEncoder = {
@@ -81,11 +102,31 @@ final class FirestoreSync {
         queue.async { [weak self] in
             guard let self else { return }
             self.debounceWork?.cancel()
+            self.pendingSnapshot = (snapshot, userId)
+            // A newer snapshot supersedes whatever was being retried, and gets
+            // its own full budget of attempts.
+            self.retryCount = 0
+            self.uploadSequence += 1
+            let sequence = self.uploadSequence
             let work = DispatchWorkItem { [weak self] in
-                self?.upload(snapshot, userId: userId)
+                self?.upload(snapshot, userId: userId, sequence: sequence)
             }
             self.debounceWork = work
             DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: work)
+        }
+    }
+
+    /// Send any queued upload immediately instead of waiting out the debounce.
+    ///
+    /// Called when the app leaves the foreground: the two-second debounce is
+    /// there to coalesce typing, and the user swiping the app away shouldn't
+    /// take the last two seconds of their work with it.
+    func flushPending() {
+        queue.async { [weak self] in
+            guard let self, let pending = self.pendingSnapshot else { return }
+            self.debounceWork?.cancel()
+            self.debounceWork = nil
+            self.upload(pending.snapshot, userId: pending.userId, sequence: self.uploadSequence)
         }
     }
 
@@ -96,6 +137,8 @@ final class FirestoreSync {
         queue.async { [weak self] in
             self?.debounceWork?.cancel()
             self?.debounceWork = nil
+            self?.pendingSnapshot = nil
+            self?.retryCount = 0
         }
     }
 
@@ -131,16 +174,27 @@ final class FirestoreSync {
 
     // MARK: - Private
 
-    private func upload(_ snapshot: StateSnapshot, userId: String) {
+    private func upload(_ snapshot: StateSnapshot, userId: String, sequence: Int) {
         let report: (Result<Date, Error>) -> Void = { [weak self] result in
             DispatchQueue.main.async {
                 self?.onUploadCompletion?(result)
             }
         }
 
+        /// Failures that retrying can't fix. Clearing the pending snapshot
+        /// stops every later flush re-attempting the same doomed write.
+        let reportPermanent: (Error) -> Void = { [weak self] error in
+            self?.queue.async {
+                guard self?.uploadSequence == sequence else { return }
+                self?.pendingSnapshot = nil
+                self?.retryCount = 0
+            }
+            report(.failure(error))
+        }
+
         guard let data = try? Self.encoder.encode(snapshot),
               let json = String(data: data, encoding: .utf8) else {
-            report(.failure(SyncError.encodeFailed))
+            reportPermanent(SyncError.encodeFailed)
             return
         }
 
@@ -148,7 +202,7 @@ final class FirestoreSync {
         // call with a clear error so the UI can prompt the user instead of
         // failing silently on the server side.
         if data.count > 900_000 {
-            report(.failure(SyncError.payloadTooLarge(bytes: data.count)))
+            reportPermanent(SyncError.payloadTooLarge(bytes: data.count))
             return
         }
 
@@ -164,12 +218,61 @@ final class FirestoreSync {
         // older client.
         db.collection("users").document(userId)
             .collection("state").document("snapshot")
-            .setData(payload, merge: true) { error in
+            .setData(payload, merge: true) { [weak self] error in
+                guard let self else { return }
                 if let error {
-                    report(.failure(error))
+                    self.scheduleRetry(
+                        after: error, snapshot: snapshot, userId: userId,
+                        sequence: sequence, report: report
+                    )
                 } else {
+                    self.queue.async {
+                        // Only clear the queue if nothing newer was scheduled
+                        // while this write was in flight — otherwise the newer
+                        // snapshot would lose its ability to be flushed early.
+                        guard self.uploadSequence == sequence else { return }
+                        self.pendingSnapshot = nil
+                        self.retryCount = 0
+                    }
                     report(.success(Date()))
                 }
             }
+    }
+
+    /// Retries a failed upload with exponential backoff, giving up — and
+    /// reporting — once the budget is spent.
+    ///
+    /// Only the reporting is deferred, not the data: `pendingSnapshot` still
+    /// holds the change, so the next ordinary save picks it up regardless. The
+    /// retry is what closes the gap when there is no next save for a while.
+    private func scheduleRetry(
+        after error: Error,
+        snapshot: StateSnapshot,
+        userId: String,
+        sequence: Int,
+        report: @escaping (Result<Date, Error>) -> Void
+    ) {
+        queue.async { [weak self] in
+            guard let self else { return }
+
+            // A newer snapshot arrived while this one was in flight; it will be
+            // uploaded on its own schedule and supersedes this attempt.
+            guard self.uploadSequence == sequence,
+                  self.pendingSnapshot?.userId == userId else { return }
+
+            guard self.retryCount < Self.maxRetries else {
+                report(.failure(error))
+                return
+            }
+
+            self.retryCount += 1
+            // 2s, 4s, 8s, 16s, 32s.
+            let delay = pow(2.0, Double(self.retryCount))
+            let work = DispatchWorkItem { [weak self] in
+                self?.upload(snapshot, userId: userId, sequence: sequence)
+            }
+            self.debounceWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+        }
     }
 }

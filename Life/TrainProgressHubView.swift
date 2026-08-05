@@ -704,7 +704,7 @@ private struct BodyTab: View {
         guard granted else { return }
         let data = await hk.importBodyData(daysBack: 365)
         for (date, kg) in data.weight {
-            await MainActor.run { appState.logBodyWeight(valueKg: kg, date: date) }
+            await MainActor.run { _ = appState.logBodyWeight(valueKg: kg, date: date) }
         }
         var entryMap: [String: BodyCompEntry] = [:]
         for (date, pct) in data.bodyFat {

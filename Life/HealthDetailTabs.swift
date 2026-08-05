@@ -518,31 +518,50 @@ struct HealthActivityTab: View {
         }
     }
 
-    /// "This week so far · Mon 27 Jul onwards · day 7 of 7".
+    /// "This week so far · Mon 27 Jul – Sun 2 Aug · day 3 of 7".
     ///
     /// Naming the period is the point. A week that's one day old showing a
     /// single day's steps under a bare "This week" is indistinguishable from a
     /// broken total — and on a phone set to a Sunday-start region, that's
     /// exactly what Sunday looks like.
+    ///
+    /// The range is built from the calendar's own week boundaries rather than
+    /// "start plus six days", so the last day named is the one the region
+    /// actually ends its week on, and a week containing a clock change doesn't
+    /// print a day either side of the truth.
     private static func periodCaption(_ week: HealthInsights.WeekToDate) -> String {
-        let from = week.start.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
-        return "This week so far · from " + from
+        "This week so far · " + Self.rangeText(from: week.start, until: week.end)
             + " · day " + String(week.daysElapsed) + " of " + String(week.daysInWeek)
     }
 
+    /// A half-open range rendered as inclusive days: `until` is the first
+    /// instant of the following week, so the day named is the one before it.
+    private static func rangeText(from start: Date, until end: Date) -> String {
+        let calendar = Calendar.current
+        let lastDay = calendar.date(byAdding: .day, value: -1, to: end) ?? end
+        let style = Date.FormatStyle.dateTime.weekday(.abbreviated).day().month(.abbreviated)
+        return start.formatted(style) + " – " + lastDay.formatted(style)
+    }
+
     /// Compared against the same number of days last week, never against a
-    /// complete week — otherwise every Monday reads as a collapse.
+    /// complete week — otherwise every Monday reads as a collapse — and only
+    /// when both stretches actually hold data for those days.
     @ViewBuilder
     private func weekDelta(_ week: HealthInsights.WeekToDate) -> some View {
-        if let previous = week.lastWeekToDate, previous > 0 {
+        if week.isComparable, let previous = week.lastWeekToDate, previous > 0 {
             let change = (week.thisWeek - previous) / previous * 100
             let up = change >= 0
-            Text(Self.deltaText(percent: change, up: up, days: week.daysElapsed))
-                .font(.caption)
-                .foregroundColor(up ? .green : .secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(Self.deltaText(percent: change, up: up, days: week.daysElapsed))
+                    .font(.caption)
+                    .foregroundColor(up ? .green : .secondary)
+                Text("vs " + Self.rangeText(from: week.lastStart, until: week.lastEnd))
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+            .fixedSize(horizontal: false, vertical: true)
         } else {
-            Text("Nothing recorded over the same days last week to compare against")
+            Text(week.insufficientDataReason)
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

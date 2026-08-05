@@ -403,6 +403,13 @@ enum HealthInsights {
     /// that means anything mid-week.
     struct WeekToDate {
         var start: Date
+        /// Exclusive end of the current week — the first instant of next week.
+        /// Kept so callers can render an honest date range rather than guessing
+        /// at "start plus seven days", which is wrong in any week containing a
+        /// daylight-saving change.
+        var end: Date
+        var lastStart: Date
+        var lastEnd: Date
         var thisWeek: Double
         /// Last week over the same number of days. Nil when last week has no
         /// readings at all.
@@ -412,40 +419,95 @@ enum HealthInsights {
         /// 1 on the first day of the week, 7 on the last.
         var daysElapsed: Int
         var daysInWeek: Int
+        /// How many of the elapsed days actually carry a reading, this week and
+        /// over the matching stretch of last week.
+        var daysRecordedThisWeek: Int
+        var daysRecordedLastWeek: Int
+
+        /// Whether a percentage comparison between the two periods means
+        /// anything.
+        ///
+        /// Equal elapsed length was never sufficient on its own. Six days
+        /// recorded this week against one recorded last week covers the same
+        /// six calendar days, and dividing one by the other still produced a
+        /// "500% up" that describes a tracker that wasn't worn rather than a
+        /// week of walking. Both periods must cover most of the same days
+        /// before the figure is shown at all.
+        var isComparable: Bool {
+            guard lastWeekToDate != nil else { return false }
+            let required = requiredCoverage
+            return daysRecordedThisWeek >= required && daysRecordedLastWeek >= required
+        }
+
+        /// Days of data each period needs. A short week is held to its own
+        /// length, so a Tuesday still compares against a Tuesday.
+        var requiredCoverage: Int {
+            max(1, Int((Double(daysElapsed) * 0.75).rounded()))
+        }
+
+        /// Why the comparison is being withheld, for display.
+        var insufficientDataReason: String {
+            guard lastWeekToDate != nil else {
+                return "Not enough previous data — nothing was recorded over the same days last week."
+            }
+            return "Not enough previous data — \(daysRecordedThisWeek) of \(daysElapsed) days recorded this week against \(daysRecordedLastWeek) last week."
+        }
     }
 
+    /// This week's figures against the same stretch of last week.
+    ///
+    /// Week boundaries come from `Calendar.current`, so a phone set to a region
+    /// where the week starts on Sunday gets Sunday-based weeks and one set to a
+    /// Monday region gets Monday-based ones. `dateInterval(of: .weekOfYear:)`
+    /// also returns the true end instant, which is not always start + 7 × 24h:
+    /// the week containing a daylight-saving change is an hour shorter or
+    /// longer, and adding a fixed number of hours put the boundary inside the
+    /// wrong day.
     static func weekToDate(_ days: [ActivityDay], metric: ActivityMetric) -> WeekToDate? {
         let calendar = Calendar.current
         let now = Date()
-        guard let thisStart = calendar.dateInterval(of: .weekOfYear, for: now)?.start,
-              let lastStart = calendar.date(byAdding: .weekOfYear, value: -1, to: thisStart)
+        guard let thisInterval = calendar.dateInterval(of: .weekOfYear, for: now),
+              let lastStart = calendar.date(byAdding: .weekOfYear, value: -1, to: thisInterval.start),
+              let lastInterval = calendar.dateInterval(of: .weekOfYear, for: lastStart)
         else { return nil }
 
+        let thisStart = thisInterval.start
         let length = calendar.range(of: .day, in: .weekOfYear, for: now)?.count ?? 7
         let elapsed = min(
             length,
             (calendar.dateComponents([.day], from: thisStart, to: now).day ?? 0) + 1
         )
-        // The matching cut-off in last week: the same number of days in.
-        let lastCutoff = calendar.date(byAdding: .day, value: elapsed, to: lastStart) ?? lastStart
+        // The matching cut-off in last week: the same number of days in. Built
+        // by adding days through the calendar, not by adding seconds, so a
+        // clock change doesn't shift it into the neighbouring day.
+        let lastCutoff = calendar.date(byAdding: .day, value: elapsed, to: lastInterval.start)
+            ?? lastInterval.start
 
-        func total(from: Date, to: Date) -> Double? {
-            let values = days.compactMap { day -> Double? in
+        /// The readings inside a half-open date range, one per recorded day.
+        func readings(from: Date, to: Date) -> [Double] {
+            days.compactMap { day -> Double? in
                 guard let date = day.date, date >= from, date < to,
                       let value = metric.value(from: day) else { return nil }
                 return value
             }
-            return values.isEmpty ? nil : values.reduce(0, +)
         }
 
-        let lastEnd = calendar.date(byAdding: .day, value: length, to: lastStart) ?? thisStart
+        let thisReadings = readings(from: thisStart, to: now)
+        let lastToDateReadings = readings(from: lastInterval.start, to: lastCutoff)
+        let lastFullReadings = readings(from: lastInterval.start, to: lastInterval.end)
+
         return WeekToDate(
             start: thisStart,
-            thisWeek: total(from: thisStart, to: now) ?? 0,
-            lastWeekToDate: total(from: lastStart, to: lastCutoff),
-            lastWeekTotal: total(from: lastStart, to: lastEnd),
+            end: thisInterval.end,
+            lastStart: lastInterval.start,
+            lastEnd: lastInterval.end,
+            thisWeek: thisReadings.reduce(0, +),
+            lastWeekToDate: lastToDateReadings.isEmpty ? nil : lastToDateReadings.reduce(0, +),
+            lastWeekTotal: lastFullReadings.isEmpty ? nil : lastFullReadings.reduce(0, +),
             daysElapsed: max(1, elapsed),
-            daysInWeek: length
+            daysInWeek: length,
+            daysRecordedThisWeek: thisReadings.count,
+            daysRecordedLastWeek: lastToDateReadings.count
         )
     }
 

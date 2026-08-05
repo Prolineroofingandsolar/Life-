@@ -69,7 +69,7 @@ struct HealthDataCheckView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Status")
                     .font(.subheadline.weight(.semibold))
-                InfoRow(label: "Reading from", value: HealthSync.source(for: settings).rawValue)
+                InfoRow(label: "Reading from", value: HealthSync.source(for: settings).detailedName)
                 InfoRow(label: "Fitbit connected", value: GoogleHealthService.shared.isConnected ? "Yes" : "No")
                 InfoRow(label: "Last sync", value: lastSynced)
                 InfoRow(label: "Days stored", value: String(appState.healthDays.count))

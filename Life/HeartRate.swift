@@ -14,12 +14,18 @@ enum HeartRateSource: String, Codable, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    var label: String {
+    /// The provider, so the name shown beside a reading comes from the same
+    /// mapping every other screen uses rather than being spelled out again
+    /// here — which is how "Fitbit", "Google Health" and "Google Fit" ended up
+    /// meaning the same thing in three different places.
+    var provider: HealthProvider {
         switch self {
-        case .fitbit:      return "Fitbit"
-        case .appleHealth: return "Apple Health"
+        case .fitbit:      return .fitbit
+        case .appleHealth: return .appleHealth
         }
     }
+
+    var label: String { provider.displayName }
 }
 
 /// One timestamped heart-rate reading.

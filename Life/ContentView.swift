@@ -53,6 +53,17 @@ struct RootView: View {
                 appState.disableCloudSync()
             }
         }
+        // `onChange` fires on a *change*, and the auth listener can resolve a
+        // restored session before this view is on screen — at which point there
+        // is no change left to observe. Cloud sync then never started: uploads
+        // were skipped for want of a `cloudUserId`, and everything the user did
+        // stayed on the phone while the app showed them as signed in. This
+        // covers the already-signed-in case; `loadFromCloud` is safe to call
+        // more than once for the same account.
+        .task(id: authManager.user?.uid) {
+            guard let uid = authManager.user?.uid else { return }
+            await appState.loadFromCloud(userId: uid)
+        }
     }
 }
 
@@ -87,54 +98,61 @@ private struct SplashView: View {
 struct ContentView: View {
     @Environment(AppState.self) private var appState
     @State private var selectedTab: AppTab = .today
-    @State private var showActiveWorkout = false
     /// Captured when the workout sheet opens so it survives `finishSession`
     /// nulling `activeSession` (otherwise the sheet goes blank white on Finish).
-    @State private var presentedWorkoutId: String?
+    @State private var presentedWorkout: PresentedWorkout?
 
     /// Habits lost its tab to Health; the habit widget's `life://habits` link
     /// presents it instead.
     @State private var showHabits = false
 
     var body: some View {
-        ZStack(alignment: .top) {
-            TabView(selection: $selectedTab) {
-                TodayView()
-                    .tag(AppTab.today)
-                    .tabItem { Label(AppTab.today.label, systemImage: AppTab.today.icon) }
-                TasksView()
-                    .tag(AppTab.tasks)
-                    .tabItem { Label(AppTab.tasks.label, systemImage: AppTab.tasks.icon) }
-                TrainView()
-                    .tag(AppTab.train)
-                    .tabItem { Label(AppTab.train.label, systemImage: AppTab.train.icon) }
-                HealthView()
-                    .tag(AppTab.health)
-                    .tabItem { Label(AppTab.health.label, systemImage: AppTab.health.icon) }
-                MoreView()
-                    .tag(AppTab.more)
-                    .tabItem { Label(AppTab.more.label, systemImage: AppTab.more.icon) }
-            }
-            .tint(AppTheme.primary)
-
-            // Global active workout banner shown on non-Train tabs
+        TabView(selection: $selectedTab) {
+            TodayView()
+                .tag(AppTab.today)
+                .tabItem { Label(AppTab.today.label, systemImage: AppTab.today.icon) }
+            TasksView()
+                .tag(AppTab.tasks)
+                .tabItem { Label(AppTab.tasks.label, systemImage: AppTab.tasks.icon) }
+            TrainView()
+                .tag(AppTab.train)
+                .tabItem { Label(AppTab.train.label, systemImage: AppTab.train.icon) }
+            HealthView()
+                .tag(AppTab.health)
+                .tabItem { Label(AppTab.health.label, systemImage: AppTab.health.icon) }
+            MoreView()
+                .tag(AppTab.more)
+                .tabItem { Label(AppTab.more.label, systemImage: AppTab.more.icon) }
+        }
+        .tint(AppTheme.primary)
+        // Global active workout banner shown on non-Train tabs.
+        //
+        // A `safeAreaInset` rather than a `ZStack` overlay. As an overlay the
+        // banner sat on top of whatever was beneath it — in landscape, where
+        // there is barely any vertical room to begin with, that was the first
+        // row of content on every tab, permanently hidden behind it. An inset
+        // shortens the scroll area instead, so the content moves down rather
+        // than disappearing, and it scrolls to a position that can be reached.
+        .safeAreaInset(edge: .top, spacing: 0) {
             if selectedTab != .train, let session = appState.activeSession {
                 ActiveWorkoutBanner(sessionName: session.name) {
-                    showActiveWorkout = true
+                    presentedWorkout = PresentedWorkout(id: session.id)
                 }
                 .padding(.horizontal, 16)
-                .padding(.top, 8)
+                .padding(.bottom, 8)
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
         .animation(.spring(response: 0.35), value: appState.activeSession?.id)
-        .onChange(of: showActiveWorkout) { _, shown in
-            if shown { presentedWorkoutId = appState.activeSession?.id }
-        }
-        .sheet(isPresented: $showActiveWorkout) {
-            if let id = presentedWorkoutId {
-                ActiveWorkoutView(isPresented: $showActiveWorkout, sessionId: id)
-            }
+
+        .sheet(item: $presentedWorkout) { workout in
+            ActiveWorkoutView(
+                isPresented: Binding(
+                    get: { presentedWorkout != nil },
+                    set: { if !$0 { presentedWorkout = nil } }
+                ),
+                sessionId: workout.id
+            )
         }
         // Not wrapped in a NavigationStack — HabitsView brings its own.
         .sheet(isPresented: $showHabits) {
@@ -179,6 +197,7 @@ private struct ActiveWorkoutBanner: View {
                 Image(systemName: "chevron.up")
                     .font(.caption.weight(.semibold))
                     .foregroundColor(AppTheme.primary)
+                    .accessibilityHidden(true)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
@@ -187,6 +206,9 @@ private struct ActiveWorkoutBanner: View {
             .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 3)
         }
         .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Workout in progress: \(sessionName)")
+        .accessibilityHint("Opens the active workout")
         .onAppear { pulse = true }
     }
 }

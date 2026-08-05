@@ -26,7 +26,7 @@ struct ExerciseDetailSheet: View {
             .compactMap { session -> (date: Date, bestSet: LoggedSet)? in
                 guard let fin = session.finishedAt,
                       let ex = session.exercises.first(where: { $0.exerciseId == exerciseId }) else { return nil }
-                let done = ex.sets.filter { $0.done && !$0.isWarmup }
+                let done = ex.sets.filter { $0.done && $0.kind.countsAsWorkingSet }
                 guard !done.isEmpty else { return nil }
                 let best = done.max { a, b in
                     let a1RM = a.weight * (1 + Double(a.reps) / 30.0)

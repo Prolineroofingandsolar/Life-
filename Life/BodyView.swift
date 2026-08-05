@@ -14,18 +14,37 @@ struct BodyView: View {
         case measurements = "Measures"
         case lifts = "Lifts"
         var id: String { rawValue }
+
+        /// Spoken instead of the segment's own text. "Measures" is a truncation
+        /// that fits the segment, not a word anyone would say, and "Lifts" out
+        /// of context gives no clue what the tab contains.
+        var accessibilityLabel: String {
+            switch self {
+            case .weight:       return "Weight"
+            case .composition:  return "Body composition"
+            case .measurements: return "Body measurements"
+            case .lifts:        return "Lift records"
+            }
+        }
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            // Segmented picker
+            // Segmented picker. Each segment is separately named for
+            // VoiceOver — the control announced itself as "Tab" and its
+            // segments not at all, so there was no way to tell which of the
+            // four was selected or what the others were.
             Picker("Tab", selection: $selectedTab) {
                 ForEach(BodyTab.allCases) { tab in
-                    Text(tab.rawValue).tag(tab)
+                    Text(tab.rawValue)
+                        .tag(tab)
+                        .accessibilityLabel(tab.accessibilityLabel)
                 }
             }
             .pickerStyle(.segmented)
             .padding()
+            .accessibilityLabel("Body section")
+            .accessibilityValue(selectedTab.accessibilityLabel)
 
             // Content
             switch selectedTab {
@@ -47,10 +66,38 @@ private struct WeightTab: View {
 
     @Environment(AppState.self) private var appState
     @State private var weightInput = ""
+    @State private var weightDate = Date()
     @FocusState private var isWeightFocused: Bool
     @State private var chartRange: ChartRange = .month
     @State private var goalInput = ""
     @FocusState private var isGoalFocused: Bool
+
+    /// The accepted range expressed in whatever unit the field is showing, so
+    /// the hint quotes bounds the user can compare against what they typed.
+    private var weightRangeForUnit: ClosedRange<Double> {
+        let range = BodyMetricLimits.weightKg
+        guard unit != .kg else { return range }
+        let low = WeightUnit.kg.convert(range.lowerBound, to: unit)
+        let high = WeightUnit.kg.convert(range.upperBound, to: unit)
+        return low...high
+    }
+
+    /// The typed weight in kilograms, or nil if it isn't a usable number.
+    ///
+    /// Validated in the display unit and converted afterwards, so the bounds
+    /// mean the same thing whichever unit is selected. Zero, negative values,
+    /// and the `Double`-parseable strings "nan" and "inf" are all rejected here
+    /// — each of them used to be stored, and a single zero drags the whole
+    /// weight chart to the floor.
+    private var parsedWeightEntry: Double? {
+        BodyMetricLimits.parse(weightInput, in: weightRangeForUnit)
+            .map { unit.convert($0, to: .kg) }
+    }
+
+    private var parsedGoalWeight: Double? {
+        BodyMetricLimits.parse(goalInput, in: weightRangeForUnit)
+            .map { unit.convert($0, to: .kg) }
+    }
 
     enum ChartRange: String, CaseIterable {
         case week = "W"
@@ -118,7 +165,7 @@ private struct WeightTab: View {
                             .font(.caption)
                             .foregroundColor(.secondary)
                         HStack(alignment: .lastTextBaseline, spacing: 4) {
-                            Text(current.formatted1)
+                            Text(current.weightDisplay)
                                 .font(.largeTitle.bold())
                             Text(unit.label)
                                 .font(.title3)
@@ -162,7 +209,7 @@ private struct WeightTab: View {
                                 .foregroundStyle(.orange)
                                 .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
                                 .annotation(position: .top, alignment: .leading) {
-                                    Text("Goal: \(goal.formatted1) \(unit.label)")
+                                    Text("Goal: \(goal.weightDisplay) \(unit.label)")
                                         .font(.caption2.bold())
                                         .foregroundColor(.orange)
                                 }
@@ -179,45 +226,81 @@ private struct WeightTab: View {
 
             // Log new weight
             Section("Log Weight") {
+                // A weigh-in you forgot to record on the day used to be
+                // unloggable: every entry was stamped with `Date()`, so a
+                // Monday weight entered on Wednesday landed on Wednesday and
+                // sat in the chart at the wrong point. The date defaults to now,
+                // so the common case is still one field and a button.
+                DatePicker(
+                    "Date",
+                    selection: $weightDate,
+                    in: ...Date(),
+                    displayedComponents: [.date, .hourAndMinute]
+                )
+                .accessibilityLabel("Date and time of this weigh-in")
+
                 HStack {
                     TextField("e.g. 75.5", text: $weightInput)
                         .keyboardType(.decimalPad)
                         .focused($isWeightFocused)
+                        .accessibilityLabel("Weight in \(unit.label)")
                     Text(unit.label)
                         .foregroundColor(.secondary)
+                        .accessibilityHidden(true)
                     Button("Add") {
-                        let normalized = weightInput.replacingOccurrences(of: ",", with: ".")
-                        guard let value = Double(normalized) else { return }
-                        let valueKg = unit == .kg ? value : WeightUnit.lbs.convert(value, to: .kg)
-                        appState.logBodyWeight(valueKg: valueKg)
+                        guard let value = parsedWeightEntry else { return }
+                        appState.logBodyWeight(valueKg: value, date: weightDate)
                         weightInput = ""
+                        weightDate = Date()
                         isWeightFocused = false
                     }
-                    .disabled(Double(weightInput.replacingOccurrences(of: ",", with: ".")) == nil)
+                    .buttonStyle(.borderless)
+                    .disabled(parsedWeightEntry == nil)
+                    .accessibilityLabel("Add weight entry")
+                }
+
+                // Shown only once something has been typed, so an empty form
+                // isn't nagging about a value nobody has entered yet.
+                if !weightInput.isEmpty, parsedWeightEntry == nil {
+                    Text(BodyMetricLimits.rangeHint(weightRangeForUnit, unit: unit.label))
+                        .font(.caption)
+                        .foregroundColor(.orange)
                 }
             }
 
             // Goal weight
             Section("Goal Weight") {
                 HStack {
-                    TextField(goalWeightDisplay != nil ? goalWeightDisplay!.formatted1 : "None set", text: $goalInput)
+                    TextField(goalWeightDisplay.map { $0.weightDisplay } ?? "None set", text: $goalInput)
                         .keyboardType(.decimalPad)
                         .focused($isGoalFocused)
+                        .accessibilityLabel("Goal weight in \(unit.label)")
                     Text(unit.label)
                         .foregroundColor(.secondary)
+                        .accessibilityHidden(true)
                     Button("Save") {
-                        let normalized = goalInput.replacingOccurrences(of: ",", with: ".")
-                        guard let value = Double(normalized) else { return }
-                        appState.setGoalWeight(kg: unit.convert(value, to: .kg))
+                        guard let value = parsedGoalWeight else { return }
+                        appState.setGoalWeight(kg: value)
                         goalInput = ""
                         isGoalFocused = false
                     }
-                    .disabled(Double(goalInput.replacingOccurrences(of: ",", with: ".")) == nil)
+                    .buttonStyle(.borderless)
+                    // A goal weight of 0 was accepted and then divided into, so
+                    // the progress bar read as complete the moment it was set.
+                    // It's held to the same range as any other weight.
+                    .disabled(parsedGoalWeight == nil)
+                    .accessibilityLabel("Save goal weight")
+                }
+                if !goalInput.isEmpty, parsedGoalWeight == nil {
+                    Text(BodyMetricLimits.rangeHint(weightRangeForUnit, unit: unit.label))
+                        .font(.caption)
+                        .foregroundColor(.orange)
                 }
                 if goalWeightDisplay != nil {
                     Button("Clear Goal", role: .destructive) {
                         appState.setGoalWeight(kg: nil)
                     }
+                    .accessibilityLabel("Clear goal weight")
                 }
             }
 
@@ -230,9 +313,16 @@ private struct WeightTab: View {
                             Text(entry.date.formatted(date: .abbreviated, time: .omitted))
                                 .foregroundColor(.secondary)
                             Spacer()
-                            Text("\(displayValue.formatted1) \(unit.label)")
+                            // `weightDisplay` rather than `formatted1`: the
+                            // latter drops the decimal on whole numbers, so a
+                            // stored 75.0 and a stored 75.04 both printed as
+                            // "75" and the column had a ragged edge. Full
+                            // precision is stored; one fixed decimal is shown.
+                            Text("\(displayValue.weightDisplay) \(unit.label)")
                                 .font(.subheadline)
                         }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("\(displayValue.weightDisplay) \(unit.label) on \(entry.date.formatted(date: .abbreviated, time: .omitted))")
                         .swipeActions(edge: .trailing) {
                             Button(role: .destructive) {
                                 appState.deleteWeightEntry(id: entry.id)
@@ -260,10 +350,29 @@ private enum CompMetric: String, CaseIterable, Identifiable {
 private struct CompositionTab: View {
 
     @Environment(AppState.self) private var appState
-    @State private var isImporting = false
-    @State private var importError: String? = nil
     @State private var selectedMetric: CompMetric = .bodyFat
     @State private var showAddEntry = false
+
+    /// Where the Apple Health import has got to.
+    ///
+    /// The import used to have exactly two visible states: a spinner, and a
+    /// permission-denied message. Everything else was silent. Granting access
+    /// and importing nothing looked identical to granting access and importing
+    /// a year of readings — the spinner stopped and the screen didn't change —
+    /// and a query that threw looked the same again. Each outcome now says
+    /// which one it was.
+    enum ImportState: Equatable {
+        case idle
+        case requestingPermission
+        case loading
+        case imported(entries: Int, weights: Int)
+        case empty
+        case permissionDenied
+        case unavailable
+        case failed(String)
+    }
+
+    @State private var importState: ImportState = .idle
 
     @State private var healthKitManager = HealthKitManager()
 
@@ -292,13 +401,13 @@ private struct CompositionTab: View {
             if let latest = latestEntry {
                 Section {
                     if let bf = latest.bodyFatPct {
-                        InfoRow(label: "Body Fat", value: String(format: "%.1f%%", bf * 100))
+                        InfoRow(label: "Body Fat", value: "\((bf * 100).percentDisplay)%")
                     }
                     if let lm = latest.leanMassKg {
-                        InfoRow(label: "Lean Mass", value: "\(lm.formatted1) kg")
+                        InfoRow(label: "Lean Mass", value: "\(lm.weightDisplay) kg")
                     }
                     if let bmi = latest.bmi {
-                        InfoRow(label: "BMI", value: bmi.formatted1)
+                        InfoRow(label: "BMI", value: bmi.weightDisplay)
                     }
                 } header: {
                     Text("Latest")
@@ -311,20 +420,24 @@ private struct CompositionTab: View {
                     importFromHealthKit()
                 } label: {
                     HStack {
-                        Label("Import from Apple Health", systemImage: "heart.fill")
+                        Label("Import from \(HealthProvider.appleHealth.displayName)", systemImage: HealthProvider.appleHealth.iconName)
                             .foregroundColor(.red)
                         Spacer()
                         if isImporting {
                             ProgressView()
+                                .accessibilityLabel(importStatusText ?? "Importing")
                         }
                     }
                 }
                 .disabled(isImporting)
+                .accessibilityLabel("Import from \(HealthProvider.appleHealth.displayName)")
+                .accessibilityHint(isImporting ? "Import in progress" : "Reads weight, body fat, lean mass and BMI")
 
-                if let err = importError {
-                    Text(err)
+                if let status = importStatusText {
+                    Text(status)
                         .font(.caption)
-                        .foregroundColor(.red)
+                        .foregroundColor(importStatusColour)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 Button {
@@ -333,6 +446,7 @@ private struct CompositionTab: View {
                     Label("Log Manually", systemImage: "pencil")
                         .foregroundColor(AppTheme.primary)
                 }
+                .accessibilityLabel("Log body composition manually")
             }
 
             // Chart
@@ -371,11 +485,11 @@ private struct CompositionTab: View {
                                         .font(.caption)
                                 }
                                 if let lm = entry.leanMassKg {
-                                    Text("LM: \(lm.formatted1) kg")
+                                    Text("LM: \(lm.weightDisplay) kg")
                                         .font(.caption)
                                 }
                                 if let bmi = entry.bmi {
-                                    Text("BMI: \(bmi.formatted1)")
+                                    Text("BMI: \(bmi.weightDisplay)")
                                         .font(.caption)
                                 }
                             }
@@ -395,34 +509,83 @@ private struct CompositionTab: View {
         }
     }
 
+    private var isImporting: Bool {
+        importState == .requestingPermission || importState == .loading
+    }
+
+    /// One line describing whatever the import is doing or last did.
+    private var importStatusText: String? {
+        switch importState {
+        case .idle:
+            return nil
+        case .requestingPermission:
+            return "Asking \(HealthProvider.appleHealth.displayName) for permission…"
+        case .loading:
+            return "Reading the last year from \(HealthProvider.appleHealth.displayName)…"
+        case .imported(let entries, let weights):
+            var parts: [String] = []
+            if weights > 0 { parts.append("\(weights) weight \(weights == 1 ? "entry" : "entries")") }
+            if entries > 0 { parts.append("\(entries) composition \(entries == 1 ? "entry" : "entries")") }
+            return "Imported " + parts.joined(separator: " and ") + "."
+        case .empty:
+            // The most confusing outcome of the lot, and the one that used to
+            // show nothing at all: permission was granted and the import
+            // genuinely worked, there was simply nothing on the other end.
+            return "\(HealthProvider.appleHealth.displayName) returned no body data for the last year. Check that your scale or tracker writes weight and body fat into the Health app."
+        case .permissionDenied:
+            return "\(HealthProvider.appleHealth.displayName) access was refused. Allow it under Settings ▸ Health ▸ Data Access & Devices ▸ Life."
+        case .unavailable:
+            return "\(HealthProvider.appleHealth.displayName) isn't available on this device."
+        case .failed(let message):
+            return "Import failed: \(message)"
+        }
+    }
+
+    private var importStatusColour: Color {
+        switch importState {
+        case .imported:                            return .green
+        case .permissionDenied, .failed:           return .red
+        case .empty, .unavailable:                 return .orange
+        case .idle, .loading, .requestingPermission: return .secondary
+        }
+    }
+
     private func importFromHealthKit() {
-        isImporting = true
-        importError = nil
+        guard HealthKitManager.isHealthDataAvailable else {
+            importState = .unavailable
+            return
+        }
+
+        importState = .requestingPermission
         Task {
             let granted = await healthKitManager.requestPermissions()
             guard granted else {
-                await MainActor.run {
-                    isImporting = false
-                    importError = "HealthKit access denied. Please allow in Settings > Health > Data Access."
-                }
+                await MainActor.run { importState = .permissionDenied }
                 return
             }
+
+            await MainActor.run { importState = .loading }
 
             let data = await healthKitManager.importBodyData(daysBack: 365)
 
             var entryMap: [String: BodyCompEntry] = [:]
 
-            // Weight goes to WeightEntry
+            // Weight goes to WeightEntry. Counted rather than assumed: readings
+            // outside a plausible range are refused by `logBodyWeight`, and the
+            // summary should report what was actually stored.
+            var storedWeights = 0
             for (date, kg) in data.weight {
-                await MainActor.run {
-                    appState.logBodyWeight(valueKg: kg, date: date)
+                let stored = await MainActor.run {
+                    appState.logBodyWeight(valueKg: kg, date: date, source: .appleHealth)
                 }
+                if stored { storedWeights += 1 }
             }
 
             for (date, pct) in data.bodyFat {
                 let key = date.dayKey
                 var entry = entryMap[key] ?? BodyCompEntry(date: date)
                 entry.bodyFatPct = pct
+                entry.source = HealthProvider.appleHealth.storageValue
                 entryMap[key] = entry
             }
 
@@ -430,6 +593,7 @@ private struct CompositionTab: View {
                 let key = date.dayKey
                 var entry = entryMap[key] ?? BodyCompEntry(date: date)
                 entry.leanMassKg = kg
+                entry.source = HealthProvider.appleHealth.storageValue
                 entryMap[key] = entry
             }
 
@@ -437,6 +601,7 @@ private struct CompositionTab: View {
                 let key = date.dayKey
                 var entry = entryMap[key] ?? BodyCompEntry(date: date)
                 entry.bmi = val
+                entry.source = HealthProvider.appleHealth.storageValue
                 entryMap[key] = entry
             }
 
@@ -445,7 +610,9 @@ private struct CompositionTab: View {
             }
             await MainActor.run {
                 appState.mergeBodyCompEntries(Array(newEntries))
-                isImporting = false
+                importState = (newEntries.isEmpty && storedWeights == 0)
+                    ? .empty
+                    : .imported(entries: newEntries.count, weights: storedWeights)
             }
         }
     }
@@ -461,13 +628,28 @@ private struct AddBodyCompSheet: View {
     @State private var bodyFatText = ""
     @State private var bmiText = ""
 
+    /// Body fat as the stored 0–1 fraction.
+    ///
+    /// A body fat of 150% used to be accepted and stored as 1.5, which then
+    /// rendered as "150.0%" and skewed every average it was included in. It's
+    /// held to a real percentage.
     private var bodyFatPct: Double? {
-        guard let v = Double(bodyFatText) else { return nil }
-        return v / 100
+        BodyMetricLimits.parse(bodyFatText, in: BodyMetricLimits.bodyFatPercent)
+            .map { $0 / 100 }
     }
-    private var bmi: Double? { Double(bmiText) }
 
+    /// BMI must be positive and finite. A negative BMI was storable and drew a
+    /// line below the axis; `Double("-5")` parses perfectly well.
+    private var bmi: Double? {
+        BodyMetricLimits.parse(bmiText, in: BodyMetricLimits.bmi)
+    }
+
+    /// Save is enabled only when at least one field holds a value that is both
+    /// present and valid — an out-of-range number is not a reason to enable it.
     private var canSave: Bool { bodyFatPct != nil || bmi != nil }
+
+    private var bodyFatIsInvalid: Bool { !bodyFatText.isEmpty && bodyFatPct == nil }
+    private var bmiIsInvalid: Bool { !bmiText.isEmpty && bmi == nil }
 
     var body: some View {
         NavigationStack {
@@ -483,7 +665,13 @@ private struct AddBodyCompSheet: View {
                             .keyboardType(.decimalPad)
                             .multilineTextAlignment(.trailing)
                             .frame(width: 80)
-                        Text("%").foregroundColor(.secondary)
+                            .accessibilityLabel("Body fat percentage")
+                        Text("%").foregroundColor(.secondary).accessibilityHidden(true)
+                    }
+                    if bodyFatIsInvalid {
+                        Text(BodyMetricLimits.rangeHint(BodyMetricLimits.bodyFatPercent, unit: "%"))
+                            .font(.caption)
+                            .foregroundColor(.orange)
                     }
                     HStack {
                         Text("BMI")
@@ -492,25 +680,41 @@ private struct AddBodyCompSheet: View {
                             .keyboardType(.decimalPad)
                             .multilineTextAlignment(.trailing)
                             .frame(width: 80)
+                            .accessibilityLabel("BMI")
+                    }
+                    if bmiIsInvalid {
+                        Text(BodyMetricLimits.rangeHint(BodyMetricLimits.bmi, unit: ""))
+                            .font(.caption)
+                            .foregroundColor(.orange)
                     }
                 }
             }
             .navigationTitle("Log Body Composition")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                // Both actions are real buttons in their standard placements,
+                // so VoiceOver announces them as buttons with the right labels
+                // and reports Save's disabled state. Save was previously
+                // indistinguishable from Cancel to a screen reader.
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .accessibilityLabel("Cancel")
+                        .accessibilityHint("Discards this entry")
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         var entry = BodyCompEntry(date: date)
                         entry.bodyFatPct = bodyFatPct
                         entry.bmi = bmi
-                        entry.source = "manual"
+                        entry.source = HealthProvider.manual.storageValue
                         appState.mergeBodyCompEntries([entry])
                         dismiss()
                     }
                     .disabled(!canSave)
+                    .accessibilityLabel("Save")
+                    .accessibilityHint(canSave
+                        ? "Saves this body composition entry"
+                        : "Enter a valid body fat percentage or BMI first")
                 }
             }
         }
@@ -762,6 +966,25 @@ private struct AddMeasurementSheet: View {
     @State private var shoulders = ""
     @State private var notes = ""
 
+    private var allFields: [String] {
+        [chest, waist, hips, leftArm, rightArm, leftThigh, rightThigh, neck, shoulders]
+    }
+
+    /// A circumference in centimetres, or nil if it isn't one.
+    private func measurement(_ text: String) -> Double? {
+        BodyMetricLimits.parse(text, in: BodyMetricLimits.measurementCm)
+    }
+
+    private var hasAnyValidMeasurement: Bool {
+        allFields.contains { measurement($0) != nil }
+    }
+
+    /// True when something has been typed that isn't a usable measurement, so
+    /// the form can say why Save is still off.
+    private var hasInvalidEntry: Bool {
+        allFields.contains { !$0.isEmpty && measurement($0) == nil }
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -775,6 +998,11 @@ private struct AddMeasurementSheet: View {
                     MeasInput(label: "Right Thigh", text: $rightThigh)
                     MeasInput(label: "Neck",        text: $neck)
                     MeasInput(label: "Shoulders",   text: $shoulders)
+                    if hasInvalidEntry {
+                        Text(BodyMetricLimits.rangeHint(BodyMetricLimits.measurementCm, unit: "cm"))
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                    }
                 }
                 Section("Notes") {
                     TextField("Optional notes", text: $notes, axis: .vertical)
@@ -784,26 +1012,38 @@ private struct AddMeasurementSheet: View {
             .navigationTitle("Log Measurements")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                        .accessibilityLabel("Cancel")
+                        .accessibilityHint("Discards these measurements")
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
                         let m = BodyMeasurement(
-                            chestCm:       Double(chest),
-                            waistCm:       Double(waist),
-                            hipsCm:        Double(hips),
-                            leftArmCm:     Double(leftArm),
-                            rightArmCm:    Double(rightArm),
-                            leftThighCm:   Double(leftThigh),
-                            rightThighCm:  Double(rightThigh),
-                            neckCm:        Double(neck),
-                            shouldersCm:   Double(shoulders),
+                            chestCm:       measurement(chest),
+                            waistCm:       measurement(waist),
+                            hipsCm:        measurement(hips),
+                            leftArmCm:     measurement(leftArm),
+                            rightArmCm:    measurement(rightArm),
+                            leftThighCm:   measurement(leftThigh),
+                            rightThighCm:  measurement(rightThigh),
+                            neckCm:        measurement(neck),
+                            shouldersCm:   measurement(shoulders),
                             notes: notes
                         )
                         appState.addBodyMeasurement(m)
                         HapticManager.success()
                         dismiss()
                     }
-                    .disabled([chest, waist, hips, leftArm, rightArm, leftThigh, rightThigh, neck, shoulders].allSatisfy { $0.isEmpty })
+                    // Enabled only when at least one field holds a *valid*
+                    // measurement. It used to be enabled by any non-empty text,
+                    // so "-30" and "0" both saved: `Double(text)` accepts them
+                    // and nothing checked the sign.
+                    .disabled(!hasAnyValidMeasurement)
+                    .accessibilityLabel("Save")
+                    .accessibilityHint(hasAnyValidMeasurement
+                        ? "Saves these measurements"
+                        : "Enter at least one measurement in centimetres first")
                 }
             }
         }
@@ -821,6 +1061,7 @@ private struct MeasInput: View {
                 .keyboardType(.decimalPad)
                 .multilineTextAlignment(.trailing)
                 .frame(width: 80)
+                .accessibilityLabel("\(label) in centimetres")
         }
     }
 }

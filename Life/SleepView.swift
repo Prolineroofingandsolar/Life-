@@ -788,8 +788,14 @@ private struct SleepVitalsCard: View {
                 if let hr = day.restingHr {
                     InfoRow(label: "Resting heart rate", value: "\(Int(hr)) bpm")
                 }
-                if let hrv = day.deepSleepHrvMs ?? day.hrvMs {
-                    InfoRow(label: day.deepSleepHrvMs != nil ? "HRV (deep sleep)" : "HRV", value: "\(Int(hrv)) ms")
+                // Both HRV figures name their measurement window. An unqualified
+                // "HRV" here against an unqualified "HRV" on the Health tab
+                // showed two numbers a millisecond apart with no way to tell
+                // that they measure different stretches of the same night.
+                if let hrv = day.deepSleepHrvMs {
+                    InfoRow(label: "HRV (deep sleep)", value: "\(Int(hrv)) ms")
+                } else if let hrv = day.hrvMs {
+                    InfoRow(label: "HRV (overnight average)", value: "\(Int(hrv)) ms")
                 }
                 if let spo2 = day.spo2Pct {
                     InfoRow(label: "Blood oxygen", value: String(format: "%.1f%%", spo2))

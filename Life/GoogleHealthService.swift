@@ -242,12 +242,22 @@ final class GoogleHealthService {
             }
         }
 
-        await attempt("calories") {
+        // `activeEnergyBurned` is *active* calories — the burn above resting,
+        // which is what a tracker's daily "calories" figure usually means. It is
+        // stored in `activeEnergyKcal` and must never be presented as a total
+        // energy expenditure: total is active plus basal metabolic rate, which
+        // this API doesn't report, so it stays nil on the Fitbit path rather
+        // than being guessed at.
+        await attempt("active calories") {
             for (key, value) in try await intervalTotals(.interval("activeEnergyBurned"), field: "kcal", start: start, end: end) {
                 var d = day(key); d.activeEnergyKcal = (value * 10).rounded() / 10; byDay[key] = d
             }
         }
 
+        // Distance comes from the source's own measurement, never derived from
+        // the step count. A stride-length estimate multiplied by steps would
+        // carry any step error straight into the distance, so the two would
+        // always agree with each other and both be wrong.
         await attempt("distance") {
             for (key, value) in try await intervalTotals(.interval("distance"), field: "millimeters", start: start, end: end) {
                 // Reported in millimetres; HealthDay stores kilometres.
@@ -391,33 +401,129 @@ final class GoogleHealthService {
         return out
     }
 
-    /// Interval types: many points per day, summed into a daily total.
+    /// Interval types: many points per day, reduced to one daily figure.
+    ///
+    /// See `reduceToDailyTotals` — this is where step counts, calories and
+    /// distances were being inflated.
     private func intervalTotals(
         _ type: DataType, field: String, start: Date, end: Date
     ) async throws -> [String: Double] {
+        let points = try await list(type, start: start, end: end).compactMap { point in
+            Self.intervalPoint(point, type: type) { Self.double($0[field]) }
+        }
+        return Self.reduceToDailyTotals(points)
+    }
+
+    /// Active minutes are broken down by activity level, so a single point's
+    /// figure is the sum across levels — and the points themselves are then
+    /// reduced exactly as every other interval type is.
+    private func activeMinutes(start: Date, end: Date) async throws -> [String: Double] {
+        let type = DataType.interval("activeMinutes")
+        let points = try await list(type, start: start, end: end).compactMap { point in
+            Self.intervalPoint(point, type: type) { body -> Double? in
+                let levels = body["activeMinutesByActivityLevel"] as? [[String: Any]] ?? []
+                let total = levels.compactMap { Self.double($0["activeMinutes"]) }.reduce(0, +)
+                return total > 0 ? total : nil
+            }
+        }
+        return Self.reduceToDailyTotals(points)
+    }
+
+    // MARK: - Interval reduction
+
+    /// One reading from an interval data type, carrying the identity needed to
+    /// recognise it if it turns up twice.
+    private struct IntervalPoint {
+        let dayKey: String
+        /// A stable identity for this reading: the server's `dataPointId` when
+        /// it sends one, otherwise the interval's own start and end. Two
+        /// records with the same identity are the same measurement, however
+        /// many times they arrive.
+        let identity: String
+        /// How much of the day the interval covers, in seconds. Nil when the
+        /// point carried no parseable absolute timestamps.
+        let spanSeconds: Double?
+        let value: Double
+    }
+
+    private static func intervalPoint(
+        _ point: [String: Any], type: DataType, value: ([String: Any]) -> Double?
+    ) -> IntervalPoint? {
+        guard let body = point[type.camel] as? [String: Any],
+              let key = dayKey(fromInterval: body["interval"]),
+              let value = value(body) else { return nil }
+
+        let interval = body["interval"] as? [String: Any]
+        let startText = interval?["startTime"] as? String
+        let endText = interval?["endTime"] as? String
+
+        let identity = (point["dataPointId"] as? String)
+            ?? "\(key)|\(startText ?? "?")|\(endText ?? "?")"
+
+        var span: Double?
+        if let startText, let endText,
+           let from = rfc3339.date(from: startText), let to = rfc3339.date(from: endText) {
+            span = to.timeIntervalSince(from)
+        }
+
+        return IntervalPoint(dayKey: key, identity: identity, spanSeconds: span, value: value)
+    }
+
+    /// Turns a day's worth of interval readings into the one number for that
+    /// day, without inflating it.
+    ///
+    /// Two distinct faults produced the same symptom — totals several times
+    /// higher than the device itself reported — and both are handled here.
+    ///
+    /// **Repeats.** The same measurement can arrive more than once: pagination
+    /// can overlap when new data lands mid-request, and consecutive syncs cover
+    /// overlapping windows by design. The old code did `+=` on every point it
+    /// saw, so a reading returned twice was counted twice. Points are now keyed
+    /// by `identity` and collapsed to one entry each, keeping the larger value
+    /// when a repeat disagrees — a later copy of a still-accumulating interval
+    /// is a correction upward, not a second walk.
+    ///
+    /// **Cumulative snapshots.** Some sources emit a running daily total rather
+    /// than disjoint slices: a point covering the whole day for 4,000 steps,
+    /// then another covering the whole day for 9,000. Summing those gives
+    /// 13,000 for a day on which 9,000 steps were taken. Any point spanning
+    /// most of the day is treated as a snapshot of the day, and a day that has
+    /// snapshots takes the **largest** of them instead of a sum.
+    private static func reduceToDailyTotals(_ points: [IntervalPoint]) -> [String: Double] {
+        // Collapse repeats first, so a duplicated point can neither be summed
+        // twice nor be mistaken for a second snapshot.
+        var unique: [String: IntervalPoint] = [:]
+        for point in points {
+            if let existing = unique[point.identity], existing.value >= point.value { continue }
+            unique[point.identity] = point
+        }
+
+        var byDay: [String: [IntervalPoint]] = [:]
+        for point in unique.values {
+            byDay[point.dayKey, default: []].append(point)
+        }
+
         var out: [String: Double] = [:]
-        for point in try await list(type, start: start, end: end) {
-            guard let body = point[type.camel] as? [String: Any],
-                  let key = Self.dayKey(fromInterval: body["interval"]),
-                  let value = Self.double(body[field]) else { continue }
-            out[key, default: 0] += value
+        for (key, dayPoints) in byDay {
+            let snapshots = dayPoints.filter { isWholeDaySpan($0.spanSeconds) }
+            if let largest = snapshots.map(\.value).max() {
+                // A whole-day point is the day's running total. Anything
+                // shorter alongside it is one of the slices already inside it,
+                // so adding them would double-count.
+                out[key] = largest
+            } else {
+                out[key] = dayPoints.reduce(0) { $0 + $1.value }
+            }
         }
         return out
     }
 
-    /// Active minutes are broken down by activity level, so the daily figure is
-    /// the sum across levels.
-    private func activeMinutes(start: Date, end: Date) async throws -> [String: Double] {
-        let type = DataType.interval("activeMinutes")
-        var out: [String: Double] = [:]
-        for point in try await list(type, start: start, end: end) {
-            guard let body = point[type.camel] as? [String: Any],
-                  let key = Self.dayKey(fromInterval: body["interval"]) else { continue }
-            let levels = body["activeMinutesByActivityLevel"] as? [[String: Any]] ?? []
-            let total = levels.compactMap { Self.double($0["activeMinutes"]) }.reduce(0, +)
-            if total > 0 { out[key, default: 0] += total }
-        }
-        return out
+    /// True when an interval covers essentially a whole day. The threshold sits
+    /// below 24h so a day shortened by a daylight-saving change, or a snapshot
+    /// truncated at the moment of the sync, still counts.
+    private static func isWholeDaySpan(_ seconds: Double?) -> Bool {
+        guard let seconds else { return false }
+        return seconds >= 20 * 3600
     }
 
     // MARK: - Transport
@@ -438,6 +544,10 @@ final class GoogleHealthService {
         let filter = "\(type.filterField) >= \"\(from)\" AND \(type.filterField) < \"\(to)\""
 
         var out: [[String: Any]] = []
+        // Pages can overlap when data lands mid-request: a point that shifts
+        // from page two to page one between calls comes back on both. Dropping
+        // repeats here means no caller has to think about it.
+        var seenIds = Set<String>()
         var pageToken: String?
         var pages = 0
 
@@ -454,7 +564,15 @@ final class GoogleHealthService {
             guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 throw GoogleHealthError.badResponse("unreadable body for \(type.path)")
             }
-            out.append(contentsOf: object["dataPoints"] as? [[String: Any]] ?? [])
+            for point in object["dataPoints"] as? [[String: Any]] ?? [] {
+                // A point with no id can't be recognised as a repeat, so it's
+                // kept — the per-metric reduction below de-duplicates on the
+                // interval instead.
+                if let id = point["dataPointId"] as? String {
+                    guard seenIds.insert(id).inserted else { continue }
+                }
+                out.append(point)
+            }
             pageToken = object["nextPageToken"] as? String
             pages += 1
             // A guard against a malformed token looping forever; 200 pages is
