@@ -54,6 +54,29 @@ type Mode = "recommendation" | "morningBriefing" | "eveningReview" | "ask";
  * request. Anything that isn't an Error is described by type only, because an
  * arbitrary thrown value could be a response body carrying the prompt back.
  */
+/** What a Gemini status actually means, and what to do about it. */
+function describeGeminiStatus(status: number): string {
+  switch (status) {
+    case 400:
+      return "Gemini rejected the API key. Check the GEMINI_API_KEY secret.";
+    case 401:
+    case 403:
+      return "Gemini refused the request. The API key may be revoked or restricted.";
+    case 404:
+      return "Gemini doesn't recognise that model. Check GEMINI_MODEL.";
+    case 429:
+      // Covers both the per-minute rate limit and an exhausted balance. The
+      // distinction isn't visible in the status, so the message names both
+      // rather than guessing at one.
+      return "Gemini is out of quota or credit. Check billing in AI Studio, or wait a minute and retry.";
+    case 500:
+    case 503:
+      return "Gemini is having trouble at their end. Try again shortly.";
+    default:
+      return `Gemini returned ${status}.`;
+  }
+}
+
 function logFailure(stage: string, error: unknown): void {
   if (error instanceof Error) {
     console.error(`[coach:${stage}] ${error.name}: ${error.message}`, error.stack);
@@ -240,10 +263,10 @@ export const coach = onCall(
 
       if (error instanceof GeminiError) {
         logFailure("gemini", error);
-        throw new HttpsError(
-          "unavailable",
-          `Gemini returned ${error.status}. Check GEMINI_MODEL and the API key.`
-        );
+        // Each status has a different cause and a different fix, and telling
+        // someone to check their API key when the real problem is an empty
+        // billing account sends them looking in the wrong place entirely.
+        throw new HttpsError("unavailable", describeGeminiStatus(error.status));
       }
 
       logFailure("generate", error);
