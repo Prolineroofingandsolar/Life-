@@ -45,6 +45,23 @@ const REQUEST_TIMEOUT_MS = 20_000;
 
 type Mode = "recommendation" | "morningBriefing" | "eveningReview" | "ask";
 
+/**
+ * Logs a failure without logging what caused it to be sent.
+ *
+ * The distinction matters: the stack and the error's own message are safe and
+ * are exactly what's needed to diagnose a problem, while the prompt is the
+ * user's health summary and must never appear in a log that outlives the
+ * request. Anything that isn't an Error is described by type only, because an
+ * arbitrary thrown value could be a response body carrying the prompt back.
+ */
+function logFailure(stage: string, error: unknown): void {
+  if (error instanceof Error) {
+    console.error(`[coach:${stage}] ${error.name}: ${error.message}`, error.stack);
+  } else {
+    console.error(`[coach:${stage}] non-error thrown of type ${typeof error}`);
+  }
+}
+
 interface CoachRequestData {
   mode: Mode;
   context: unknown;
@@ -122,6 +139,16 @@ export const coach = onCall(
       throw new HttpsError("invalid-argument", "Unknown coach mode.");
     }
 
+    // Checked before anything else is attempted. An unset model produces a
+    // request to `/models/:generateContent`, whose 404 reads as a broken
+    // integration rather than a missing line in an env file.
+    if (!GEMINI_MODEL.value()) {
+      throw new HttpsError(
+        "failed-precondition",
+        "GEMINI_MODEL isn't set. Add it to functions/.env.<project> and redeploy."
+      );
+    }
+
     const contextJSON = JSON.stringify(data?.context ?? {});
     if (contextJSON.length > MAX_CONTEXT_BYTES) {
       throw new HttpsError("invalid-argument", "The context was too large.");
@@ -145,12 +172,17 @@ export const coach = onCall(
       await reserveCall(uid, limits);
     } catch (error) {
       if (error instanceof LimitExceeded) {
-        throw new HttpsError(
-          error.kind === "cost" ? "resource-exhausted" : "resource-exhausted",
-          error.message
-        );
+        throw new HttpsError("resource-exhausted", error.message);
       }
-      throw error;
+      // Anything else here is a Firestore problem — a missing database, or a
+      // service account without write access. Rethrowing raw surfaced it to the
+      // app as a bare "INTERNAL", which tells the user nothing and tells whoever
+      // is debugging it even less.
+      logFailure("reserveCall", error);
+      throw new HttpsError(
+        "internal",
+        "Couldn't record usage before calling the coach. Check the function logs."
+      );
     }
 
     const isBriefing = mode === "morningBriefing" || mode === "eveningReview";
@@ -201,13 +233,22 @@ export const coach = onCall(
         usage: { ...result.usage, cost },
       };
     } catch (error) {
-      // Deliberately terse. The prompt contains the user's health summary and
-      // the error body can echo it, so neither is logged or returned. Only the
-      // status travels.
+      // Deliberately terse to the *client*. The prompt contains the user's
+      // health summary and an error body can echo it, so neither is returned.
+      // The log gets the error's type and message but never the prompt.
+      if (error instanceof HttpsError) throw error;
+
       if (error instanceof GeminiError) {
-        throw new HttpsError("unavailable", `The coach is unavailable (${error.status}).`);
+        logFailure("gemini", error);
+        throw new HttpsError(
+          "unavailable",
+          `Gemini returned ${error.status}. Check GEMINI_MODEL and the API key.`
+        );
       }
-      throw new HttpsError("unavailable", "The coach is unavailable.");
+
+      logFailure("generate", error);
+      const detail = error instanceof Error ? error.name : "unknown error";
+      throw new HttpsError("unavailable", `The coach is unavailable (${detail}).`);
     }
   }
 );
