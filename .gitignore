@@ -30,3 +30,21 @@ dist-ssr
 .env*
 !.env.example
 .claude/worktrees/
+
+# Firebase Functions
+#
+# The Gemini key itself lives in Secret Manager and never touches the repo, but
+# these files hold project configuration and local credentials that must not be
+# committed. `.env*` above already covers functions/.env.<projectId>; the rest
+# are listed explicitly rather than relied upon.
+functions/node_modules
+functions/lib
+functions/.env
+functions/.env.*
+!functions/.env.example
+.runtimeconfig.json
+firebase-debug.log
+firebase-debug.*.log
+.firebase/
+firestore-debug.log
+ui-debug.log
