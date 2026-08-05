@@ -74,68 +74,85 @@ final class GoogleHealthService {
         var days: [HealthDay] = []
         var nights: [SleepNight] = []
         var steps: [String: Int] = [:]
-        /// Metrics that failed, so a partial sync says what's missing instead of
-        /// looking complete.
+        /// Metrics that genuinely failed — refused, malformed, or errored.
+        ///
+        /// A metric skipped because the request budget ran out is *not* in here.
+        /// It never got as far as failing.
         var failures: [String] = []
+        /// Metrics that were never attempted because the quota was exhausted
+        /// partway through. They are the ones to try first next time.
+        var skipped: [String] = []
+        /// Set when Google refused on quota. The sync is incomplete but nothing
+        /// is wrong with the data or the permissions.
+        var rateLimitedRetryAfter: Int?? = nil
+    }
+
+    /// Accumulates a sync in progress.
+    ///
+    /// A reference type so the per-metric fetches can live in an array and be
+    /// reordered. Local `var` capture only works for closures that don't
+    /// escape, and putting them in a list makes them escape.
+    private final class Accumulator {
+        var byDay: [String: HealthDay] = [:]
+        var result = SyncResult()
+
+        func day(_ key: String) -> HealthDay { byDay[key] ?? HealthDay(dayKey: key) }
     }
 
     // MARK: - Sync
 
     /// Fetches everything Life stores for the last `daysBack` days.
     ///
-    /// Each metric is fetched independently and a failure is recorded rather
-    /// than thrown: one changed field or a rate limit shouldn't cost you the
-    /// sleep data that arrived fine. Auth failures abort, since every later call
-    /// would fail identically.
-    func sync(daysBack: Int = 90) async throws -> SyncResult {
+    /// `retryFirst` names the metrics that didn't arrive last time. They are
+    /// moved to the front of the queue, and this matters more than it sounds.
+    ///
+    /// Every metric used to run in a fixed declaration order against a shared
+    /// hourly request budget. A year-long pull spends that budget: sleep alone
+    /// pages at 25 records a request. So the run would get four or five metrics
+    /// in and then every remaining call came back 429 — and each one was
+    /// recorded as that metric having *failed*. Steps sits ninth in that order,
+    /// which is why steps was reliably missing while sleep and resting heart
+    /// rate were reliably fine, and why the list of "broken" metrics changed
+    /// from sync to sync: it was only ever a record of where the budget ran out.
+    ///
+    /// Starting with what's missing means a starved metric is first in line on
+    /// the next attempt rather than last again.
+    func sync(daysBack: Int = 90, retryFirst: [String] = []) async throws -> SyncResult {
         guard GoogleHealthConfig.isConfigured else { throw GoogleHealthError.notConfigured }
         guard auth.isConnected else { throw GoogleHealthError.notConnected }
 
         let end = Date()
         let start = Calendar.current.date(byAdding: .day, value: -daysBack, to: end) ?? end
 
-        var byDay: [String: HealthDay] = [:]
-        var result = SyncResult()
+        let acc = Accumulator()
         var authFailed = false
         var forbidden = 0
         var succeeded = 0
+        var rateLimited: Int?? = nil
 
-        func day(_ key: String) -> HealthDay { byDay[key] ?? HealthDay(dayKey: key) }
+        // The canonical order. Anything named in `retryFirst` is lifted to the
+        // front below, so this is the order only on a run where nothing was
+        // missing last time.
+        //
+        // Zone minutes stay last: they are the newest and least certain call
+        // here, and a type whose permissions aren't proven belongs where a
+        // refusal costs nothing else.
+        var metrics: [(name: String, work: (Accumulator) async throws -> Void)] = []
 
-        /// Runs one metric's fetch, tolerating its failure.
-        ///
-        /// Only a dead token (401) stops the run. A 403 means *this* data type
-        /// isn't permitted — a scope the grant doesn't cover, or a type the
-        /// project hasn't enabled — and it says nothing about the next one.
-        ///
-        /// Treating 403 as a session-wide failure was a real bug: adding a
-        /// single unpermitted type silently cost every metric declared below
-        /// it, and then threw away the ones that had already worked. Sleep,
-        /// steps and every vital disappeared because one new call was refused.
-        func attempt(_ name: String, _ work: () async throws -> Void) async {
-            guard !authFailed else { return }
-            do {
-                try await work()
-                succeeded += 1
-            } catch let error as GoogleHealthError {
-                if case .http(401, _) = error { authFailed = true }
-                if case .http(403, _) = error { forbidden += 1 }
-                result.failures.append(name)
-            } catch {
-                result.failures.append(name)
-            }
+        func metric(_ name: String, _ work: @escaping (Accumulator) async throws -> Void) {
+            metrics.append((name, work))
         }
 
         // Sleep. Every session is imported — naps included — and handed to
         // `SleepAnalysis`, which does the merging, main-night selection, overlap
         // removal and derivation. Keeping that logic out of the transport layer
         // is what makes it testable; see `LifeTests/SleepAnalysisTests.swift`.
-        await attempt("sleep") {
-            let sessions = try await list(.sleep, start: start, end: end).compactMap(Self.sessionInput)
+        metric("sleep") { acc in
+            let sessions = try await self.list(.sleep, start: start, end: end).compactMap(Self.sessionInput)
             let analysed = SleepAnalysis.analyse(sessions: sessions)
 
             for (key, night) in analysed.nights {
-                var d = day(key)
+                var d = acc.day(key)
                 d.sleepType = night.hasSourceStages ? "STAGES" : "CLASSIC"
                 d.sleepMin = night.minutesAsleep
                 d.deepMin = night.deepMinutes > 0 ? night.deepMinutes : nil
@@ -156,89 +173,89 @@ final class GoogleHealthService {
                 // `officialSleepScore` is deliberately left unset: the v4 schema
                 // exposes no score field on any sleep type. If that changes it
                 // gets assigned here and displayed verbatim.
-                byDay[key] = d
+                acc.byDay[key] = d
 
                 // Hypnogram segments come from the same de-overlapped timeline
                 // the measurements were taken from, so the chart and the numbers
                 // can't disagree.
                 if !night.segments.isEmpty {
-                    result.nights.append(SleepNight(dayKey: key, segments: night.segments, outOfBed: []))
+                    acc.result.nights.append(SleepNight(dayKey: key, segments: night.segments, outOfBed: []))
                 }
             }
         }
 
-        await attempt("breathing by stage") {
-            for point in try await list(.sample("respiratoryRateSleepSummary"), start: start, end: end) {
+        metric("breathing by stage") { acc in
+            for point in try await self.list(.sample("respiratoryRateSleepSummary"), start: start, end: end) {
                 guard let body = point["respiratoryRateSleepSummary"] as? [String: Any],
                       let key = Self.dayKey(fromSampleTime: body["sampleTime"]) else { continue }
-                var d = day(key)
+                var d = acc.day(key)
                 d.breathingRem = Self.stat(body["remSleepStats"])
                 d.breathingDeep = Self.stat(body["deepSleepStats"])
                 d.breathingLight = Self.stat(body["lightSleepStats"])
                 if d.respiratoryRate == nil { d.respiratoryRate = Self.stat(body["fullSleepStats"]) }
-                byDay[key] = d
+                acc.byDay[key] = d
             }
         }
 
-        await attempt("resting heart rate") {
-            for (key, value) in try await daily(.daily("dailyRestingHeartRate"), field: "beatsPerMinute", start: start, end: end) {
-                var d = day(key); d.restingHr = value; byDay[key] = d
+        metric("resting heart rate") { acc in
+            for (key, value) in try await self.daily(.daily("dailyRestingHeartRate"), field: "beatsPerMinute", start: start, end: end) {
+                var d = acc.day(key); d.restingHr = value; acc.byDay[key] = d
             }
         }
 
-        await attempt("HRV") {
-            for point in try await list(.daily("dailyHeartRateVariability"), start: start, end: end) {
+        metric("HRV") { acc in
+            for point in try await self.list(.daily("dailyHeartRateVariability"), start: start, end: end) {
                 guard let body = point["dailyHeartRateVariability"] as? [String: Any],
                       let date = body["date"] as? [String: Any],
                       let key = Self.dayKey(from: date) else { continue }
-                var d = day(key)
+                var d = acc.day(key)
                 d.hrvMs = Self.double(body["averageHeartRateVariabilityMilliseconds"])
                 // Deep sleep is the cleanest window for HRV — least movement,
                 // least breathing variation — so it's worth keeping separately
                 // from the whole-night average.
                 d.deepSleepHrvMs = Self.double(body["deepSleepRootMeanSquareOfSuccessiveDifferencesMilliseconds"])
-                byDay[key] = d
+                acc.byDay[key] = d
             }
         }
 
-        await attempt("breathing rate") {
-            for (key, value) in try await daily(.daily("dailyRespiratoryRate"), field: "breathsPerMinute", start: start, end: end) {
-                var d = day(key); d.respiratoryRate = value; byDay[key] = d
+        metric("breathing rate") { acc in
+            for (key, value) in try await self.daily(.daily("dailyRespiratoryRate"), field: "breathsPerMinute", start: start, end: end) {
+                var d = acc.day(key); d.respiratoryRate = value; acc.byDay[key] = d
             }
         }
 
-        await attempt("SpO₂") {
-            for (key, value) in try await daily(.daily("dailyOxygenSaturation"), field: "averagePercentage", start: start, end: end) {
-                var d = day(key); d.spo2Pct = value; byDay[key] = d
+        metric("SpO₂") { acc in
+            for (key, value) in try await self.daily(.daily("dailyOxygenSaturation"), field: "averagePercentage", start: start, end: end) {
+                var d = acc.day(key); d.spo2Pct = value; acc.byDay[key] = d
             }
         }
 
-        await attempt("cardio fitness") {
-            for (key, value) in try await daily(.daily("dailyVo2Max"), field: "vo2Max", start: start, end: end) {
-                var d = day(key); d.vo2Max = value; byDay[key] = d
+        metric("cardio fitness") { acc in
+            for (key, value) in try await self.daily(.daily("dailyVo2Max"), field: "vo2Max", start: start, end: end) {
+                var d = acc.day(key); d.vo2Max = value; acc.byDay[key] = d
             }
         }
 
         // Unlike the legacy Fitbit API — which only exposed a relative nightly
         // variation — this reports an absolute figure, so it's comparable with
         // HealthKit's wrist temperature and safe to store in the same field.
-        await attempt("skin temperature") {
-            for point in try await list(.daily("dailySleepTemperatureDerivations"), start: start, end: end) {
+        metric("skin temperature") { acc in
+            for point in try await self.list(.daily("dailySleepTemperatureDerivations"), start: start, end: end) {
                 guard let body = point["dailySleepTemperatureDerivations"] as? [String: Any],
                       let date = body["date"] as? [String: Any],
                       let key = Self.dayKey(from: date) else { continue }
-                var d = day(key)
+                var d = acc.day(key)
                 d.wristTempC = Self.double(body["nightlyTemperatureCelsius"])
                 // Without the baseline an absolute skin temperature is
                 // uninterpretable; with it, the deviation is the whole point.
                 d.tempBaselineC = Self.double(body["baselineTemperatureCelsius"])
-                byDay[key] = d
+                acc.byDay[key] = d
             }
         }
 
-        await attempt("steps") {
-            for (key, value) in try await intervalTotals(.interval("steps"), field: "count", start: start, end: end) where value > 0 {
-                result.steps[key] = Int(value)
+        metric("steps") { acc in
+            for (key, value) in try await self.intervalTotals(.interval("steps"), field: "count", start: start, end: end) where value > 0 {
+                acc.result.steps[key] = Int(value)
             }
         }
 
@@ -248,9 +265,9 @@ final class GoogleHealthService {
         // energy expenditure: total is active plus basal metabolic rate, which
         // this API doesn't report, so it stays nil on the Fitbit path rather
         // than being guessed at.
-        await attempt("active calories") {
-            for (key, value) in try await intervalTotals(.interval("activeEnergyBurned"), field: "kcal", start: start, end: end) {
-                var d = day(key); d.activeEnergyKcal = (value * 10).rounded() / 10; byDay[key] = d
+        metric("active calories") { acc in
+            for (key, value) in try await self.intervalTotals(.interval("activeEnergyBurned"), field: "kcal", start: start, end: end) {
+                var d = acc.day(key); d.activeEnergyKcal = (value * 10).rounded() / 10; acc.byDay[key] = d
             }
         }
 
@@ -258,33 +275,33 @@ final class GoogleHealthService {
         // the step count. A stride-length estimate multiplied by steps would
         // carry any step error straight into the distance, so the two would
         // always agree with each other and both be wrong.
-        await attempt("distance") {
-            for (key, value) in try await intervalTotals(.interval("distance"), field: "millimeters", start: start, end: end) {
+        metric("distance") { acc in
+            for (key, value) in try await self.intervalTotals(.interval("distance"), field: "millimeters", start: start, end: end) {
                 // Reported in millimetres; HealthDay stores kilometres.
-                var d = day(key); d.distanceKm = (value / 1_000_000 * 100).rounded() / 100; byDay[key] = d
+                var d = acc.day(key); d.distanceKm = (value / 1_000_000 * 100).rounded() / 100; acc.byDay[key] = d
             }
         }
 
-        await attempt("floors") {
-            for (key, value) in try await intervalTotals(.interval("floors"), field: "count", start: start, end: end) {
-                var d = day(key); d.flights = Int(value); byDay[key] = d
+        metric("floors") { acc in
+            for (key, value) in try await self.intervalTotals(.interval("floors"), field: "count", start: start, end: end) {
+                var d = acc.day(key); d.flights = Int(value); acc.byDay[key] = d
             }
         }
 
-        await attempt("active minutes") {
-            for (key, value) in try await activeMinutes(start: start, end: end) {
-                var d = day(key); d.exerciseMinutes = Int(value); byDay[key] = d
+        metric("active minutes") { acc in
+            for (key, value) in try await self.activeMinutes(start: start, end: end) {
+                var d = acc.day(key); d.exerciseMinutes = Int(value); acc.byDay[key] = d
             }
         }
 
         // Last deliberately. Zone minutes are the newest and least certain call
         // here, and anything whose permissions aren't proven belongs at the end
         // where a refusal costs nothing else.
-        await attempt("heart rate zones") {
-            for point in try await list(.interval("timeInHeartRateZone"), start: start, end: end) {
+        metric("heart rate zones") { acc in
+            for point in try await self.list(.interval("timeInHeartRateZone"), start: start, end: end) {
                 guard let body = point["timeInHeartRateZone"] as? [String: Any],
                       let key = Self.dayKey(fromInterval: body["interval"]) else { continue }
-                var d = day(key)
+                var d = acc.day(key)
                 for entry in body["timeInHeartRateZoneValues"] as? [[String: Any]] ?? [] {
                     guard let name = entry["heartRateZone"] as? String,
                           let zone = HeartRateZone(rawValue: name),
@@ -296,9 +313,49 @@ final class GoogleHealthService {
                     case .peak:     d.hrZonePeakMin = (d.hrZonePeakMin ?? 0) + minutes
                     }
                 }
-                byDay[key] = d
+                acc.byDay[key] = d
             }
         }
+
+
+        // Run them, missing-first.
+        //
+        // Only a dead token (401) and a spent quota (429) stop the run, and for
+        // opposite reasons: after a 401 every later call fails identically, and
+        // after a 429 every later call is refused without being looked at. A 403
+        // means *this* data type isn't permitted — a scope the grant doesn't
+        // cover, or a type the project hasn't enabled — and says nothing about
+        // the next one, so it costs only itself.
+        for (name, work) in Self.ordered(metrics, retryFirst: retryFirst) {
+            if authFailed || rateLimited != nil {
+                // Not attempted, so not a failure. Recorded separately so it
+                // goes to the front of the queue next time.
+                acc.result.skipped.append(name)
+                continue
+            }
+            do {
+                try await work(acc)
+                succeeded += 1
+            } catch let error as GoogleHealthError {
+                switch error {
+                case .rateLimited(let retryAfter):
+                    rateLimited = .some(retryAfter)
+                    acc.result.skipped.append(name)
+                case .http(401, _):
+                    authFailed = true
+                    acc.result.failures.append(name)
+                case .http(403, _):
+                    forbidden += 1
+                    acc.result.failures.append(name)
+                default:
+                    acc.result.failures.append(name)
+                }
+            } catch {
+                acc.result.failures.append(name)
+            }
+        }
+
+        acc.result.rateLimitedRetryAfter = rateLimited
 
         // A revoked or expired grant refuses everything; a missing scope
         // refuses one type. Only the first is worth failing the whole sync for
@@ -307,12 +364,32 @@ final class GoogleHealthService {
         if authFailed || (forbidden > 0 && succeeded == 0) {
             throw GoogleHealthError.http(
                 authFailed ? 401 : 403,
-                "failed on \(result.failures.first ?? "every data type")"
+                "failed on \(acc.result.failures.first ?? "every data type")"
             )
         }
 
-        result.days = byDay.values.filter { !$0.isEmpty }
-        return result
+        // A quota exhausted before anything at all arrived is worth throwing
+        // for: there is no partial result to show, and the message tells the
+        // user when to come back. If some metrics did arrive, the partial
+        // result is kept and `skipped` names the rest.
+        if let retryAfter = rateLimited, succeeded == 0 {
+            throw GoogleHealthError.rateLimited(retryAfterSeconds: retryAfter)
+        }
+
+        acc.result.days = acc.byDay.values.filter { !$0.isEmpty }
+        return acc.result
+    }
+
+    /// Moves the named metrics to the front, keeping everything else in its
+    /// declared order.
+    private static func ordered(
+        _ metrics: [(name: String, work: (Accumulator) async throws -> Void)],
+        retryFirst: [String]
+    ) -> [(name: String, work: (Accumulator) async throws -> Void)] {
+        guard !retryFirst.isEmpty else { return metrics }
+        let priority = Set(retryFirst)
+        return metrics.filter { priority.contains($0.name) }
+            + metrics.filter { !priority.contains($0.name) }
     }
 
     // MARK: - Heart rate
@@ -588,7 +665,17 @@ final class GoogleHealthService {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
         let (data, response) = try await URLSession.shared.data(for: request)
-        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+        guard let http = response as? HTTPURLResponse else { return data }
+
+        if http.statusCode == 429 {
+            // Google sends `Retry-After` as either a number of seconds or an
+            // HTTP date; only the numeric form is worth reading, and its absence
+            // just means the message says "an hour" instead of a figure.
+            let retryAfter = (http.value(forHTTPHeaderField: "Retry-After")).flatMap { Int($0) }
+            throw GoogleHealthError.rateLimited(retryAfterSeconds: retryAfter)
+        }
+
+        if !(200..<300).contains(http.statusCode) {
             throw GoogleHealthError.http(http.statusCode, String(data: data, encoding: .utf8) ?? "")
         }
         return data

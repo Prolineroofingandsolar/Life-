@@ -97,29 +97,88 @@ enum HealthSync {
         do {
             // Fans out across a dozen data types, each paginated — sleep is
             // capped at 25 points per page — so a year-long pull is a lot of
-            // requests. Routine background syncs stay short deliberately.
-            let result = try await GoogleHealthService.shared.sync(daysBack: daysBack)
+            // requests against an hourly budget that a long sync can exhaust.
+            //
+            // Whatever didn't arrive last time goes first this time. The order
+            // used to be fixed, so once the budget ran out it ran out at the
+            // same point on every sync, and the metrics after that point were
+            // never fetched at all — not occasionally, never.
+            let settings = appState.healthSettings
+            let result = try await GoogleHealthService.shared.sync(
+                daysBack: daysBack,
+                retryFirst: settings.lastSyncSkipped + settings.lastSyncFailures
+            )
             appState.mergeHealthDays(result.days)
             appState.mergeSleepNights(result.nights)
             appState.mergeSteps(result.steps)
+
+            let retryAt = result.rateLimitedRetryAfter.map { retryAfter in
+                Date().addingTimeInterval(TimeInterval(retryAfter ?? 3600))
+            }
+
             appState.setHealthSettings {
                 $0.hasBackfilled = true
                 $0.lastSyncedAt = Date()
                 $0.lastSyncSource = Source.fitbit.rawValue
                 $0.lastSyncFailures = result.failures
+                $0.lastSyncSkipped = result.skipped
+                $0.rateLimitedUntil = retryAt
             }
 
-            var message: String?
-            if result.days.isEmpty && result.steps.isEmpty {
-                message = "Fitbit returned no data. If you've only just set the device up, it may not have synced to Fitbit's servers yet."
-            } else if !result.failures.isEmpty {
-                message = "Synced, but these didn't come through: \(result.failures.joined(separator: ", "))."
-            }
-            return Outcome(source: .fitbit, dayCount: result.days.count, message: message)
+            return Outcome(
+                source: .fitbit,
+                dayCount: result.days.count,
+                message: message(for: result)
+            )
         } catch {
             let text = (error as? GoogleHealthError)?.errorDescription ?? error.localizedDescription
+            if let healthError = error as? GoogleHealthError,
+               case .rateLimited(let retryAfter) = healthError {
+                appState.setHealthSettings {
+                    $0.rateLimitedUntil = Date().addingTimeInterval(TimeInterval(retryAfter ?? 3600))
+                }
+            }
             return Outcome(source: .fitbit, dayCount: 0, message: text)
         }
+    }
+
+    /// What to tell the user about a partial sync.
+    ///
+    /// A metric that was refused and a metric that was never reached read the
+    /// same on a chart — a gap — but they need opposite responses, so they are
+    /// never lumped together here. Running out of quota isn't a fault to report
+    /// as one; it's a queue, and it says where in the queue it stopped.
+    private static func message(for result: GoogleHealthService.SyncResult) -> String? {
+        var parts: [String] = []
+
+        if result.days.isEmpty && result.steps.isEmpty && result.nights.isEmpty {
+            parts.append("Fitbit returned no data. If you've only just set the device up, it may not have synced to Fitbit's servers yet.")
+        }
+
+        if !result.failures.isEmpty {
+            parts.append("These didn't come through: \(result.failures.joined(separator: ", ")).")
+        }
+
+        if result.rateLimitedRetryAfter != nil {
+            let waited = result.rateLimitedRetryAfter.flatMap { $0 }
+            let when = waited.map { seconds -> String in
+                let minutes = max(1, Int((Double(seconds) / 60).rounded(.up)))
+                return "in \(minutes) minute\(minutes == 1 ? "" : "s")"
+            } ?? "in an hour"
+
+            if result.skipped.isEmpty {
+                parts.append("Google's hourly request limit was reached. Try again \(when).")
+            } else {
+                parts.append(
+                    "Google's hourly request limit was reached, so \(result.skipped.joined(separator: ", ")) "
+                    + "weren't fetched. Nothing is wrong with them — sync again \(when) and they go first."
+                )
+            }
+        } else if !result.skipped.isEmpty {
+            parts.append("Not fetched this time: \(result.skipped.joined(separator: ", ")). They go first next sync.")
+        }
+
+        return parts.isEmpty ? nil : parts.joined(separator: " ")
     }
 
     // MARK: Apple Health

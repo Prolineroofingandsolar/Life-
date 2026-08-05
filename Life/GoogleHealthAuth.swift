@@ -161,6 +161,15 @@ enum GoogleHealthError: LocalizedError {
     case cancelled
     case badResponse(String)
     case http(Int, String)
+    /// Google's request budget is spent. Carries the server's `Retry-After`
+    /// where it sent one, so the app can say when rather than "shortly".
+    ///
+    /// Distinct from `.http(429, _)` because it is the one failure that says
+    /// nothing whatsoever about the request: the data is there, the permission
+    /// is there, there is simply no quota left this hour. Treating it as a
+    /// per-metric failure — which is what happened — made ten working metrics
+    /// look broken.
+    case rateLimited(retryAfterSeconds: Int?)
 
     var errorDescription: String? {
         switch self {
@@ -172,6 +181,12 @@ enum GoogleHealthError: LocalizedError {
             return "Sign-in cancelled."
         case .badResponse(let detail):
             return "Unexpected response: \(detail)"
+        case .rateLimited(let retryAfter):
+            guard let retryAfter else {
+                return "Google's hourly request limit is used up. Try again in an hour."
+            }
+            let minutes = max(1, Int((Double(retryAfter) / 60).rounded(.up)))
+            return "Google's hourly request limit is used up. Try again in \(minutes) minute\(minutes == 1 ? "" : "s")."
         case .http(let code, let body):
             switch code {
             case 401: return "Sign-in expired. Reconnect in Settings."

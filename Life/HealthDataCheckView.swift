@@ -82,13 +82,21 @@ struct HealthDataCheckView: View {
         }
     }
 
+    /// Two lists, not one.
+    ///
+    /// "Failed metrics" used to name everything absent from a sync, including
+    /// the ten that were never requested because the hourly quota ran out
+    /// partway down a fixed queue. That reads as ten broken data types when the
+    /// truth is one budget that stopped early — a completely different problem
+    /// with a completely different fix, and the reason the list appeared to
+    /// change at random between syncs.
     @ViewBuilder
     private var failures: some View {
         if settings.lastSyncFailures.isEmpty {
-            InfoRow(label: "Failed metrics", value: "None")
+            InfoRow(label: "Refused metrics", value: "None")
         } else {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Failed metrics")
+                Text("Refused metrics")
                     .font(.footnote)
                     .foregroundColor(.secondary)
                 Text(settings.lastSyncFailures.joined(separator: ", "))
@@ -96,6 +104,29 @@ struct HealthDataCheckView: View {
                     .foregroundColor(.orange)
                     .fixedSize(horizontal: false, vertical: true)
             }
+        }
+
+        if !settings.lastSyncSkipped.isEmpty {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Not reached before the request limit")
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+                Text(settings.lastSyncSkipped.joined(separator: ", "))
+                    .font(.footnote)
+                    .foregroundColor(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("Nothing is wrong with these. They're first in the queue next sync.")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+
+        if let until = settings.rateLimitedUntil, until > Date() {
+            InfoRow(
+                label: "Limit resets",
+                value: until.formatted(.relative(presentation: .numeric))
+            )
         }
     }
 

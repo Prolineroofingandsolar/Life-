@@ -945,10 +945,25 @@ struct HealthSettings: Codable {
     var lastSyncSource: String? = nil
     var lastSyncFailures: [String] = []
 
+    /// Metrics the last sync never got to, because the request budget ran out
+    /// partway through.
+    ///
+    /// Kept separate from `lastSyncFailures` because it means something
+    /// different — not attempted, rather than attempted and refused — and
+    /// because it drives the order of the next sync. Without it the same
+    /// metrics sit at the end of a fixed queue every time and are starved
+    /// every time, which is why steps could go days without updating while
+    /// sleep never missed.
+    var lastSyncSkipped: [String] = []
+
+    /// When the quota is expected back, if the last sync hit the limit.
+    var rateLimitedUntil: Date? = nil
+
     enum CodingKeys: String, CodingKey {
         case sleepGoalMinutes, exerciseGoalMinutes, showRecoveryTile, hasBackfilled
         case stepSource
         case lastSyncedAt, lastSyncSource, lastSyncFailures
+        case lastSyncSkipped, rateLimitedUntil
     }
 
     init() {}
@@ -971,6 +986,8 @@ struct HealthSettings: Codable {
         lastSyncedAt = try c.decodeIfPresent(Date.self, forKey: .lastSyncedAt)
         lastSyncSource = try c.decodeIfPresent(String.self, forKey: .lastSyncSource)
         lastSyncFailures = try c.decodeIfPresent([String].self, forKey: .lastSyncFailures) ?? []
+        lastSyncSkipped = try c.decodeIfPresent([String].self, forKey: .lastSyncSkipped) ?? []
+        rateLimitedUntil = try c.decodeIfPresent(Date.self, forKey: .rateLimitedUntil)
     }
 }
 

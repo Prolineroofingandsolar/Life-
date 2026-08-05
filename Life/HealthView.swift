@@ -398,7 +398,11 @@ struct HealthView: View {
     }
 
     /// Names what didn't come through, rather than letting a partial sync look
-    /// complete.
+    /// complete — and distinguishes refused from never-reached.
+    ///
+    /// These were one list. Ten metrics that the sync simply ran out of budget
+    /// before reaching were reported as having failed, which reads as ten
+    /// broken integrations rather than one queue that stopped early.
     @ViewBuilder
     private var failuresLine: some View {
         if !settings.lastSyncFailures.isEmpty {
@@ -406,6 +410,19 @@ struct HealthView: View {
                 .font(.caption)
                 .foregroundColor(.orange)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+        if !settings.lastSyncSkipped.isEmpty {
+            Text("Not reached before the request limit: "
+                 + settings.lastSyncSkipped.joined(separator: ", ")
+                 + ". These go first on the next sync.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        if let until = settings.rateLimitedUntil, until > Date() {
+            Text("Request limit resets " + until.formatted(.relative(presentation: .numeric)) + ".")
+                .font(.caption)
+                .foregroundColor(.secondary)
         }
     }
 
@@ -515,15 +532,26 @@ struct HealthView: View {
         }
     }
 
+    /// How far back a manual sync reaches.
+    ///
+    /// A year, once, to fill in history — and then sixty days, because a year
+    /// costs far more requests than the hourly budget allows and spending it on
+    /// data already stored is what starved the metrics at the end of the queue.
+    /// Every sync pulled 365 days of a dozen paginated types, ran out of quota
+    /// partway through, and the remainder — steps among them — was never
+    /// fetched. Sixty days is enough to catch any correction a tracker makes
+    /// after the fact while leaving budget for the whole list.
+    private var manualSyncDays: Int {
+        settings.hasBackfilled ? 60 : 365
+    }
+
     private func sync() {
         isSyncing = true
         syncMessage = nil
         Task {
-            // A manual sync reaches further back than the background one — this
-            // is the button people press when a chart looks short. Fitbit's
-            // 150-requests-per-hour budget is why it's a year here and a week
-            // on the automatic path, not a year everywhere.
-            let outcome = await HealthSync.run(appState: appState, healthKit: healthKit, daysBack: 365)
+            let outcome = await HealthSync.run(
+                appState: appState, healthKit: healthKit, daysBack: manualSyncDays
+            )
             if HealthSync.source(for: appState.healthSettings) == .appleHealth {
                 sources = await healthKit.fetchDataSources()
             }
