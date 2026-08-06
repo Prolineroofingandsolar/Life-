@@ -87,7 +87,7 @@ struct CoachActionTests {
             appState: appState
         )
 
-        #expect(outcome != nil)
+        #expect(outcome == .changed("Added “Call the plumber” to Work."))
         #expect(appState.tasks.count == 1)
         #expect(appState.tasks.first?.title == "Call the plumber")
         #expect(appState.tasks.first?.listId == "work")
@@ -142,8 +142,71 @@ struct CoachActionTests {
             appState: appState
         )
 
-        #expect(outcome == nil)
+        #expect(outcome == .unavailable)
         #expect(appState.tasks.isEmpty)
+    }
+
+    // MARK: Build a workout
+
+    /// The proposal that writes nothing. If this ever starts returning
+    /// `.changed`, a model response has become a mutation without a second tap.
+    @Test("Building a workout opens the builder and changes nothing")
+    func buildWorkoutOpensBuilder() {
+        let appState = state()
+        appState.exercises = [Exercise(name: "Bench press", muscle: "Chest", kind: .weight)]
+        let exerciseCount = appState.exercises.count
+        let routineCount = appState.routines.count
+        let plannedCount = appState.plannedSessions.count
+
+        let outcome = CoachActions.perform(
+            CoachProposal(
+                kind: .buildWorkout,
+                label: "Build a session",
+                title: "Upper body, nothing overhead",
+                count: 30
+            ),
+            appState: appState
+        )
+
+        guard case .opensBuilder(let brief) = outcome else {
+            Issue.record("expected the builder, got \(outcome)")
+            return
+        }
+        #expect(brief.text == "Upper body, nothing overhead")
+        #expect(brief.availableMinutes == 30)
+
+        // The point of the whole type: nothing moved.
+        #expect(appState.exercises.count == exerciseCount)
+        #expect(appState.routines.count == routineCount)
+        #expect(appState.plannedSessions.count == plannedCount)
+        #expect(appState.tasks.isEmpty)
+    }
+
+    @Test("An absurd duration is clamped rather than trusted")
+    func buildWorkoutClampsMinutes() {
+        let appState = state()
+        appState.exercises = [Exercise(name: "Squat", muscle: "Legs", kind: .weight)]
+        let outcome = CoachActions.perform(
+            CoachProposal(kind: .buildWorkout, label: "Build", title: "Legs", count: 9000),
+            appState: appState
+        )
+
+        guard case .opensBuilder(let brief) = outcome else {
+            Issue.record("expected the builder")
+            return
+        }
+        #expect(brief.availableMinutes == 180)
+    }
+
+    /// A builder with nothing to build from would open, ask five questions and
+    /// resolve every slot to nothing. Better not offered at all.
+    @Test("Building a workout isn't offered with an empty exercise library")
+    func buildWorkoutNeedsALibrary() {
+        let appState = state()
+        appState.exercises = []
+
+        let proposals = [CoachProposal(kind: .buildWorkout, label: "Build", title: "Legs")]
+        #expect(CoachActions.usable(proposals, appState: appState).isEmpty)
     }
 
     // MARK: Decoding

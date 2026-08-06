@@ -51,18 +51,44 @@ enum CoachActions {
         case .planWorkout:
             guard let id = proposal.targetId else { return false }
             return appState.routines.contains { $0.id == id }
+
+        case .buildWorkout:
+            // Nothing to verify against — the builder resolves against the
+            // library at the moment it runs. Offered only when there is a
+            // library to resolve against at all.
+            return !appState.exercises.isEmpty
         }
     }
 
-    /// Performs a proposal, returning what to tell the user it did.
+    /// What performing a proposal did.
     ///
-    /// Returns nil if the proposal is no longer valid — the task was completed
-    /// on another device between the answer arriving and the button being
-    /// pressed, say. Re-checked here rather than trusted from `usable` because
-    /// those are two different moments.
+    /// `perform` used to return `String?`, with nil meaning "no longer
+    /// available". That worked while every proposal was a mutation with a
+    /// sentence to show. `buildWorkout` is neither: it changes nothing and
+    /// presents a sheet, so `nil` would have printed "that's no longer
+    /// available" over a perfectly good offer, and a non-nil string would have
+    /// claimed a change that hadn't happened.
+    ///
+    /// Splitting them strengthens the invariant rather than merely fixing the
+    /// message: `.opensBuilder` is a statement in the type system that the
+    /// branch wrote nothing, checkable by the compiler at every call site.
+    enum Effect: Equatable {
+        /// A change happened. The string is what to tell the user.
+        case changed(String)
+        /// Nothing changed. Present the builder with this brief.
+        case opensBuilder(WorkoutBrief)
+        /// Valid when it was offered, gone by the time it was tapped.
+        case unavailable
+    }
+
+    /// Performs a proposal, returning what it did.
+    ///
+    /// Re-checked here rather than trusted from `usable`, because those are two
+    /// different moments: a task can be completed on another device between the
+    /// answer arriving and the button being pressed.
     @discardableResult
-    static func perform(_ proposal: CoachProposal, appState: AppState) -> String? {
-        guard isUsable(proposal, appState: appState) else { return nil }
+    static func perform(_ proposal: CoachProposal, appState: AppState) -> Effect {
+        guard isUsable(proposal, appState: appState) else { return .unavailable }
 
         switch proposal.kind {
         case .addTask:
@@ -70,19 +96,19 @@ enum CoachActions {
             let listId = resolvedListId(proposal.listId, appState: appState)
             let due = DueDate(rawValue: proposal.due ?? "") ?? .today
             appState.addTask(title: title, listId: listId, dueDate: due)
-            return "Added “\(title)” to \(listName(listId, appState: appState))."
+            return .changed("Added “\(title)” to \(listName(listId, appState: appState)).")
 
         case .completeTask:
             guard let id = proposal.targetId,
-                  let task = appState.tasks.first(where: { $0.id == id }) else { return nil }
+                  let task = appState.tasks.first(where: { $0.id == id }) else { return .unavailable }
             appState.toggleTask(id: id)
-            return "Marked “\(task.title)” done."
+            return .changed("Marked “\(task.title)” done.")
 
         case .addHabitLog:
             guard let id = proposal.targetId,
-                  let habit = appState.habits.first(where: { $0.id == id }) else { return nil }
+                  let habit = appState.habits.first(where: { $0.id == id }) else { return .unavailable }
             appState.logHabit(id: id, count: max(1, proposal.count ?? 1))
-            return "Logged \(habit.name)."
+            return .changed("Logged \(habit.name).")
 
         case .logWater:
             // Clamped rather than trusted. `count` comes from a model, and a
@@ -90,14 +116,38 @@ enum CoachActions {
             // data — eight glasses is already a day's worth.
             let glasses = min(max(proposal.count ?? 1, 1), 8)
             for _ in 0..<glasses { appState.addWater() }
-            return glasses == 1 ? "Logged a glass of water." : "Logged \(glasses) glasses of water."
+            return .changed(
+                glasses == 1 ? "Logged a glass of water." : "Logged \(glasses) glasses of water."
+            )
 
         case .planWorkout:
             guard let id = proposal.targetId,
-                  let routine = appState.routines.first(where: { $0.id == id }) else { return nil }
+                  let routine = appState.routines.first(where: { $0.id == id }) else { return .unavailable }
             appState.planSession(date: Date(), routineId: id, name: routine.name)
-            return "Planned \(routine.name) for today."
+            return .changed("Planned \(routine.name) for today.")
+
+        case .buildWorkout:
+            return .opensBuilder(brief(from: proposal))
         }
+    }
+
+    /// The brief a `buildWorkout` proposal carries.
+    ///
+    /// Deliberately thin. The coach contributes the free text and, at most, a
+    /// duration; everything else is the builder's own default, and the user is
+    /// asked the same questions they would have been asked from the Train tab.
+    /// A model that had confidently pre-answered "equipment: barbell" would be
+    /// deciding something it was never told.
+    static func brief(from proposal: CoachProposal) -> WorkoutBrief {
+        var brief = WorkoutBrief()
+        if let title = proposal.title?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !title.isEmpty {
+            brief.text = String(title.prefix(200))
+        }
+        if let minutes = proposal.count {
+            brief.availableMinutes = min(max(minutes, 10), 180)
+        }
+        return brief
     }
 
     // MARK: Helpers

@@ -61,6 +61,22 @@ enum BlueprintMuscle: String, Codable, CaseIterable, Sendable {
         case .core, .cardio: return []
         }
     }
+
+    /// The blueprint muscle an `Exercise.muscle` string names, if any.
+    ///
+    /// `Exercise.muscle` is a free `String` — a custom or imported exercise can
+    /// carry "chest", "Upper back" or anything else — so this is the one place
+    /// that decides what counts as a match. It exists so the resolver and the
+    /// coach context agree: a muscle the context reports as having six
+    /// exercises must be a muscle the resolver can find six exercises for, and
+    /// two independent comparisons would eventually disagree.
+    init?(appMuscle: String) {
+        let trimmed = appMuscle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let match = BlueprintMuscle.allCases.first(where: {
+            $0.rawValue.caseInsensitiveCompare(trimmed) == .orderedSame
+        }) else { return nil }
+        self = match
+    }
 }
 
 enum BlueprintError: Error, Equatable {

@@ -290,6 +290,14 @@ enum CoachProposalKind: String, Codable, CaseIterable, Sendable {
     case addHabitLog
     case logWater
     case planWorkout
+    /// Opens the builder with the brief the coach heard, and writes nothing.
+    ///
+    /// The odd one out, deliberately. Every other kind performs a change on tap;
+    /// this one presents a sheet that must itself be confirmed — two taps
+    /// between a model saying "you could do a 30-minute upper body session" and
+    /// anything existing in the app. `CoachActions.Effect.opensBuilder` is how
+    /// that difference is stated in the type system rather than in a comment.
+    case buildWorkout
 }
 
 struct CoachProposal: Codable, Equatable, Sendable, Identifiable {
@@ -299,7 +307,9 @@ struct CoachProposal: Codable, Equatable, Sendable, Identifiable {
     let kind: CoachProposalKind
     /// What the button says.
     let label: String
-    /// For `addTask` and `planWorkout`.
+    /// For `addTask` and `planWorkout`. For `buildWorkout`, the brief in the
+    /// coach's own words — never an exercise name, which the builder would have
+    /// no way to honour.
     let title: String?
     /// For `addTask`: one of the app's list ids.
     let listId: String?
@@ -309,6 +319,9 @@ struct CoachProposal: Codable, Equatable, Sendable, Identifiable {
     /// the coach was given. Checked against reality by `CoachActions` before
     /// anything is shown, because the server has no task list to check against.
     let targetId: String?
+    /// Glasses for `logWater`, times for `addHabitLog`, minutes for
+    /// `buildWorkout`. Clamped by `CoachActions` in every case — a model figure
+    /// is a suggestion, and 500 of anything is a bug reaching real data.
     let count: Int?
 
     enum CodingKeys: String, CodingKey {

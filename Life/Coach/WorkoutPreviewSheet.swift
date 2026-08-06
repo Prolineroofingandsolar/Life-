@@ -245,6 +245,16 @@ struct WorkoutPreviewSheet: View {
                  ? "Let's put today's session together. A few quick questions."
                  : "Let's build you a programme. A few quick questions.")
         ]
+
+        // Opened from a coach proposal, the brief already carries what was asked
+        // for. Shown back rather than silently applied: the questions are still
+        // asked, so anyone who meant something else can say so before a session
+        // is built on a paraphrase.
+        let carried = brief.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !carried.isEmpty {
+            turns.append(Turn(speaker: .coach, text: "You asked for: \(carried)"))
+        }
+
         if let step = currentStep { ask(step) }
     }
 

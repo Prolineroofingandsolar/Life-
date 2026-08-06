@@ -414,4 +414,77 @@ struct CoachResponseTests {
 
         #expect(recommendation.validate(against: Self.context()) == .emptyHeadline)
     }
+
+    // MARK: The library the coach may build from
+
+    /// The coach used to be told nothing about the exercise library, so it
+    /// happily proposed calf work for someone with no calf exercise. The
+    /// resolver would then drop the slot and explain why — a bad answer that
+    /// looked like a good one until it was built.
+    @Test("The training section reports what the library can build")
+    func libraryCountsAreSent() {
+        let state = Self.emptyState()
+        state.exercises = [
+            Exercise(name: "Bench press", muscle: "Chest", kind: .weight),
+            Exercise(name: "Push-up", muscle: "chest", kind: .weight),
+            Exercise(name: "Row", muscle: "Back", kind: .weight),
+        ]
+
+        let library = CoachContextBuilder.build(appState: state).training?.library
+
+        #expect(library?.exercisesByMuscle["Chest"] == 2)
+        #expect(library?.exercisesByMuscle["Back"] == 1)
+        // Absent, not zero. The keys are what the coach may ask for.
+        #expect(library?.exercisesByMuscle["Calves"] == nil)
+        #expect(library?.totalExercises == 3)
+    }
+
+    /// `Exercise.muscle` is a free string. A count filed under "Upper back"
+    /// would tell the coach a muscle exists that it cannot then ask for, since
+    /// the response schema only accepts the ten blueprint names.
+    @Test("A muscle outside the blueprint vocabulary isn't offered as a key")
+    func unknownMusclesAreNotKeys() {
+        let state = Self.emptyState()
+        state.exercises = [
+            Exercise(name: "Odd lift", muscle: "Upper back", kind: .weight),
+            Exercise(name: "Row", muscle: "Back", kind: .weight),
+        ]
+
+        let library = CoachContextBuilder.build(appState: state).training?.library
+
+        #expect(library?.exercisesByMuscle["Upper back"] == nil)
+        #expect(library?.exercisesByMuscle.count == 1)
+        // Still counted in the total: it exists, it just can't be asked for.
+        #expect(library?.totalExercises == 2)
+    }
+
+    /// The guard used to require a finished or planned workout, so someone
+    /// asking for their first programme was described as having no training
+    /// context at all — at exactly the moment it mattered most.
+    @Test("A user who has never trained still gets a training section")
+    func brandNewUserHasTrainingContext() {
+        let state = Self.emptyState()
+        state.sessions = []
+        state.plannedSessions = []
+        state.routines = []
+        state.exercises = [Exercise(name: "Squat", muscle: "Legs", kind: .weight)]
+
+        let training = CoachContextBuilder.build(appState: state).training
+
+        #expect(training != nil)
+        #expect(training?.lastWorkoutDaysAgo == nil)
+        #expect(training?.sessionsThisWeek == 0)
+        #expect(training?.library?.totalExercises == 1)
+    }
+
+    @Test("With nothing at all, the training section is still omitted")
+    func nothingMeansNoSection() {
+        let state = Self.emptyState()
+        state.sessions = []
+        state.plannedSessions = []
+        state.routines = []
+        state.exercises = []
+
+        #expect(CoachContextBuilder.build(appState: state).training == nil)
+    }
 }

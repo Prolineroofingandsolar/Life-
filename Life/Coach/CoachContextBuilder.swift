@@ -403,7 +403,21 @@ enum CoachContextBuilder {
             return finishedAt >= start
         }
 
-        guard planned != nil || !finished.isEmpty else { return nil }
+        let library = librarySection(appState: appState)
+
+        // Nothing at all to say only when there is *nothing* — no session done,
+        // none planned, no routine, and an empty library.
+        //
+        // The old guard required a finished or planned workout, so a brand-new
+        // user asking for their first programme was described to the coach as
+        // having no training data whatsoever: not even which muscles the app
+        // could build for. That is precisely the moment the training context
+        // matters most.
+        let hasAnything = planned != nil
+            || !finished.isEmpty
+            || !appState.routines.isEmpty
+            || library != nil
+        guard hasAnything else { return nil }
 
         return CoachContext.Training(
             plannedWorkout: planned?.routineName,
@@ -412,7 +426,39 @@ enum CoachContextBuilder {
             },
             lastWorkoutDaysAgo: lastDaysAgo,
             recentLoad: load(sessionsThisWeek: thisWeek.count),
-            sessionsThisWeek: thisWeek.count
+            sessionsThisWeek: thisWeek.count,
+            library: library
+        )
+    }
+
+    /// What the library can build, counted rather than listed.
+    ///
+    /// Muscle names are normalised through `BlueprintMuscle` so the counts use
+    /// the same ten words as the response schema. `Exercise.muscle` is a free
+    /// `String` — a custom exercise can carry anything — and a count filed under
+    /// "Upper back" would tell the coach a muscle exists that it cannot then ask
+    /// for. Unrecognised muscles are counted in the total and nowhere else.
+    private static func librarySection(appState: AppState) -> CoachContext.Training.Library? {
+        let exercises = appState.exercises
+        guard !exercises.isEmpty else { return nil }
+
+        var byMuscle: [String: Int] = [:]
+        var equipment = Set<String>()
+        var custom = 0
+
+        for exercise in exercises {
+            if let muscle = BlueprintMuscle(appMuscle: exercise.muscle) {
+                byMuscle[muscle.rawValue, default: 0] += 1
+            }
+            equipment.insert(exercise.equipment.rawValue)
+            if exercise.isCustom { custom += 1 }
+        }
+
+        return CoachContext.Training.Library(
+            exercisesByMuscle: byMuscle,
+            equipment: equipment.sorted(),
+            totalExercises: exercises.count,
+            customExercises: custom
         )
     }
 

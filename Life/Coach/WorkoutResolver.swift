@@ -450,9 +450,7 @@ enum WorkoutResolver {
     /// shrink the library.
     private static func candidates(for muscle: BlueprintMuscle, in inputs: Inputs) -> [Exercise] {
         inputs.library.filter { exercise in
-            guard exercise.muscle.caseInsensitiveCompare(muscle.rawValue) == .orderedSame else {
-                return false
-            }
+            guard BlueprintMuscle(appMuscle: exercise.muscle) == muscle else { return false }
             // Equipment the user doesn't have is a hard filter, unlike the
             // slot's *preferred* equipment, which is only a score. Prescribing a
             // cable row to someone training in a garage is not a near miss.

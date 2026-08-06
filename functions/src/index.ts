@@ -301,6 +301,15 @@ Proposals (the buttons under your answer):
   acting.
 - Use ids exactly as they appear in the data and never invent one. Omit
   targetId if you do not have a real one.
+- buildWorkout is for when the person asks what to train, or for a session, and
+  no existing routine fits. Put the brief in your own words in title — what to
+  work, how hard, anything to avoid — and minutes in count if they said how long
+  they have. NEVER name an exercise in title: the app owns the exercise library
+  and chooses the movements itself. It opens a builder that asks its own
+  questions, so an incomplete brief costs nothing.
+- Prefer planWorkout over buildWorkout when a routine in the data already does
+  the job. Building a new session when they already have one is work you made
+  for them.
 - Return an empty proposals array when there is nothing worth offering.
 `.trim(),
 

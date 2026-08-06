@@ -19,6 +19,9 @@ struct AskCoachView: View {
     @State private var turns: [Turn] = []
     @State private var state: AskState = .idle
     @State private var showConsent = false
+    /// Set by a `buildWorkout` proposal. Non-nil presents the builder; the
+    /// builder itself writes nothing until its own confirm button is pressed.
+    @State private var builderBrief: WorkoutBrief?
     @FocusState private var inputFocused: Bool
 
     private var service: CoachService { CoachService() }
@@ -127,6 +130,9 @@ struct AskCoachView: View {
             }
             .sheet(isPresented: $showConsent) {
                 CoachConsentView()
+            }
+            .sheet(item: $builderBrief) { brief in
+                WorkoutPreviewSheet(initialBrief: brief, initialKind: .workout)
             }
         }
     }
@@ -393,20 +399,29 @@ struct AskCoachView: View {
         case .addHabitLog:  return "flame"
         case .logWater:     return "drop"
         case .planWorkout:  return "dumbbell"
+        case .buildWorkout: return "sparkles"
         }
     }
 
     private func apply(_ proposal: CoachProposal, in turn: Turn) {
         guard let index = turns.firstIndex(where: { $0.id == turn.id }) else { return }
-        guard let outcome = CoachActions.perform(proposal, appState: appState) else {
+        switch CoachActions.perform(proposal, appState: appState) {
+        case .changed(let outcome):
+            turns[index].applied[proposal.id] = outcome
+            HapticManager.success()
+
+        case .opensBuilder(let brief):
+            // No confirmation line, because nothing has been confirmed. The
+            // button stays live so it can be tapped again if the sheet is
+            // dismissed, which is the honest reading of "nothing happened".
+            builderBrief = brief
+
+        case .unavailable:
             // Valid when the answer arrived, gone by the time it was tapped —
             // completed on another device, most likely. Say so where the button
             // was rather than failing silently.
             turns[index].applied[proposal.id] = "That's no longer available."
-            return
         }
-        turns[index].applied[proposal.id] = outcome
-        HapticManager.success()
     }
 }
 

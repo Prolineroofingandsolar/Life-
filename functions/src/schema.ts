@@ -102,6 +102,12 @@ export const PROPOSAL_TYPES = [
   "addHabitLog",
   "logWater",
   "planWorkout",
+  /**
+   * Opens the workout builder with the brief in `title`. The only proposal type
+   * that performs no change at all: the app presents the builder, asks its own
+   * questions and requires a second confirmation before anything is written.
+   */
+  "buildWorkout",
 ] as const;
 
 export const MAX_PROPOSALS = 3;
@@ -127,7 +133,10 @@ export const ASK_SCHEMA = {
           type: { type: "STRING", enum: [...PROPOSAL_TYPES] },
           /** What the button says. Imperative: "Add 'Call the plumber'". */
           label: { type: "STRING" },
-          /** For addTask and planWorkout. */
+          /**
+           * For addTask and planWorkout. For buildWorkout, the brief in your
+           * own words — never an exercise name.
+           */
           title: { type: "STRING", nullable: true },
           /** For addTask: one of the app's list ids, from the context. */
           listId: { type: "STRING", nullable: true },
@@ -135,7 +144,7 @@ export const ASK_SCHEMA = {
           due: { type: "STRING", enum: ["today", "tomorrow", "thisWeek"], nullable: true },
           /** For completeTask, addHabitLog, planWorkout: an id from the data. */
           targetId: { type: "STRING", nullable: true },
-          /** For logWater and addHabitLog. */
+          /** For logWater and addHabitLog. For buildWorkout, minutes. */
           count: { type: "INTEGER", nullable: true },
         },
         required: ["type", "label"],

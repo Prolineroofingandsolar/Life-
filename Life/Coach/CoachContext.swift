@@ -214,9 +214,39 @@ struct CoachContext: Codable, Equatable, Sendable {
         /// from an absolute scale — "moderate" means moderate for them.
         var recentLoad: Load?
         var sessionsThisWeek: Int
+        /// What the exercise library can actually build from.
+        ///
+        /// Sent because the coach otherwise offers workouts the resolver cannot
+        /// resolve. Asking for calves when there is no calf exercise in the
+        /// library produces a dropped slot and a note explaining the app's own
+        /// shortcoming — a bad answer that looked like a good one until it was
+        /// built. Counts, not names: the coach needs to know what is *possible*,
+        /// and 187 exercise names would be paying to transmit a list it must
+        /// never quote from anyway.
+        var library: Library?
 
         enum Load: String, Codable, Sendable {
             case light, moderate, heavy
+        }
+
+        /// Shape, not contents.
+        ///
+        /// No exercise name and no id crosses this boundary, which is what keeps
+        /// "Gemini cannot invent an exercise reference" true by construction:
+        /// it has never been shown one to imitate.
+        struct Library: Codable, Equatable, Sendable {
+            /// Muscle name → how many exercises exist for it. Muscles with none
+            /// are absent rather than present as zero, so the model reads the
+            /// keys as "what I may ask for".
+            var exercisesByMuscle: [String: Int]
+            /// Equipment the user has at least one exercise for, in the app's
+            /// own closed vocabulary.
+            var equipment: [String]
+            var totalExercises: Int
+            /// Exercises the user added themselves — scanned, imported or typed.
+            /// Worth distinguishing because a library of only seeded exercises
+            /// says nothing about what equipment they actually own.
+            var customExercises: Int
         }
     }
 
