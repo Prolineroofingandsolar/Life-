@@ -168,12 +168,12 @@ private struct SleepNightChip: View {
     let action: () -> Void
 
     private var weekday: String {
-        guard let date = _dayKeyFormatter.date(from: day.dayKey) else { return "" }
+        guard let date = DayKey.date(from: day.dayKey) else { return "" }
         return date.formatted(.dateTime.weekday(.abbreviated))
     }
 
     private var dayNumber: String {
-        guard let date = _dayKeyFormatter.date(from: day.dayKey) else { return "" }
+        guard let date = DayKey.date(from: day.dayKey) else { return "" }
         return date.formatted(.dateTime.day())
     }
 
@@ -701,7 +701,7 @@ private struct SleepScoreCard: View {
     }
 
     private var measuredOn: String {
-        guard let date = _dayKeyFormatter.date(from: night.dayKey) else { return night.dayKey }
+        guard let date = DayKey.date(from: night.dayKey) else { return night.dayKey }
         return date.formatted(date: .abbreviated, time: .omitted)
     }
 

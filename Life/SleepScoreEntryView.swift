@@ -21,7 +21,7 @@ struct SleepScoreEntryView: View {
     private var existing: SleepScoreComparison? { appState.sleepComparisons[day.dayKey] }
 
     private var formattedDate: String {
-        guard let date = _dayKeyFormatter.date(from: day.dayKey) else { return day.dayKey }
+        guard let date = DayKey.date(from: day.dayKey) else { return day.dayKey }
         return date.formatted(date: .long, time: .omitted)
     }
 

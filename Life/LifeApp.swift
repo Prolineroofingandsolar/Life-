@@ -16,6 +16,12 @@ struct LifeApp: App {
         // where neither of them touches Firebase, and is a no-op otherwise.
         FirebaseBootstrap.configureIfNeeded()
 
+        // Before anything depends on the answers. A bundle ID that disagrees
+        // with GoogleService-Info.plist, or a background task identifier the
+        // Info.plist doesn't advertise, both produce a running app with a
+        // quietly broken feature — so in debug they stop the launch instead.
+        AppConfiguration.validate()
+
         // Has to happen here. `BGTaskScheduler.register` throws if called after
         // launch finishes, and iOS relaunches the app straight into the
         // background to deliver a HealthKit change — at which point no view has

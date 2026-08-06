@@ -1,5 +1,4 @@
 import Foundation
-import CryptoKit
 
 // MARK: - Coach Context
 
@@ -20,6 +19,28 @@ struct CoachContext: Codable, Equatable, Sendable {
 
     var generatedAt: Date
     var timeOfDay: TimeOfDay
+
+    /// The local day every figure below belongs to, and the zone that day
+    /// boundary was drawn in.
+    ///
+    /// Sent because the model otherwise has to infer "today" from a timestamp,
+    /// and a UTC timestamp at 23:40 local names tomorrow. Every consumer of this
+    /// context and every screen alongside it takes this same key from the one
+    /// `HealthSnapshot`, which is what stops Today and Ask Coach describing
+    /// different days.
+    var dayKey: String = ""
+    var timeZoneIdentifier: String = TimeZone.current.identifier
+
+    /// Where the health figures came from and when they last arrived.
+    ///
+    /// Provenance, not a measurement. It lets the coach say "based on data
+    /// updated at 07:12 from Fitbit" instead of implying every number is live.
+    var dataSource: String?
+    var dataUpdatedAt: Date?
+    /// False when the last sync is older than the freshness window, so the model
+    /// hedges rather than presenting an overnight figure as the current one.
+    var dataIsFresh: Bool = false
+
     var goals: [Goal]
     var sleep: Sleep?
     var recovery: Recovery?
@@ -27,6 +48,9 @@ struct CoachContext: Codable, Equatable, Sendable {
     var training: Training?
     var tasks: Tasks?
     var habits: Habits?
+    /// Small already-derived deltas, so questions like "which figure changed
+    /// most since yesterday?" can be answered without raw history being sent.
+    var comparisons: Comparisons?
     /// Anything the app knows is missing, partial or suspect. Never empty
     /// because a gap was silently filled — a gap is stated.
     var dataWarnings: [String]
@@ -93,14 +117,35 @@ struct CoachContext: Codable, Equatable, Sendable {
     struct Sleep: Codable, Equatable, Sendable {
         var score: Int?
         var durationMinutes: Int?
+        /// The same duration already formatted — "7h 51m".
+        ///
+        /// Sent alongside the number rather than instead of it, because the
+        /// model kept relaying the raw integer: Today read "10h 17m" while Ask
+        /// Coach answered "471 minutes", which is not a phrasing preference but
+        /// two apparently different figures for one night. Giving it the words
+        /// removes the opportunity.
+        var durationText: String?
         /// Minutes above or below the user's own recent average. Nil when there
-        /// isn't enough history to have an average worth comparing to.
+        /// isn't enough history to have an average worth comparing to — which
+        /// `state` distinguishes from having no sleep at all.
         var vsBaselineMinutes: Int?
         var efficiencyPercent: Int?
         var confidence: Confidence
         var quality: DataQuality
+        /// Missing, stale, no baseline yet, partial or ready. The distinction
+        /// the whole snapshot exists to carry.
+        var state: MetricState = .ready
     }
 
+    /// Recovery, present whenever a *measurement* is, not only when a trend can
+    /// be computed.
+    ///
+    /// The old rule returned nil unless a baseline existed, and nil was reported
+    /// to the model as "No recovery data". So the app printed "no recovery data"
+    /// while the Health tab, two taps away, showed HRV 79 ms and a resting heart
+    /// rate of 59 bpm — both perfectly well recorded, just not yet backed by
+    /// enough nights to say whether they were high or low. That is
+    /// `insufficientHistory`, and it earns a different sentence.
     struct Recovery: Codable, Equatable, Sendable {
         /// Words rather than milliseconds. The absolute HRV figure means
         /// nothing without a personal baseline, and sending the baseline too
@@ -110,6 +155,17 @@ struct CoachContext: Codable, Equatable, Sendable {
         var readinessScore: Int?
         var confidence: Confidence
         var quality: DataQuality
+        var state: MetricState = .ready
+
+        /// Whether a reading exists at all, independent of whether it can be
+        /// interpreted. This is the fact the model needs in order to avoid
+        /// contradicting a screen the user can see.
+        var hasHrvMeasurement: Bool = false
+        var hasRestingHeartRateMeasurement: Bool = false
+        /// Progress towards a usable baseline, so the app can say "4 of 10
+        /// nights" rather than refusing without explanation.
+        var baselineNightsRecorded: Int = 0
+        var baselineNightsRequired: Int = 0
 
         enum BaselineStatus: String, Codable, Sendable {
             case belowBaseline = "below_baseline"
@@ -117,6 +173,19 @@ struct CoachContext: Codable, Equatable, Sendable {
             case aboveBaseline = "above_baseline"
             case unknown
         }
+    }
+
+    /// Today against yesterday, and this week against last.
+    ///
+    /// Derived on the device and sent as a handful of integers. Sending the
+    /// underlying days instead would be sending raw history to answer a question
+    /// that is one subtraction wide.
+    struct Comparisons: Codable, Equatable, Sendable {
+        var sleepVsYesterdayMinutes: Int?
+        var stepsVsYesterday: Int?
+        var restingHeartRateVsYesterday: Double?
+        var workoutsThisWeek: Int?
+        var workoutsLastWeek: Int?
     }
 
     struct Activity: Codable, Equatable, Sendable {
@@ -130,6 +199,7 @@ struct CoachContext: Codable, Equatable, Sendable {
         /// Which device produced it, in the app's own vocabulary.
         var source: String?
         var quality: DataQuality
+        var state: MetricState = .ready
     }
 
     struct Training: Codable, Equatable, Sendable {
@@ -219,12 +289,17 @@ extension CoachContext {
 
     /// A hash of everything that would change the advice.
     ///
-    /// `generatedAt` is deliberately excluded. Including it would make every
-    /// hash unique, every cache lookup a miss, and every screen appearance a
-    /// paid API call — which is the opposite of what the cache is for. What
-    /// remains is the substance: if the sleep, steps, tasks and habits are the
-    /// same as they were an hour ago, the advice would be too, so the stored
-    /// answer is reused.
+    /// **Every clock reading is excluded**, and that is the rule rather than an
+    /// optimisation. `generatedAt` moves on each build and `dataUpdatedAt` moves
+    /// on each sync poll — including either would make every hash unique, every
+    /// lookup a miss, and every appearance of the Today screen a paid API call,
+    /// which is the exact opposite of what a cache is for. Timestamps are stored
+    /// beside the cached answer and shown to the user; they are never keyed on.
+    ///
+    /// What remains is the substance, and all of it: the figures, and the
+    /// *states* of those figures. A reading going stale or a baseline becoming
+    /// computable changes the advice as surely as a number moving, and a key
+    /// built from values alone would miss both.
     ///
     /// Sorted keys matter. `JSONEncoder` does not guarantee key order between
     /// runs, and an unsorted encoding would produce a different hash for
@@ -232,18 +307,10 @@ extension CoachContext {
     var materialHash: String {
         var stable = self
         stable.generatedAt = Date(timeIntervalSince1970: 0)
-
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        encoder.dateEncodingStrategy = .iso8601
-
-        guard let data = try? encoder.encode(stable) else {
-            // A context that can't be encoded can't be sent either, so the
-            // value here only needs to be distinct and stable.
-            return "unencodable"
-        }
-        return SHA256.hash(data: data)
-            .map { String(format: "%02x", $0) }
-            .joined()
+        stable.dataUpdatedAt = nil
+        // `nextDeadline` is a real deadline rather than a clock reading, so it
+        // stays: advice about a task due at four is different advice from the
+        // same task due tomorrow.
+        return StableHash.of(stable)
     }
 }

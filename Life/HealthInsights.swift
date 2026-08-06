@@ -162,7 +162,7 @@ struct ActivityDay: Identifiable {
     var flights: Int? = nil
 
     var id: String { dayKey }
-    var date: Date? { _dayKeyFormatter.date(from: dayKey) }
+    var date: Date? { DayKey.date(from: dayKey) }
 }
 
 enum ActivityMetric: String, CaseIterable, Identifiable {

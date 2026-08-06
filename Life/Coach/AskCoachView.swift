@@ -24,8 +24,20 @@ struct AskCoachView: View {
     private var service: CoachService { CoachService() }
     private var settings: CoachSettings { appState.coachSettings }
 
+    /// The same snapshot Today and the briefing are reading.
+    ///
+    /// This is the fix for "Today shows 10h 17m, Ask Coach is told 471
+    /// minutes". Both figures were right; they were built by two different
+    /// pieces of code from two different reads of the store, and only one of
+    /// them formatted the result.
+    private var snapshot: HealthSnapshot { appState.healthSnapshot }
+
     private var context: CoachContext {
-        CoachContextBuilder.build(appState: appState, permissions: .init(settings))
+        CoachContextBuilder.build(
+            appState: appState,
+            permissions: .init(settings),
+            snapshot: snapshot
+        )
     }
 
     struct Turn: Identifiable, Equatable {
@@ -54,13 +66,36 @@ struct AskCoachView: View {
         case failed(message: String, retryable: Bool)
     }
 
-    /// Starting points, so an empty box isn't the first thing you meet.
-    private let prompts = [
-        "How did I sleep this week?",
-        "Should I train today?",
-        "What should I focus on?",
-        "Why is my recovery low?"
-    ]
+    /// Starting points, so an empty box isn't the first thing you meet — and
+    /// only ones the data on hand can actually answer.
+    ///
+    /// The previous set promised more than the context held. "How did I sleep
+    /// this week?" was offered to someone whose payload contains exactly one
+    /// night and no weekly comparison, so the honest answer was always "I can't
+    /// tell you that" — from a button the app itself had put there. "Why is my
+    /// recovery low?" presupposed the answer, and fired happily on a day when
+    /// recovery was fine or not yet measurable.
+    ///
+    /// Each prompt below is gated on the field that would have to be present for
+    /// it to be answerable, so a suggestion appearing is itself a promise the
+    /// app can keep.
+    private var prompts: [String] {
+        var out = ["What is the best use of my next 30 minutes?"]
+
+        out.append("Is today's data complete enough to guide training?")
+
+        if snapshot.sleepScore.state.hasValue {
+            out.append("Explain my sleep score in plain English.")
+        }
+        if snapshot.sleepChangeSinceYesterdayMinutes != nil
+            || snapshot.stepsChangeSinceYesterday != nil
+            || snapshot.restingHeartRateChangeSinceYesterday != nil {
+            out.append("Which figure changed most since yesterday?")
+        }
+
+        out.append("What information is missing from today's advice?")
+        return out
+    }
 
     var body: some View {
         NavigationStack {
@@ -294,7 +329,7 @@ struct AskCoachView: View {
                     // Retrying a spend ceiling or a switched-off feature just
                     // fails again in the same way; only a transport problem is
                     // worth a second go.
-                    retryable: isRetryable(coachError)
+                    retryable: CoachService.isRetryable(coachError)
                 )
             }
         }
@@ -372,13 +407,6 @@ struct AskCoachView: View {
         }
         turns[index].applied[proposal.id] = outcome
         HapticManager.success()
-    }
-
-    private func isRetryable(_ error: CoachError?) -> Bool {
-        switch error {
-        case .transport, .invalidResponse, .none: return true
-        case .disabled, .notConfigured, .notSignedIn, .limitReached: return false
-        }
     }
 }
 

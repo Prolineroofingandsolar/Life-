@@ -228,13 +228,32 @@ enum LocalCoach {
         var evidence: [CoachEvidence] = []
 
         if let sleep = context.sleep, let minutes = sleep.durationMinutes {
-            lines.append("You slept \(HealthInsights.formatDuration(minutes)).")
-            evidence.append(.init(label: "Sleep", explanation: HealthInsights.formatDuration(minutes)))
+            // Formatted, never as a raw minute count. "You slept 471 minutes"
+            // is the sentence that made Today and Ask Coach look like they were
+            // describing different nights.
+            let duration = sleep.durationText ?? HealthInsights.formatDuration(minutes)
+            lines.append(sleep.state == .stale
+                ? "The most recent sleep on file is \(duration), and it isn't from last night."
+                : "You slept \(duration).")
+            evidence.append(.init(label: "Sleep", explanation: duration))
         }
 
-        if let readiness = context.recovery?.readinessScore {
-            lines.append("Readiness is \(readiness) out of 100.")
-            evidence.append(.init(label: "Readiness", explanation: "\(readiness)/100"))
+        if let recovery = context.recovery {
+            if let readiness = recovery.readinessScore {
+                lines.append("Readiness is \(readiness) out of 100.")
+                evidence.append(.init(label: "Readiness", explanation: "\(readiness)/100"))
+            } else if recovery.hasHrvMeasurement || recovery.hasRestingHeartRateMeasurement {
+                // The measurement exists; only the baseline doesn't. Saying "no
+                // recovery data" here is what contradicted the Health tab.
+                let progress = recovery.baselineNightsRequired > 0
+                    ? " (\(recovery.baselineNightsRecorded) of \(recovery.baselineNightsRequired) nights recorded)"
+                    : ""
+                lines.append("Not enough history to assess recovery yet\(progress).")
+                evidence.append(.init(
+                    label: "Recovery",
+                    explanation: "Measured, but not yet enough history to compare against."
+                ))
+            }
         }
 
         if let steps = context.activity?.steps {

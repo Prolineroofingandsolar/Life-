@@ -324,11 +324,42 @@ struct WorkoutCalendarCard: View {
     }
 
     private var weekDays: [(date: Date, shortDay: String)] {
-        let weekStart = cal.date(from: cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: Date())) ?? Date()
+        Self.weekDays(containing: Date(), calendar: cal)
+    }
+
+    /// The seven days of the week `date` falls in, always Monday first.
+    ///
+    /// Monday is computed from the weekday component rather than taken from
+    /// `Calendar.weekOfYear`, and that is the fix rather than a preference.
+    /// `dateComponents([.yearForWeekOfYear, .weekOfYear])` starts the week on
+    /// `calendar.firstWeekday`, which is Monday in en_GB but *Sunday* in en_US
+    /// — the simulator's default locale. The column labels below are the fixed
+    /// string "M T W T F S S", so on a Sunday-first device every day sat one
+    /// column off its own name: Thursday 6 August 2026 drew under Friday, and
+    /// tapping the cell under "Wed" planned a session for Tuesday.
+    ///
+    /// The month grid alongside this already derives its offset from the
+    /// weekday number and so was always Monday-based. Two calendars in one card
+    /// disagreeing about which column a date belongs in is the bug; this makes
+    /// both of them agree with the labels.
+    static func weekDays(
+        containing date: Date,
+        calendar: Calendar
+    ) -> [(date: Date, shortDay: String)] {
+        let startOfDay = calendar.startOfDay(for: date)
+        // weekday is 1=Sunday … 7=Saturday in the Gregorian calendar,
+        // independent of firstWeekday. Monday is 2, so this is how many days
+        // back Monday sits, with Sunday counting as six days *after* Monday
+        // rather than the day before it.
+        let daysSinceMonday = (calendar.component(.weekday, from: startOfDay) + 5) % 7
+        let weekStart = calendar.date(byAdding: .day, value: -daysSinceMonday, to: startOfDay) ?? startOfDay
+
         let labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
         return (0..<7).map { offset in
-            let date = cal.date(byAdding: .day, value: offset, to: weekStart) ?? weekStart
-            return (date: date, shortDay: labels[offset])
+            // Added as calendar days, not as 86,400-second multiples: on the
+            // day the clocks change, one of these seven is 23 or 25 hours long.
+            let day = calendar.date(byAdding: .day, value: offset, to: weekStart) ?? weekStart
+            return (date: day, shortDay: labels[offset])
         }
     }
 

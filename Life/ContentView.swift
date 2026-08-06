@@ -110,19 +110,19 @@ struct ContentView: View {
         TabView(selection: $selectedTab) {
             TodayView()
                 .tag(AppTab.today)
-                .tabItem { Label(AppTab.today.label, systemImage: AppTab.today.icon) }
+                .tabItem { tabLabel(.today) }
             TasksView()
                 .tag(AppTab.tasks)
-                .tabItem { Label(AppTab.tasks.label, systemImage: AppTab.tasks.icon) }
+                .tabItem { tabLabel(.tasks) }
             TrainView()
                 .tag(AppTab.train)
-                .tabItem { Label(AppTab.train.label, systemImage: AppTab.train.icon) }
+                .tabItem { tabLabel(.train) }
             HealthView()
                 .tag(AppTab.health)
-                .tabItem { Label(AppTab.health.label, systemImage: AppTab.health.icon) }
+                .tabItem { tabLabel(.health) }
             MoreView()
                 .tag(AppTab.more)
-                .tabItem { Label(AppTab.more.label, systemImage: AppTab.more.icon) }
+                .tabItem { tabLabel(.more) }
         }
         .tint(AppTheme.primary)
         // Global active workout banner shown on non-Train tabs.
@@ -168,6 +168,28 @@ struct ContentView: View {
             default:       break
             }
         }
+    }
+
+    /// A tab item that names itself, says it is a tab, and says whether it is
+    /// the current one.
+    ///
+    /// The symbol carries `accessibilityHidden` so VoiceOver never reads the SF
+    /// Symbol name — "sun max fill" is an asset identifier, not a word anyone
+    /// chose to say aloud. The label is set explicitly rather than left to be
+    /// inferred, and the selected state goes on `accessibilityValue`, which is
+    /// what makes the announcement "Today, tab, selected" instead of the bare
+    /// "Selected" the tab bar was producing.
+    private func tabLabel(_ tab: AppTab) -> some View {
+        Label {
+            Text(tab.label)
+        } icon: {
+            Image(systemName: tab.icon)
+                .accessibilityHidden(true)
+        }
+        .accessibilityLabel(tab.label)
+        .accessibilityValue(selectedTab == tab ? "Selected" : "")
+        .accessibilityAddTraits(selectedTab == tab ? [.isButton, .isSelected] : [.isButton])
+        .accessibilityHint("Opens the \(tab.label) tab")
     }
 }
 

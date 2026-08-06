@@ -73,7 +73,6 @@
 		BE4A03DE2FD08436002102BD /* Exceptions for "LifeTasksWidget" folder in "Life" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				Assets.xcassets,
 				SharedHabitStore.swift,
 				WorkoutActivityAttributes.swift,
 			);
@@ -552,10 +551,7 @@
 				DEVELOPMENT_TEAM = J87GB8M4RD;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "Life uses Health data to track your body composition.";
-				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
-				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Life uses your location in the background to automatically track the countries and regions you visit on your world map.";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Life uses your location to reveal the world map as you explore.";
+				INFOPLIST_FILE = Life/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -567,7 +563,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = uk.co.prolineroofingandsolar.life.Life;
+				PRODUCT_BUNDLE_IDENTIFIER = uk.co.prolineroofingandsolar.life;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -588,10 +584,7 @@
 				DEVELOPMENT_TEAM = J87GB8M4RD;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSHealthShareUsageDescription = "Life uses Health data to track your body composition.";
-				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
-				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Life uses your location in the background to automatically track the countries and regions you visit on your world map.";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Life uses your location to reveal the world map as you explore.";
+				INFOPLIST_FILE = Life/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -603,7 +596,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = uk.co.prolineroofingandsolar.life.Life;
+				PRODUCT_BUNDLE_IDENTIFIER = uk.co.prolineroofingandsolar.life;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -702,7 +695,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = uk.co.prolineroofingandsolar.life.Life.LifeTasksWidget;
+				PRODUCT_BUNDLE_IDENTIFIER = uk.co.prolineroofingandsolar.life.LifeTasksWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -730,7 +723,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = uk.co.prolineroofingandsolar.life.Life.LifeTasksWidget;
+				PRODUCT_BUNDLE_IDENTIFIER = uk.co.prolineroofingandsolar.life.LifeTasksWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;

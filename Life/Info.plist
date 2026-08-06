@@ -2,33 +2,50 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <!-- This file is the Life target's real Info.plist.
+
+         It was not, until now. The target had GENERATE_INFOPLIST_FILE = YES and
+         no INFOPLIST_FILE, so Xcode synthesised a plist from the
+         INFOPLIST_KEY_* build settings and this file was compiled into nothing.
+         Everything below that has no INFOPLIST_KEY_ equivalent was therefore
+         absent from the built app — which is why BGTaskScheduler warned that
+         the health refresh identifier was not advertised, and why the app's
+         background modes were never declared.
+
+         Generation is still on, so Xcode merges the INFOPLIST_KEY_* settings
+         (scene manifest, launch screen, iPad orientations) into this file at
+         build time. Keys that exist in both places would conflict, so anything
+         with an INFOPLIST_KEY_ counterpart lives in the build settings and not
+         here. -->
+
     <key>CFBundleName</key>
     <string>Life</string>
     <key>CFBundleDisplayName</key>
     <string>Life</string>
+
+    <!-- Build variables, not literals. A hardcoded identifier here silently
+         overrides PRODUCT_BUNDLE_IDENTIFIER, which is one of the two ways the
+         Firebase bundle-ID mismatch could come back. -->
     <key>CFBundleIdentifier</key>
-    <string>uk.co.prolineroofingandsolar.life</string>
+    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>$(CURRENT_PROJECT_VERSION)</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0</string>
+    <string>$(MARKETING_VERSION)</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleExecutable</key>
     <string>$(EXECUTABLE_NAME)</string>
+
     <key>LSRequiresIPhoneOS</key>
     <true/>
-    <key>UILaunchStoryboardName</key>
-    <string>LaunchScreen</string>
+
+    <!-- arm64, not armv7. Every device that can run iOS 17 is 64-bit, and
+         requiring a capability no shipping device has is a rejected build
+         rather than a warning. -->
     <key>UIRequiredDeviceCapabilities</key>
     <array>
-        <string>armv7</string>
-    </array>
-    <key>UISupportedInterfaceOrientations</key>
-    <array>
-        <string>UIInterfaceOrientationPortrait</string>
-        <string>UIInterfaceOrientationLandscapeLeft</string>
-        <string>UIInterfaceOrientationLandscapeRight</string>
+        <string>arm64</string>
     </array>
 
     <!-- Live Activities (ActivityKit) -->
@@ -43,8 +60,8 @@
     <key>NSHealthUpdateUsageDescription</key>
     <string>Life does not write to Apple Health.</string>
 
-    <!-- App Group for widget sync -->
-    <!-- App Group entitlement must be set in Entitlements file, not Info.plist -->
+    <!-- App Group for widget sync.
+         The entitlement lives in Life.entitlements, not here. -->
 
     <!-- Background modes.
          `processing` accompanies the BGTaskScheduler identifier below;
@@ -58,8 +75,12 @@
     </array>
 
     <!-- Background health refresh. Must match
-         HealthBackgroundRefresh.taskIdentifier exactly: BGTaskScheduler
-         traps at registration if the identifier isn't listed here. -->
+         HealthBackgroundRefresh.taskIdentifier exactly: BGTaskScheduler traps
+         at registration if the identifier isn't listed here, and it is only
+         listed here if this file is actually the target's Info.plist — see the
+         note at the top. `AppConfiguration.validate()` checks the two agree at
+         launch so a future rename fails loudly in debug rather than turning
+         background refresh off in silence. -->
     <key>BGTaskSchedulerPermittedIdentifiers</key>
     <array>
         <string>uk.co.prolineroofingandsolar.life.health-refresh</string>
@@ -75,6 +96,8 @@
     <key>CFBundleURLTypes</key>
     <array>
         <dict>
+            <key>CFBundleURLName</key>
+            <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
             <key>CFBundleURLSchemes</key>
             <array>
                 <string>life</string>

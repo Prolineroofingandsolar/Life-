@@ -3,27 +3,97 @@ import Foundation
 
 // MARK: - Date Extensions
 
-let _dayKeyFormatter: DateFormatter = {
-    let f = DateFormatter()
-    f.dateFormat = "yyyy-MM-dd"
-    f.locale = Locale(identifier: "en_US_POSIX")
-    return f
-}()
+// MARK: Day keys
+
+/// The app's day boundary, in one place.
+///
+/// Every "which day is this?" question in Life resolves here, and it resolves
+/// through `Calendar` rather than through a formatter. That is the whole point
+/// of the type.
+///
+/// A `DateFormatter` captures `TimeZone.current` *when it is created* and never
+/// looks again. A single long-lived formatter built at launch therefore keeps
+/// answering in the launch time zone: cross a zone boundary, or sit through the
+/// DST change, and `Date().dayKey` starts naming a day the user is no longer
+/// in. Every consumer — habit logs, care days, health days, streaks — silently
+/// files against the wrong key, and the symptom is "yesterday's data won't go
+/// away" rather than anything that points at a formatter.
+///
+/// `Calendar.current` is re-resolved on each access and honours both the zone
+/// and any DST offset in force on the date being asked about, so the same
+/// instant asked about twice either side of a change gives the right answer
+/// both times.
+enum DayKey {
+
+    /// The calendar all day boundaries are measured with.
+    ///
+    /// Gregorian explicitly, so a device set to a Buddhist or Japanese calendar
+    /// doesn't produce keys like "2569-08-06" that sort and parse differently
+    /// from every key already stored. The *time zone* still comes from the
+    /// user's current locale, because the day boundary that matters is the one
+    /// they're living in.
+    static var calendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        calendar.locale = Locale(identifier: "en_US_POSIX")
+        return calendar
+    }
+
+    /// "yyyy-MM-dd" for the local day containing `date`.
+    static func string(for date: Date, calendar: Calendar = DayKey.calendar) -> String {
+        let c = calendar.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
+    }
+
+    /// The start of the local day a key names, or nil if the key is malformed.
+    ///
+    /// Returns local midnight rather than midnight UTC. Parsing "2026-08-06" as
+    /// a UTC instant and then formatting it back in a negative offset yields
+    /// the 5th, which is how a stored key can decay by a day each round trip.
+    static func date(from key: String, calendar: Calendar = DayKey.calendar) -> Date? {
+        let parts = key.split(separator: "-")
+        guard parts.count == 3,
+              let year = Int(parts[0]), let month = Int(parts[1]), let day = Int(parts[2])
+        else { return nil }
+
+        var components = DateComponents()
+        components.year = year
+        components.month = month
+        components.day = day
+        // Midday, then rounded down. Asking for hour 0 directly fails on the
+        // spring-forward date in zones that skip midnight itself (Santiago,
+        // Beirut), where 00:00 does not exist and `date(from:)` returns nil.
+        components.hour = 12
+        guard let noon = calendar.date(from: components) else { return nil }
+        return calendar.startOfDay(for: noon)
+    }
+
+    /// Today's key, in the time zone in force right now.
+    static func today(_ now: Date = Date(), calendar: Calendar = DayKey.calendar) -> String {
+        string(for: now, calendar: calendar)
+    }
+}
 
 extension Date {
+    /// The local day this instant falls in, as "yyyy-MM-dd".
     var dayKey: String {
-        _dayKeyFormatter.string(from: self)
+        DayKey.string(for: self)
     }
 
     var startOfDay: Date {
         Calendar.current.startOfDay(for: self)
     }
 
+    /// The last instant of the local day.
+    ///
+    /// Derived by stepping to the next day's start and going back a second,
+    /// rather than by adding 23:59:59 — on a day that gains or loses an hour to
+    /// DST, "start plus a day" is 23 or 25 hours, and only the calendar knows
+    /// which.
     var endOfDay: Date {
-        var comps = DateComponents()
-        comps.day = 1
-        comps.second = -1
-        return Calendar.current.date(byAdding: comps, to: startOfDay) ?? self
+        let calendar = Calendar.current
+        guard let nextDay = calendar.date(byAdding: .day, value: 1, to: startOfDay) else { return self }
+        return nextDay.addingTimeInterval(-1)
     }
 
     var isToday: Bool {

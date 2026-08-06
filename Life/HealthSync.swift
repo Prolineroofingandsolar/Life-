@@ -84,11 +84,37 @@ enum HealthSync {
         healthKit: HealthKitManager,
         daysBack: Int
     ) async -> Outcome {
+        // Captured before the merge so "did this sync actually change anything?"
+        // is a comparison rather than a guess. A sync that returns the same
+        // figures must not invalidate a cached recommendation — that is how a
+        // two-minute foreground poll turns into a paid model call every two
+        // minutes — and a sync that changes them must.
+        let before = appState.healthSnapshot.materialHash
+
+        appState.isSyncingHealth = true
+        defer { appState.isSyncingHealth = false }
+
+        let outcome: Outcome
         switch source(for: appState.healthSettings) {
-        case .fitbit:      return await syncFitbit(appState: appState, daysBack: daysBack)
-        case .appleHealth: return await syncAppleHealth(appState: appState, healthKit: healthKit, daysBack: daysBack)
-        case .none:        return Outcome(source: .none, dayCount: 0, message: nil)
+        case .fitbit:
+            outcome = await syncFitbit(appState: appState, daysBack: daysBack)
+        case .appleHealth:
+            outcome = await syncAppleHealth(appState: appState, healthKit: healthKit, daysBack: daysBack)
+        case .none:
+            outcome = Outcome(source: .none, dayCount: 0, message: nil)
         }
+
+        // Rebuilt unconditionally. A sync that rewrites an existing day's values
+        // moves neither a record count nor today's step total, so the memo token
+        // alone would keep serving the pre-sync figures — which is the stale
+        // health data this whole change exists to stop.
+        appState.invalidateHealthSnapshot()
+        let after = appState.healthSnapshot
+        if after.materialHash != before {
+            CoachCache.shared.snapshotDidChange(to: after)
+        }
+
+        return outcome
     }
 
     /// How stale data has to be before returning to the app triggers a fetch.

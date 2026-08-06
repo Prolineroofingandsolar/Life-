@@ -77,21 +77,27 @@ enum CoachContextBuilder {
         appState: AppState,
         permissions: Permissions = Permissions(),
         now: Date = Date(),
-        calendar: Calendar = .current
+        calendar: Calendar = .current,
+        snapshot: HealthSnapshot? = nil
     ) -> CoachContext {
         var warnings: [String] = []
 
-        let health = appState.healthHistory
-        let settings = appState.healthSettings
+        // One snapshot for every health figure below. Passed in wherever the
+        // caller already holds one — the card, the briefing and Ask Coach all
+        // render from the same instance, so a figure cannot differ between them
+        // because one of them rebuilt half a second later. The fallback builds
+        // against the `now` that was passed rather than the wall clock, so a
+        // test can pin the moment and get a context and a snapshot describing it.
+        let health = snapshot ?? HealthSnapshotBuilder.build(appState: appState, now: now)
 
         let sleep = permissions.health
-            ? sleepSection(appState: appState, health: health, settings: settings, warnings: &warnings)
+            ? sleepSection(health, warnings: &warnings)
             : nil
         let recovery = permissions.health
-            ? recoverySection(appState: appState, health: health, settings: settings, warnings: &warnings)
+            ? recoverySection(health, warnings: &warnings)
             : nil
         let activity = permissions.activity
-            ? activitySection(appState: appState, settings: settings, warnings: &warnings)
+            ? activitySection(health, appState: appState, warnings: &warnings)
             : nil
         let training = permissions.training
             ? trainingSection(appState: appState, now: now, calendar: calendar)
@@ -100,10 +106,22 @@ enum CoachContextBuilder {
             ? tasksSection(appState: appState, permissions: permissions, now: now, calendar: calendar)
             : nil
         let habits = permissions.habits
-            ? habitsSection(appState: appState, permissions: permissions)
+            ? habitsSection(appState: appState, permissions: permissions, dayKey: health.dayKey)
             : nil
 
-        return CoachContext(
+        if !health.isFresh && health.hasConnectedSource {
+            warnings.append(
+                "Health data hasn't refreshed recently — \(health.freshnessStatement)."
+            )
+        }
+        if !health.hasConnectedSource {
+            warnings.append("No tracker is connected, so there are no health measurements at all.")
+        }
+        for failure in health.syncFailures {
+            warnings.append("\(failure) didn't come through on the last sync.")
+        }
+
+        var context = CoachContext(
             generatedAt: now,
             timeOfDay: .from(now, calendar: calendar),
             goals: goals(appState: appState),
@@ -116,6 +134,51 @@ enum CoachContextBuilder {
             dataWarnings: warnings,
             mutedCategories: permissions.mutedCategories
         )
+
+        context.dayKey = health.dayKey
+        context.timeZoneIdentifier = health.timeZoneIdentifier
+        context.dataSource = permissions.health || permissions.activity ? health.source : nil
+        context.dataUpdatedAt = permissions.health || permissions.activity ? health.lastSyncedAt : nil
+        context.dataIsFresh = health.isFresh
+        context.comparisons = comparisons(
+            health, appState: appState, permissions: permissions, now: now, calendar: calendar
+        )
+
+        return context
+    }
+
+    // MARK: Comparisons
+
+    /// Today against yesterday, this week against last, as a few integers.
+    ///
+    /// Gated by the same permissions as the figures they compare — a delta is
+    /// still the data, just arithmetic away.
+    private static func comparisons(
+        _ health: HealthSnapshot,
+        appState: AppState,
+        permissions: Permissions,
+        now: Date,
+        calendar: Calendar
+    ) -> CoachContext.Comparisons? {
+        var out = CoachContext.Comparisons()
+
+        if permissions.health {
+            out.sleepVsYesterdayMinutes = health.sleepChangeSinceYesterdayMinutes
+            out.restingHeartRateVsYesterday = health.restingHeartRateChangeSinceYesterday
+        }
+        if permissions.activity {
+            out.stepsVsYesterday = health.stepsChangeSinceYesterday
+        }
+        if permissions.training {
+            let finished = appState.completedWorkouts.compactMap(\.finishedAt)
+            if let thisWeekStart = calendar.dateInterval(of: .weekOfYear, for: now)?.start,
+               let lastWeekStart = calendar.date(byAdding: .weekOfYear, value: -1, to: thisWeekStart) {
+                out.workoutsThisWeek = finished.filter { $0 >= thisWeekStart }.count
+                out.workoutsLastWeek = finished.filter { $0 >= lastWeekStart && $0 < thisWeekStart }.count
+            }
+        }
+
+        return out == CoachContext.Comparisons() ? nil : out
     }
 
     // MARK: Goals
@@ -163,142 +226,156 @@ enum CoachContextBuilder {
     // MARK: Sleep
 
     private static func sleepSection(
-        appState: AppState,
-        health: [HealthDay],
-        settings: HealthSettings,
+        _ health: HealthSnapshot,
         warnings: inout [String]
     ) -> CoachContext.Sleep? {
-        guard let night = appState.lastNightSleep else {
-            warnings.append("No sleep recorded for last night.")
+        let duration = health.sleepMinutes
+        guard duration.state.hasValue, let minutes = duration.value else {
+            warnings.append(
+                health.hasConnectedSource
+                    ? "No sleep recorded for last night."
+                    : "No sleep recorded — no tracker is connected."
+            )
             return nil
         }
 
-        // Read, don't recompute. This is the same score the Sleep screen shows.
-        let score = HealthInsights.sleepScore(health, settings: settings)?.value
-
-        // The user's own recent average, not a population figure. Nil until
-        // there are enough nights for an average to mean anything.
-        let baseline = appState.healthBaseline({ $0.sleepMin.map(Double.init) })
-        let vsBaseline: Int? = {
-            guard let minutes = night.sleepMin, let baseline else { return nil }
-            return Int((Double(minutes) - baseline).rounded())
-        }()
-
-        // Stage coverage is the honest measure of whether a night was properly
-        // recorded. A band that lost contact for three hours still reports a
-        // duration; it just isn't one worth being confident about.
-        let coverage = night.stageCoverage
-        let confidence: CoachContext.Confidence
-        let quality: CoachContext.DataQuality
-        switch coverage {
-        case .some(let value) where value >= 0.8:
-            confidence = .high
-            quality = .verified
-        case .some(let value) where value >= 0.5:
-            confidence = .medium
-            quality = .partial
-            warnings.append("Last night's sleep stages are only \(Int(value * 100))% covered.")
-        case .some(let value):
-            confidence = .low
-            quality = .partial
-            warnings.append("Last night's sleep is poorly recorded — \(Int(value * 100))% stage coverage.")
-        case nil:
-            // No stage breakdown at all. A total duration is still useful.
-            confidence = night.sleepMin == nil ? .low : .medium
-            quality = night.sleepMin == nil ? .missing : .partial
+        if duration.state == .stale, let day = duration.dayKey {
+            warnings.append("The most recent sleep on file is from \(day), not last night.")
+        }
+        switch duration.confidence {
+        case .low:
+            warnings.append("Last night's sleep is poorly recorded, so treat the figure as approximate.")
+        case .medium where duration.state == .partial:
+            warnings.append("Last night's sleep stages are only partly covered.")
+        default:
+            break
         }
 
-        if vsBaseline == nil {
-            warnings.append("Not enough sleep history yet to compare last night against your usual.")
+        let vsBaseline = health.sleepVsBaselineMinutes
+        if vsBaseline.state == .insufficientHistory {
+            warnings.append(
+                "Not enough sleep history yet to compare last night against your usual — "
+                + "\(vsBaseline.sampleCount) of \(vsBaseline.requiredSamples) nights recorded."
+            )
         }
 
         return CoachContext.Sleep(
-            score: score,
-            durationMinutes: night.sleepMin,
-            vsBaselineMinutes: vsBaseline,
-            efficiencyPercent: night.sleepEfficiency.map { Int(($0 * 100).rounded()) },
-            confidence: confidence,
-            quality: quality
+            score: health.sleepScore.value,
+            durationMinutes: minutes,
+            // Formatted once, here, from the same helper the Today screen uses.
+            durationText: HealthInsights.formatDuration(minutes),
+            vsBaselineMinutes: vsBaseline.value,
+            efficiencyPercent: health.sleepEfficiencyPercent.value,
+            confidence: duration.confidence.asContextConfidence,
+            quality: duration.state.asDataQuality,
+            state: duration.state
         )
     }
 
     // MARK: Recovery
 
+    /// Recovery, whenever a measurement exists.
+    ///
+    /// The old version returned nil unless a baseline could be computed, and the
+    /// warning it emitted in that case said "No recovery data". So the coach
+    /// denied readings the Health tab was displaying at that exact moment. A
+    /// measurement without a baseline is now sent, marked
+    /// `insufficientHistory`, and the sentence that goes with it comes from
+    /// `HealthSnapshot.recoveryStatement` so the coach and the screen say the
+    /// same thing.
     private static func recoverySection(
-        appState: AppState,
-        health: [HealthDay],
-        settings: HealthSettings,
+        _ health: HealthSnapshot,
         warnings: inout [String]
     ) -> CoachContext.Recovery? {
-        let hrvTrend = HealthInsights.trend(health, metric: { $0.hrvMs })
-        let rhrTrend = HealthInsights.trend(health, metric: { $0.restingHr })
-        let readiness = HealthInsights.readinessScore(health, settings: settings)?.value
+        let hrv = health.hrvMs
+        let rhr = health.restingHeartRate
 
-        guard hrvTrend != nil || rhrTrend != nil || readiness != nil else {
-            warnings.append("No recovery data — nothing recorded for HRV or resting heart rate.")
+        guard hrv.state.hasValue || rhr.state.hasValue else {
+            warnings.append(health.recoveryStatement)
             return nil
         }
 
-        // Both trends nil-out below a minimum sample count, so a status here
-        // always rests on a real baseline rather than one or two readings.
-        let confidence: CoachContext.Confidence = (hrvTrend != nil && rhrTrend != nil)
-            ? .high
-            : .medium
+        let readiness = health.readiness
+        if readiness.state == .insufficientHistory || readiness.state == .missing {
+            warnings.append(health.recoveryStatement)
+        }
+        if hrv.state == .stale || rhr.state == .stale {
+            warnings.append("Recovery figures are not from today.")
+        }
+
+        // The section's own state is the weaker of the two readings: advice can
+        // be no surer than the shakier half of what it rests on.
+        let state = [hrv.state, rhr.state]
+            .filter { $0.hasValue }
+            .min(by: { rank($0) < rank($1) }) ?? .missing
+
+        let bothInterpretable = hrv.state == .ready && rhr.state == .ready
 
         return CoachContext.Recovery(
-            hrvStatus: status(for: hrvTrend, higherIsBetter: true),
-            restingHeartRateStatus: status(for: rhrTrend, higherIsBetter: false),
-            readinessScore: readiness,
-            confidence: confidence,
-            quality: (hrvTrend != nil && rhrTrend != nil) ? .verified : .partial
+            hrvStatus: status(for: health.hrvBaseline),
+            restingHeartRateStatus: status(for: health.restingHeartRateBaseline),
+            readinessScore: readiness.value,
+            confidence: bothInterpretable ? .high : .medium,
+            quality: state.asDataQuality,
+            state: state,
+            hasHrvMeasurement: hrv.state.hasValue,
+            hasRestingHeartRateMeasurement: rhr.state.hasValue,
+            baselineNightsRecorded: max(hrv.sampleCount, rhr.sampleCount),
+            baselineNightsRequired: HealthSnapshot.baselineSampleRequirement
         )
     }
 
-    /// Turns a trend into a word.
+    /// Orders states worst-first, so "the weaker of the two" has a definition.
+    private static func rank(_ state: MetricState) -> Int {
+        switch state {
+        case .missing:              return 0
+        case .stale:                return 1
+        case .insufficientHistory:  return 2
+        case .partial:              return 3
+        case .ready:                return 4
+        }
+    }
+
+    /// Turns a baseline comparison into a word.
     ///
     /// `isMeaningful` is what stops a 1% wobble being reported as a change —
     /// the brief's "avoid dramatic conclusions from one reading", enforced here
     /// rather than left to the model's judgement.
     private static func status(
-        for trend: HealthInsights.Trend?,
-        higherIsBetter: Bool
+        for comparison: BaselineComparison?
     ) -> CoachContext.Recovery.BaselineStatus? {
-        guard let trend else { return nil }
-        guard trend.isMeaningful else { return .normal }
-        let above = trend.delta > 0
-        return above ? .aboveBaseline : .belowBaseline
+        guard let comparison else { return nil }
+        guard comparison.isMeaningful else { return .normal }
+        return comparison.direction == .above ? .aboveBaseline : .belowBaseline
     }
 
     // MARK: Activity
 
     private static func activitySection(
+        _ health: HealthSnapshot,
         appState: AppState,
-        settings: HealthSettings,
         warnings: inout [String]
     ) -> CoachContext.Activity? {
-        let todayKey = appState.todayKey
-        let care = appState.careDays[todayKey]
-        let today = appState.healthDays[todayKey]
+        let steps = health.steps
 
-        // Zero steps stored is not the same as no steps recorded, and the
-        // difference decides whether the right advice is "get moving" or "your
-        // tracker hasn't synced". `CareDay.steps` is non-optional and defaults
-        // to 0, so absence is inferred from the record not existing.
-        let hasStepRecord = (care?.steps ?? 0) > 0
-
-        if !hasStepRecord {
-            warnings.append("No steps recorded today yet — the tracker may not have synced.")
+        if !steps.state.hasValue {
+            warnings.append(
+                health.hasConnectedSource
+                    ? "No steps recorded today yet — the tracker may not have synced."
+                    : "No steps recorded — no tracker is connected."
+            )
         }
 
         return CoachContext.Activity(
-            steps: hasStepRecord ? care?.steps : nil,
+            steps: steps.value,
             stepGoal: appState.careSettings.stepGoal > 0 ? appState.careSettings.stepGoal : nil,
-            activeMinutes: today?.exerciseMinutes,
-            activeMinutesGoal: settings.exerciseGoalMinutes,
+            activeMinutes: health.activeMinutes.value,
+            activeMinutesGoal: appState.healthSettings.exerciseGoalMinutes,
             // Any figure for today is still accumulating, by definition.
             isPartialDay: true,
-            source: HealthSync.source(for: settings).provider?.detailedName,
-            quality: hasStepRecord ? .partial : .missing
+            source: health.source,
+            quality: steps.state.asDataQuality,
+            state: steps.state
         )
     }
 
@@ -426,13 +503,15 @@ enum CoachContextBuilder {
 
     private static func habitsSection(
         appState: AppState,
-        permissions: Permissions
+        permissions: Permissions,
+        dayKey todayKey: String
     ) -> CoachContext.Habits? {
         let active = appState.habits.filter { !$0.isArchived }
         guard !active.isEmpty else { return nil }
 
-        let todayKey = appState.todayKey
-
+        // The day key comes from the snapshot rather than being recomputed. A
+        // context built either side of midnight would otherwise count habits
+        // against one day and sleep against another.
         func isComplete(_ habit: Habit) -> Bool {
             let log = habit.logs.first { $0.dayKey == todayKey }
             let slipped = log?.slipped == true
@@ -466,6 +545,34 @@ enum CoachContextBuilder {
 }
 
 // MARK: - Supporting
+
+/// Bridges the snapshot's vocabulary to the coach's.
+///
+/// Two enums rather than one because they answer different questions and are
+/// consumed by different things — `MetricState` is what the app holds, and
+/// `DataQuality` is what the model is told. The mapping lives here, once, so a
+/// new state can't reach the wire as an unconsidered default.
+extension MetricState {
+    var asDataQuality: CoachContext.DataQuality {
+        switch self {
+        case .missing:             return .missing
+        case .stale:               return .suspect
+        case .insufficientHistory: return .partial
+        case .partial:             return .partial
+        case .ready:               return .verified
+        }
+    }
+}
+
+extension DataConfidence {
+    var asContextConfidence: CoachContext.Confidence {
+        switch self {
+        case .low:    return .low
+        case .medium: return .medium
+        case .high:   return .high
+        }
+    }
+}
 
 private extension TaskPriority {
     /// Ordering weight. `TaskPriority` is a display type, so the ranking lives

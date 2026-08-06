@@ -166,56 +166,118 @@ final class CoachService {
     /// than presenting a rule-based line as though a model wrote it.
     struct Outcome {
         var recommendation: CoachRecommendation
-        /// Set when the cloud was tried and didn't work. Shown quietly — the
-        /// recommendation is still usable.
-        var note: String?
+        /// Where the words came from, when, and whether Gemini was involved.
+        /// Always present — an outcome with no provenance is the silent
+        /// fallback this type was added to make impossible.
+        var provenance: CoachProvenance
+
+        /// The user-facing failure note, if there was one. Kept as a separate
+        /// accessor so existing call sites reading `note` keep working.
+        var note: String? { provenance.failureNote }
     }
 
     // MARK: Recommendation
 
     func recommendation(
         for context: CoachContext,
-        settings: CoachSettings
+        settings: CoachSettings,
+        snapshot: HealthSnapshot? = nil
     ) async -> Outcome {
+        let dataUpdatedAt = snapshot?.lastSyncedAt ?? context.dataUpdatedAt
+
         guard settings.enabled else {
-            return Outcome(recommendation: LocalCoach.recommend(from: context), note: nil)
+            let local = LocalCoach.recommend(from: context)
+            return Outcome(
+                recommendation: local,
+                provenance: .local(at: local.generatedAt, dataUpdatedAt: dataUpdatedAt)
+            )
         }
 
-        if let cached = cache.recommendation(for: context) {
-            return Outcome(recommendation: cached, note: nil)
+        // A cached answer keeps the provenance of whatever produced it, plus
+        // the fact that it was cached. Relabelling a stored local suggestion as
+        // fresh Gemini output when it is read back would be the same lie the
+        // silent fallback was telling, just later.
+        if let cached = cache.recommendation(for: context, snapshot: snapshot) {
+            var provenance = CoachProvenance(
+                origin: cached.recommendation.origin == .cloud ? .gemini : .onDevice,
+                generatedAt: cached.recommendation.generatedAt,
+                wasCached: true,
+                dataUpdatedAt: cached.snapshotTakenAt ?? dataUpdatedAt
+            )
+            provenance.isRetryable = false
+            return Outcome(recommendation: cached.recommendation, provenance: provenance)
         }
 
         guard settings.mayUseCloud else {
             let local = LocalCoach.recommend(from: context)
-            cache.store(local, for: context)
-            return Outcome(recommendation: local, note: nil)
+            cache.store(local, for: context, snapshot: snapshot)
+            return Outcome(
+                recommendation: local,
+                provenance: .local(at: local.generatedAt, dataUpdatedAt: dataUpdatedAt)
+            )
         }
 
         // Refusing here saves a round trip that the server would reject anyway,
         // and lets the card explain itself instead of showing a failure.
         guard usage.canAffordCall() else {
             let local = LocalCoach.recommend(from: context)
-            cache.store(local, for: context)
+            cache.store(local, for: context, snapshot: snapshot)
             return Outcome(
                 recommendation: local,
-                note: "This month's AI limit has been reached — showing a local suggestion."
+                provenance: CoachProvenance(
+                    origin: .usageLimited,
+                    generatedAt: local.generatedAt,
+                    dataUpdatedAt: dataUpdatedAt,
+                    failureNote: "This month's AI limit has been reached, so this is Life's own suggestion.",
+                    isRetryable: false
+                )
             )
         }
 
         do {
             let recommendation = try await fetchRecommendation(context: context, settings: settings)
-            cache.store(recommendation, for: context)
-            return Outcome(recommendation: recommendation, note: nil)
+            cache.store(recommendation, for: context, snapshot: snapshot)
+            return Outcome(
+                recommendation: recommendation,
+                provenance: .cloud(at: recommendation.generatedAt, dataUpdatedAt: dataUpdatedAt)
+            )
         } catch {
             // The fallback, not an error state. A card that says "couldn't
             // reach the coach" where a suggestion belongs has failed at its job
-            // twice over: no advice, and a complaint.
+            // twice over: no advice, and a complaint. What it must not do is
+            // pretend — hence the explicit `offlineFallback` label below.
             let local = LocalCoach.recommend(from: context)
-            cache.store(local, for: context)
+            cache.store(local, for: context, snapshot: snapshot)
+            let coachError = error as? CoachError
             return Outcome(
                 recommendation: local,
-                note: (error as? CoachError)?.errorDescription
+                provenance: CoachProvenance(
+                    origin: .offlineFallback,
+                    generatedAt: local.generatedAt,
+                    dataUpdatedAt: dataUpdatedAt,
+                    // Already written for a person by `CoachError`. No status
+                    // code, endpoint, request body or credential reaches here.
+                    failureNote: coachError?.errorDescription,
+                    isRetryable: Self.isRetryable(coachError)
+                )
             )
+        }
+    }
+
+    /// Whether trying again could plausibly succeed.
+    ///
+    /// Shared with Ask Coach so a Retry button appears in the same
+    /// circumstances in both places. A spend ceiling, a switched-off feature or
+    /// a missing sign-in fails identically on the second attempt, and offering
+    /// Retry there teaches people the button doesn't work.
+    ///
+    /// `nonisolated` because it is a pure function of an error value and is
+    /// called from wherever a failure is being rendered — including tests that
+    /// have no reason to hop to the main actor to ask a question about an enum.
+    nonisolated static func isRetryable(_ error: CoachError?) -> Bool {
+        switch error {
+        case .transport, .invalidResponse, .none: return true
+        case .disabled, .notConfigured, .notSignedIn, .limitReached: return false
         }
     }
 
@@ -330,32 +392,98 @@ final class CoachService {
 
     // MARK: Briefings
 
+    /// A briefing, plus how it was produced and whether the day has since
+    /// overtaken it.
+    struct BriefingOutcome {
+        var briefing: CoachBriefing
+        var provenance: CoachProvenance
+        /// True when sleep or recovery has changed since it was written. The
+        /// briefing still stands — one per morning — but the card says so
+        /// rather than presenting figures the Health tab now disagrees with.
+        var isOutdated: Bool = false
+    }
+
     func briefing(
         kind: CoachBriefing.Kind,
         context: CoachContext,
-        settings: CoachSettings
-    ) async -> CoachBriefing {
+        settings: CoachSettings,
+        snapshot: HealthSnapshot? = nil
+    ) async -> BriefingOutcome {
+        let dataUpdatedAt = snapshot?.lastSyncedAt ?? context.dataUpdatedAt
+
         // One a day, whatever else happens. A briefing regenerated at eleven
         // because the step count moved is a different briefing about the same
-        // morning.
-        if let cached = cache.briefing(kind: kind) { return cached }
+        // morning — so it is reused, and flagged if the overnight figures behind
+        // it have since been corrected.
+        if let cached = cache.briefing(kind: kind, snapshot: snapshot) {
+            return BriefingOutcome(
+                briefing: cached.briefing,
+                provenance: CoachProvenance(
+                    origin: cached.briefing.origin == .cloud ? .gemini : .onDevice,
+                    generatedAt: cached.briefing.generatedAt,
+                    wasCached: true,
+                    dataUpdatedAt: cached.snapshotTakenAt ?? dataUpdatedAt
+                ),
+                isOutdated: cached.isOutdated
+            )
+        }
 
-        guard settings.enabled else { return LocalCoach.briefing(kind: kind, from: context) }
-
-        guard settings.mayUseCloud, usage.canAffordCall() else {
+        guard settings.enabled else {
             let local = LocalCoach.briefing(kind: kind, from: context)
-            cache.store(local)
-            return local
+            return BriefingOutcome(
+                briefing: local,
+                provenance: .local(at: local.generatedAt, dataUpdatedAt: dataUpdatedAt)
+            )
+        }
+
+        guard settings.mayUseCloud else {
+            let local = LocalCoach.briefing(kind: kind, from: context)
+            cache.store(local, snapshot: snapshot)
+            return BriefingOutcome(
+                briefing: local,
+                provenance: .local(at: local.generatedAt, dataUpdatedAt: dataUpdatedAt)
+            )
+        }
+
+        guard usage.canAffordCall() else {
+            let local = LocalCoach.briefing(kind: kind, from: context)
+            cache.store(local, snapshot: snapshot)
+            return BriefingOutcome(
+                briefing: local,
+                provenance: CoachProvenance(
+                    origin: .usageLimited,
+                    generatedAt: local.generatedAt,
+                    dataUpdatedAt: dataUpdatedAt,
+                    failureNote: "This month's AI limit has been reached, so this is Life's own summary."
+                )
+            )
         }
 
         do {
             let briefing = try await fetchBriefing(kind: kind, context: context, settings: settings)
-            cache.store(briefing)
-            return briefing
+            cache.store(briefing, snapshot: snapshot)
+            return BriefingOutcome(
+                briefing: briefing,
+                provenance: .cloud(at: briefing.generatedAt, dataUpdatedAt: dataUpdatedAt)
+            )
         } catch {
             let local = LocalCoach.briefing(kind: kind, from: context)
-            cache.store(local)
-            return local
+            // Cached even though it's a fallback: without this the failed call
+            // is retried on every appearance of the Today screen, which the
+            // brief forbids and which costs a request each time the view
+            // scrolls back into existence.
+            cache.store(local, snapshot: snapshot)
+            let coachError = error as? CoachError
+            return BriefingOutcome(
+                briefing: local,
+                provenance: CoachProvenance(
+                    origin: .offlineFallback,
+                    generatedAt: local.generatedAt,
+                    dataUpdatedAt: dataUpdatedAt,
+                    failureNote: coachError?.errorDescription,
+                    isRetryable: Self.isRetryable(coachError)
+                )
+            )
         }
     }
 

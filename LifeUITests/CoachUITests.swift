@@ -45,7 +45,7 @@ final class CoachUITests: XCTestCase {
     @MainActor
     func testCoachCardAppearsOnToday() throws {
         let app = launch()
-        let header = app.staticTexts["Your next best action"]
+        let header = app.staticTexts["Do this next"]
         // Generous: the first build of the context reads a year of health days.
         XCTAssertTrue(header.waitForExistence(timeout: 10), "The coach card should be on Today")
     }
@@ -53,7 +53,7 @@ final class CoachUITests: XCTestCase {
     @MainActor
     func testCardOffersAnExplanation() throws {
         let app = launch()
-        XCTAssertTrue(app.staticTexts["Your next best action"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Do this next"].waitForExistence(timeout: 10))
 
         let why = app.buttons["Why this suggestion?"]
         XCTAssertTrue(why.waitForExistence(timeout: 5), "Every suggestion must be explainable")
@@ -69,7 +69,7 @@ final class CoachUITests: XCTestCase {
     @MainActor
     func testSuggestionCanBeDismissed() throws {
         let app = launch()
-        XCTAssertTrue(app.staticTexts["Your next best action"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Do this next"].waitForExistence(timeout: 10))
 
         let notToday = app.buttons["Not today"]
         XCTAssertTrue(notToday.waitForExistence(timeout: 5))
@@ -87,7 +87,7 @@ final class CoachUITests: XCTestCase {
     @MainActor
     func testNothingIsSentBeforeConsent() throws {
         let app = launch()
-        XCTAssertTrue(app.staticTexts["Your next best action"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Do this next"].waitForExistence(timeout: 10))
 
         // The offer to enable AI is the proof that it isn't already enabled.
         // A fresh install must produce a working card with the network unused.
@@ -98,7 +98,7 @@ final class CoachUITests: XCTestCase {
     @MainActor
     func testConsentScreenNamesWhatIsSent() throws {
         let app = launch()
-        XCTAssertTrue(app.staticTexts["Your next best action"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Do this next"].waitForExistence(timeout: 10))
         app.buttons["Turn on AI coaching"].tap()
 
         XCTAssertTrue(app.staticTexts["What gets sent"].waitForExistence(timeout: 5))
@@ -111,7 +111,7 @@ final class CoachUITests: XCTestCase {
     @MainActor
     func testDecliningLeavesAWorkingCoach() throws {
         let app = launch()
-        XCTAssertTrue(app.staticTexts["Your next best action"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Do this next"].waitForExistence(timeout: 10))
         app.buttons["Turn on AI coaching"].tap()
 
         let decline = app.buttons["Keep it on this phone only"]
@@ -120,7 +120,7 @@ final class CoachUITests: XCTestCase {
 
         // Declining is a choice, not a failure: the card stays.
         XCTAssertTrue(
-            app.staticTexts["Your next best action"].waitForExistence(timeout: 5),
+            app.staticTexts["Do this next"].waitForExistence(timeout: 5),
             "Declining AI should leave the coach working"
         )
     }
@@ -130,9 +130,9 @@ final class CoachUITests: XCTestCase {
     @MainActor
     func testAskCoachShowsDisclaimerAndPrompts() throws {
         let app = launch()
-        XCTAssertTrue(app.staticTexts["Your next best action"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Do this next"].waitForExistence(timeout: 10))
 
-        app.buttons["Ask the coach a question"].tap()
+        app.buttons["Ask Coach"].tap()
 
         XCTAssertTrue(app.navigationBars["Ask Coach"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["Try asking"].exists, "An empty box needs a starting point")
@@ -144,7 +144,7 @@ final class CoachUITests: XCTestCase {
     @MainActor
     func testCoachCanBeTurnedOffEntirely() throws {
         let app = launch()
-        XCTAssertTrue(app.staticTexts["Your next best action"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Do this next"].waitForExistence(timeout: 10))
 
         app.buttons["Settings"].tap()
         let toggle = app.switches["Life Coach"]
@@ -155,7 +155,7 @@ final class CoachUITests: XCTestCase {
 
         // Off means gone, not greyed out.
         XCTAssertFalse(
-            app.staticTexts["Your next best action"].waitForExistence(timeout: 3),
+            app.staticTexts["Do this next"].waitForExistence(timeout: 3),
             "Turning the coach off should remove its card"
         )
     }
@@ -168,7 +168,7 @@ final class CoachUITests: XCTestCase {
         // row. At accessibility sizes that row is the first thing to break.
         let app = launch(textSize: "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge")
 
-        let header = app.staticTexts["Your next best action"]
+        let header = app.staticTexts["Do this next"]
         XCTAssertTrue(header.waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["Why this suggestion?"].exists, "Controls must survive large text")
     }
@@ -178,7 +178,7 @@ final class CoachUITests: XCTestCase {
         let app = launch(orientation: .landscapeLeft)
         defer { XCUIDevice.shared.orientation = .portrait }
 
-        let header = app.staticTexts["Your next best action"]
+        let header = app.staticTexts["Do this next"]
         XCTAssertTrue(header.waitForExistence(timeout: 10))
         // Compact height is where a tab bar covers content; the card must still
         // be reachable and hittable rather than merely present.
@@ -188,12 +188,12 @@ final class CoachUITests: XCTestCase {
     @MainActor
     func testControlsAreNamedForVoiceOver() throws {
         let app = launch()
-        XCTAssertTrue(app.staticTexts["Your next best action"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Do this next"].waitForExistence(timeout: 10))
 
         // Each of these is an icon-only or terse control. Finding them by label
         // is the assertion: if the label were missing, VoiceOver would read the
         // SF Symbol name instead and the query would fail.
-        XCTAssertTrue(app.buttons["Ask the coach a question"].exists)
+        XCTAssertTrue(app.buttons["Ask Coach"].exists)
         XCTAssertTrue(app.buttons["Why this suggestion?"].exists)
         XCTAssertTrue(app.buttons["Not today"].exists)
     }

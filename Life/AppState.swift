@@ -22,6 +22,27 @@ struct PlannedSession: Identifiable, Codable {
     var routineName: String
     var notes: String = ""
     var completed: Bool = false
+
+    /// Whether this entry is a deliberately planned rest day.
+    ///
+    /// **Inferred rather than stored, and knowingly so.** The data model has no
+    /// rest-day concept: a plan is a routine on a date, and there is no flag for
+    /// "today is meant to be easy". Adding one would mean migrating every
+    /// persisted plan and every synced snapshot, which is a large change to make
+    /// for a label.
+    ///
+    /// So this reads a plan with no routine attached and a name that says rest.
+    /// It is narrow on purpose — a plan pointing at a real routine is never a
+    /// rest day however it is named — and it only ever changes wording, never
+    /// behaviour. Today used to show "Rest" whenever no workout had been
+    /// *completed*, which said the same thing about a planned rest day and a
+    /// Tuesday with a hard session still ahead of it. This distinguishes the
+    /// two without a migration; a stored flag would do it properly.
+    var isRestDay: Bool {
+        guard routineId == nil else { return false }
+        let name = routineName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return name == "rest" || name == "rest day" || name == "recovery"
+    }
 }
 
 // MARK: - Progress Photo (stored separately, not in cloud snapshot)
@@ -238,6 +259,65 @@ final class AppState {
 
     var today: CareDay {
         get { careDays[todayKey] ?? CareDay(dayKey: todayKey) }
+    }
+
+    /// True while a health sync is in flight.
+    ///
+    /// Observable so the Today screen can say "Updating health data…" rather
+    /// than showing a generic spinner that is indistinguishable from "Asking
+    /// Gemini…". They take different lengths of time, fail for different
+    /// reasons, and one of them costs money.
+    var isSyncingHealth: Bool = false
+
+    // MARK: Canonical health snapshot
+
+    /// The one health/coaching snapshot every screen reads.
+    ///
+    /// Memoised behind a cheap token rather than rebuilt per access. SwiftUI
+    /// evaluates `body` freely, and building this walks the whole health
+    /// history — doing that on every render would make scrolling Today
+    /// re-derive a year of data several times a frame.
+    ///
+    /// The cache is `@ObservationIgnored` on purpose: writing to it from inside
+    /// a getter that observation is already tracking would register a mutation
+    /// during a read and loop.
+    @ObservationIgnored private var cachedSnapshot: (token: String, value: HealthSnapshot)?
+
+    /// What has to change before the snapshot is worth rebuilding.
+    ///
+    /// Counts and timestamps, not contents. It has to be cheap enough to
+    /// evaluate on every render, and it only decides *when* to rebuild — the
+    /// snapshot's own `materialHash` decides whether anything meaningful
+    /// actually moved.
+    @MainActor
+    var healthSnapshotToken: String {
+        let key = todayKey
+        let sync = healthSettings.lastSyncedAt?.timeIntervalSince1970 ?? 0
+        let steps = careDays[key]?.steps ?? 0
+        return "\(key)|\(healthDays.count)|\(careDays.count)|\(steps)|\(sync)|\(healthSettings.stepSource.rawValue)"
+    }
+
+    /// The canonical snapshot. Today, Health, the briefings, the
+    /// recommendation card and Ask Coach all read this and nothing else, which
+    /// is what stops them contradicting each other.
+    @MainActor
+    var healthSnapshot: HealthSnapshot {
+        let token = healthSnapshotToken
+        if let cachedSnapshot, cachedSnapshot.token == token { return cachedSnapshot.value }
+        let built = HealthSnapshotBuilder.build(appState: self)
+        cachedSnapshot = (token, built)
+        return built
+    }
+
+    /// Drops the memoised snapshot so the next read rebuilds it.
+    ///
+    /// Called after a health sync completes. The token above covers the ordinary
+    /// cases, but a sync that rewrites an existing day's values changes neither
+    /// a count nor today's step total, and a snapshot that silently kept the
+    /// pre-sync figures is precisely the stale-data bug this work is about.
+    @MainActor
+    func invalidateHealthSnapshot() {
+        cachedSnapshot = nil
     }
 
     /// Health days oldest-first, for charting.
@@ -919,12 +999,11 @@ final class AppState {
 
     func bestStreakFor(_ habit: Habit) -> Int {
         let cal = Calendar.current
-        let fmt = _dayKeyFormatter
 
         if habit.kind == .break {
             // For break habits, find the longest run of days without a slip
             // Walk from the earliest log date to today
-            guard let earliest = habit.logs.compactMap({ fmt.date(from: $0.dayKey) }).min() else { return 0 }
+            guard let earliest = habit.logs.compactMap({ DayKey.date(from: $0.dayKey) }).min() else { return 0 }
             let slippedKeys = Set(habit.logs.filter { $0.slipped }.map { $0.dayKey })
             var best = 0, current = 0
             var date = earliest
@@ -945,7 +1024,7 @@ final class AppState {
         guard !habit.logs.isEmpty else { return 0 }
         let sortedDays = habit.logs
             .filter { $0.count >= habit.targetCount && !$0.slipped }
-            .compactMap { fmt.date(from: $0.dayKey) }
+            .compactMap { DayKey.date(from: $0.dayKey) }
             .sorted()
         guard !sortedDays.isEmpty else { return 0 }
         var best = 1, current = 1

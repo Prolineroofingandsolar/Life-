@@ -1,5 +1,30 @@
 import SwiftUI
 
+/// The Today screen.
+///
+/// The old order was summary → briefing → AI action → care dashboard → workout →
+/// tasks → habits: seven full-width cards, each with 16 points of padding and 20
+/// points of gap, all styled as though equally important. The consequence was
+/// that nothing was. The single most useful thing on the page — the next action
+/// — sat third, below a briefing that repeated the navigation title's "Good
+/// morning", and the tasks anyone actually opened the app for were four screens
+/// down.
+///
+/// The order now follows what a person opens this screen to find out:
+///
+/// 1. **Greeting and freshness.** One compact row. Who you are, and whether the
+///    numbers below are current — because every figure on this page is only as
+///    trustworthy as the last sync.
+/// 2. **Do this next.** One recommendation, one primary button, visually
+///    unmistakable.
+/// 3. **Today.** Tasks, habits and the planned workout in one section rather
+///    than three competing cards.
+/// 4. **Health.** Collapsed to a summary row, expandable. It is reference
+///    material, and the Health tab exists for the full version.
+/// 5. **Daily insight.** The briefing, as an entry rather than a second essay.
+///
+/// Spacing follows the same logic: tight *within* a section, generous *between*
+/// them, so the grouping is visible without every card needing a shadow.
 struct TodayView: View {
 
     @Environment(AppState.self) private var appState
@@ -7,6 +32,11 @@ struct TodayView: View {
     @State private var presentedWorkout: PresentedWorkout?
     @State private var showQuickStartPicker = false
     @State private var dayToken = UUID()
+
+    /// Gaps between conceptual sections. Everything inside a section is tighter
+    /// than this; nothing else is looser.
+    private static let sectionSpacing: CGFloat = 22
+    private static let itemSpacing: CGFloat = 10
 
     private var greeting: String {
         let hour = Calendar.current.component(.hour, from: Date())
@@ -37,6 +67,19 @@ struct TodayView: View {
                 case (nil, nil):     return false
                 }
             }
+    }
+
+    /// Whether anything is due today at all, as opposed to nothing being due.
+    ///
+    /// "All done" and "nothing was ever scheduled" are different days and
+    /// deserve different words; a single "All done for today!" told someone with
+    /// an empty list that they had achieved something.
+    private var hasAnyTaskToday: Bool {
+        let todayStart = Calendar.current.startOfDay(for: Date())
+        return appState.tasks.contains { task in
+            guard let resolved = task.resolvedDate else { return false }
+            return Calendar.current.startOfDay(for: resolved) == todayStart
+        }
     }
 
     private var todayHabits: [Habit] {
@@ -74,53 +117,42 @@ struct TodayView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 20) {
-                    DaySummaryCard(
-                        tasksLeft: todayTasks.count,
-                        habitsDone: habitsDoneCount,
-                        habitsTotal: todayHabits.count,
-                        workedOut: workedOutToday
-                    )
-                    // The coach gets one card, near the top where a "next best
-                    // action" is worth reading — and exactly one. Everything
-                    // else it has to say is a tap away rather than another card
-                    // competing with the ones that already earn their place.
-                    CoachBriefingView(kind: .morning)
+                LazyVStack(spacing: Self.sectionSpacing) {
+                    GreetingHeader(greeting: greeting)
+
+                    // The one thing on the page meant to be acted on, directly
+                    // under the greeting rather than third behind two cards of
+                    // prose.
                     CoachCard()
-                    CareSection()
-                    TodayWorkoutCard(plan: todaysPlan) {
-                        if let active = appState.activeSession {
-                            presentedWorkout = PresentedWorkout(id: active.id)
-                        } else if let plan = todaysPlan {
-                            appState.startSession(name: plan.routineName, routineId: plan.routineId)
-                            presentedWorkout = appState.activeSession.map { PresentedWorkout(id: $0.id) }
-                        } else {
-                            // No routine to start from, so there's nothing to
-                            // put in the workout yet. Same rule as Train's Quick
-                            // Start: pick the exercise first, and only then does
-                            // a workout — and its running timer — come into
-                            // existence.
-                            showQuickStartPicker = true
-                        }
-                    }
-                    if !todaySupplements.isEmpty {
-                        TodaySupplementsSection(supplements: todaySupplements)
-                    }
-                    TodayTasksSection(tasks: todayTasks)
-                    TodayHabitsSection(habits: todayHabits)
-                    // At the bottom, and only after six: a review of the day
-                    // belongs under the day, not above it.
+
+                    todaySection
+
+                    HealthSummarySection()
+
+                    // Reference, not an equal-weight card. The morning briefing
+                    // used to sit above the recommendation and open with "Good
+                    // morning", duplicating the navigation title two rows above
+                    // it.
+                    CoachBriefingView(kind: .morning)
                     CoachBriefingView(kind: .evening)
                 }
-                .padding(.vertical, 8)
+                .padding(.top, 4)
+                .padding(.bottom, 28)
                 .id(dayToken)
             }
             .background(Color(.systemGroupedBackground))
             .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in
+                // The day rolled over while the app was open. Everything on this
+                // page is keyed to "today", so it all has to be rebuilt — and
+                // the memoised health snapshot has to go with it, or the new day
+                // renders against yesterday's figures.
+                appState.invalidateHealthSnapshot()
                 dayToken = UUID()
             }
-            .navigationTitle(greeting)
-            .navigationBarTitleDisplayMode(.large)
+            // "Today", not the greeting. The greeting lives in the content row
+            // below, once, where it can carry the sync status beside it.
+            .navigationTitle("Today")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
@@ -134,7 +166,6 @@ struct TodayView: View {
             .sheet(isPresented: $showSettings) {
                 SettingsView()
             }
-
             .sheet(isPresented: $showQuickStartPicker) {
                 ExercisePickerSheet(title: "Choose an Exercise") { exerciseId in
                     appState.startSession(name: "Quick Workout")
@@ -154,271 +185,395 @@ struct TodayView: View {
             }
         }
     }
+
+    // MARK: Today section
+
+    /// Tasks, habits and the workout under one heading.
+    ///
+    /// Previously three separate sections with three headings and three cards'
+    /// worth of chrome, which is what pushed habits below the fold on every
+    /// device. They answer one question — what is there to do today — so they
+    /// share one heading and one container.
+    private var todaySection: some View {
+        VStack(alignment: .leading, spacing: Self.itemSpacing) {
+            SectionHeading(
+                title: "Today",
+                trailing: todayTasks.isEmpty ? nil : "\(todayTasks.count) to do"
+            )
+
+            VStack(spacing: 0) {
+                TodayWorkoutRow(plan: todaysPlan, workedOutToday: workedOutToday) {
+                    if let active = appState.activeSession {
+                        presentedWorkout = PresentedWorkout(id: active.id)
+                    } else if let plan = todaysPlan, !plan.isRestDay {
+                        appState.startSession(name: plan.routineName, routineId: plan.routineId)
+                        presentedWorkout = appState.activeSession.map { PresentedWorkout(id: $0.id) }
+                    } else {
+                        // No routine to start from, so there's nothing to put in
+                        // the workout yet. Same rule as Train's Quick Start: pick
+                        // the exercise first, and only then does a workout — and
+                        // its running timer — come into existence.
+                        showQuickStartPicker = true
+                    }
+                }
+
+                if todayTasks.isEmpty {
+                    Divider().padding(.leading, 16)
+                    TodayEmptyRow(
+                        icon: hasAnyTaskToday ? "checkmark.circle.fill" : "tray",
+                        iconColor: hasAnyTaskToday ? .green : Color(.tertiaryLabel),
+                        title: hasAnyTaskToday ? "All tasks done" : "No tasks due today",
+                        subtitle: hasAnyTaskToday
+                            ? "Everything scheduled for today is complete."
+                            : "Nothing is scheduled. Add something in Tasks if you want it here."
+                    )
+                } else {
+                    ForEach(todayTasks) { task in
+                        Divider().padding(.leading, 48)
+                        TodayTaskRow(task: task)
+                    }
+                }
+
+                if todayHabits.isEmpty {
+                    Divider().padding(.leading, 16)
+                    TodayEmptyRow(
+                        icon: "repeat.circle",
+                        iconColor: Color(.tertiaryLabel),
+                        title: "No habits yet",
+                        subtitle: "Add some in More ▸ Habits and they'll appear here."
+                    )
+                } else {
+                    Divider().padding(.leading, 16)
+                    HabitsSubheading(done: habitsDoneCount, total: todayHabits.count)
+                    ForEach(todayHabits) { habit in
+                        Divider().padding(.leading, 48)
+                        TodayHabitRow(habit: habit)
+                    }
+                }
+
+                if !todaySupplements.isEmpty {
+                    Divider().padding(.leading, 16)
+                    SupplementsSubheading()
+                    ForEach(todaySupplements) { supplement in
+                        Divider().padding(.leading, 48)
+                        TodaySupplementRow(supplement: supplement)
+                    }
+                }
+            }
+            .background(AppTheme.cardBg)
+            .clipShape(RoundedRectangle(cornerRadius: AppTheme.cardRadius, style: .continuous))
+            .padding(.horizontal, 16)
+        }
+    }
 }
 
-// MARK: - Day Summary Card
+// MARK: - Greeting header
 
-private struct DaySummaryCard: View {
-    let tasksLeft: Int
-    let habitsDone: Int
-    let habitsTotal: Int
-    let workedOut: Bool
+/// The greeting and the one fact that qualifies everything under it: whether
+/// the health figures on this page are current.
+///
+/// Compact on purpose. A large-title greeting plus a briefing that also opened
+/// with "Good morning" spent the top third of the screen saying hello twice.
+private struct GreetingHeader: View {
+
+    @Environment(AppState.self) private var appState
+    let greeting: String
+
+    private var snapshot: HealthSnapshot { appState.healthSnapshot }
 
     var body: some View {
-        HStack(spacing: 0) {
-            summaryItem(
-                icon: "checkmark.circle.fill",
-                color: tasksLeft == 0 ? .green : AppTheme.primary,
-                value: tasksLeft == 0 ? "Clear" : "\(tasksLeft)",
-                label: tasksLeft == 1 ? "task left" : "tasks left"
-            )
-            Divider().frame(height: 34)
-            summaryItem(
-                icon: "chart.bar.fill",
-                color: .blue,
-                value: "\(habitsDone)/\(habitsTotal)",
-                label: "habits"
-            )
-            Divider().frame(height: 34)
-            summaryItem(
-                icon: "flame.fill",
-                color: workedOut ? .orange : Color(.tertiaryLabel),
-                value: workedOut ? "Done" : "Rest",
-                label: "workout"
-            )
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(greeting)
+                    .font(.system(size: 24, weight: .bold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+
+                statusRow
+            }
+            Spacer(minLength: 0)
         }
-        .padding(.vertical, 14)
-        .frame(maxWidth: .infinity)
-        .background(AppTheme.cardBg)
-        .cornerRadius(AppTheme.cardRadius)
-        .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 20)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(greeting). \(statusText)")
     }
 
-    private func summaryItem(icon: String, color: Color, value: String, label: String) -> some View {
-        VStack(spacing: 4) {
-            Image(systemName: icon)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundColor(color)
-            Text(value)
-                .font(.system(size: 17, weight: .bold, design: .rounded))
-                .foregroundColor(.primary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-            Text(label)
-                .font(.system(size: 11))
+    private var statusRow: some View {
+        HStack(spacing: 5) {
+            if appState.isSyncingHealth {
+                ProgressView().controlSize(.mini)
+            } else {
+                Image(systemName: statusIcon)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(statusColour)
+                    .accessibilityHidden(true)
+            }
+            Text(statusText)
+                .font(.caption)
                 .foregroundColor(.secondary)
+                .lineLimit(1)
         }
-        .frame(maxWidth: .infinity)
+        .accessibilityHidden(true)
+    }
+
+    /// Says which of the four situations this is, because they need different
+    /// responses: connect a tracker, wait, open the tracker's app, or nothing.
+    private var statusText: String {
+        if appState.isSyncingHealth { return "Updating health data…" }
+        return snapshot.freshnessStatement
+    }
+
+    private var statusIcon: String {
+        if !snapshot.hasConnectedSource { return "exclamationmark.circle" }
+        if snapshot.lastSyncedAt == nil { return "clock" }
+        return snapshot.isFresh ? "checkmark.circle.fill" : "clock.badge.exclamationmark"
+    }
+
+    private var statusColour: Color {
+        if !snapshot.hasConnectedSource { return .orange }
+        return snapshot.isFresh ? .green : .orange
     }
 }
 
-// MARK: - Today Workout Card
+// MARK: - Section chrome
 
-private struct TodayWorkoutCard: View {
+/// One heading style for the whole page, so a section is recognisable as a
+/// section without each one inventing its own type scale.
+private struct SectionHeading: View {
+    let title: String
+    var trailing: String?
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(title)
+                .font(.headline)
+            Spacer()
+            if let trailing {
+                Text(trailing)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(.horizontal, 20)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+}
+
+private struct HabitsSubheading: View {
+    let done: Int
+    let total: Int
+
+    var body: some View {
+        HStack {
+            Text("Habits")
+                .font(.caption.weight(.semibold))
+                .foregroundColor(.secondary)
+            Spacer()
+            Text("\(done) of \(total) done")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+        .padding(.bottom, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Habits, \(done) of \(total) done")
+        .accessibilityAddTraits(.isHeader)
+    }
+}
+
+private struct SupplementsSubheading: View {
+    var body: some View {
+        HStack {
+            Text("Supplements")
+                .font(.caption.weight(.semibold))
+                .foregroundColor(.secondary)
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+        .padding(.bottom, 4)
+        .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// An empty state that says which kind of empty it is.
+private struct TodayEmptyRow: View {
+    let icon: String
+    let iconColor: Color
+    let title: String
+    let subtitle: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 20))
+                .foregroundColor(iconColor)
+                .frame(width: 24)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline.weight(.medium))
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title). \(subtitle)")
+    }
+}
+
+// MARK: - Workout row
+
+/// Today's training, as one row rather than a card.
+///
+/// The three states are kept apart deliberately. "Rest" used to be shown
+/// whenever no workout had been *completed*, so a Tuesday with a hard session
+/// still ahead of it read as a rest day right up until it was done. A rest day
+/// is something you planned; an empty day is something you haven't.
+private struct TodayWorkoutRow: View {
     @Environment(AppState.self) private var appState
     let plan: PlannedSession?
+    let workedOutToday: Bool
     let onStart: () -> Void
 
     private var isActive: Bool { appState.activeSession != nil }
+    private var isRestDay: Bool { plan?.isRestDay == true }
+
+    private var title: String {
+        if isActive { return "Workout in progress" }
+        if workedOutToday { return "Workout done" }
+        if isRestDay { return "Rest day" }
+        if let plan { return plan.routineName }
+        return "No workout planned"
+    }
+
+    private var subtitle: String {
+        if isActive { return appState.activeSession?.name ?? "Resume" }
+        if workedOutToday { return "Logged today" }
+        if isRestDay { return "Scheduled rest — nothing to do" }
+        if plan != nil { return "Planned for today" }
+        return "Start one whenever you like"
+    }
+
+    private var actionTitle: String? {
+        if isActive { return "Resume" }
+        if workedOutToday || isRestDay { return nil }
+        return plan != nil ? "Start" : "Quick start"
+    }
+
+    private var icon: String {
+        if isActive { return "figure.run" }
+        if workedOutToday { return "checkmark.circle.fill" }
+        if isRestDay { return "moon.zzz.fill" }
+        return "dumbbell.fill"
+    }
+
+    private var tint: Color {
+        if isActive { return .orange }
+        if workedOutToday { return .green }
+        if isRestDay { return .indigo }
+        return AppTheme.primary
+    }
 
     var body: some View {
-        Button {
-            HapticManager.impact(.medium)
-            onStart()
-        } label: {
-            HStack(spacing: 14) {
-                ZStack {
-                    Circle()
-                        .fill((isActive ? Color.orange : AppTheme.primary).opacity(0.15))
-                        .frame(width: 46, height: 46)
-                    Image(systemName: isActive ? "figure.run" : "dumbbell.fill")
-                        .font(.system(size: 19, weight: .semibold))
-                        .foregroundColor(isActive ? .orange : AppTheme.primary)
-                }
+        HStack(spacing: 12) {
+            ZStack {
+                Circle().fill(tint.opacity(0.15)).frame(width: 34, height: 34)
+                Image(systemName: icon)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(tint)
+            }
+            .accessibilityHidden(true)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(isActive ? "Workout in progress" : (plan != nil ? "Today's Plan" : "Start a workout"))
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundColor(.primary)
-                    Text(isActive ? (appState.activeSession?.name ?? "Resume") : (plan?.routineName ?? "Quick session — log as you go"))
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                }
-
-                Spacer()
-
-                Text(isActive ? "Resume" : "Start")
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 9)
-                    .background {
-                        if isActive { Color.orange } else { AppTheme.brandGradient }
-                    }
-                    .clipShape(Capsule())
+                    .foregroundColor(.primary)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
             }
-            .padding(16)
-            .background(AppTheme.cardBg)
-            .cornerRadius(AppTheme.cardRadius)
-            .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
+
+            Spacer(minLength: 8)
+
+            if let actionTitle {
+                Button {
+                    HapticManager.impact(.medium)
+                    onStart()
+                } label: {
+                    Text(actionTitle)
+                        .font(.footnote.weight(.semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background { isActive ? AnyView(Color.orange) : AnyView(AppTheme.brandGradient) }
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(PressableButtonStyle())
+                .accessibilityLabel("\(actionTitle) \(title)")
+            }
         }
-        .buttonStyle(PressableButtonStyle())
         .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 }
 
-// MARK: - Activity Rings
+// MARK: - Health summary
 
-private struct ActivityRingsView: View {
-    struct Ring {
-        let color: Color
-        let progress: Double  // 0…1
-    }
-    let rings: [Ring]
-    var size: CGFloat = 130
-
-    var body: some View {
-        ZStack {
-            ForEach(rings.indices, id: \.self) { i in
-                let strokeWidth = size * 0.092
-                let gap = strokeWidth * 0.55
-                let radius = (size / 2) - strokeWidth / 2 - CGFloat(i) * (strokeWidth + gap)
-                let pct = max(0, min(1, rings[i].progress))
-
-                Circle()
-                    .stroke(rings[i].color.opacity(0.14), lineWidth: strokeWidth)
-                    .frame(width: radius * 2, height: radius * 2)
-
-                Circle()
-                    .trim(from: 0, to: pct)
-                    .stroke(rings[i].color, style: StrokeStyle(lineWidth: strokeWidth, lineCap: .round))
-                    .frame(width: radius * 2, height: radius * 2)
-                    .rotationEffect(.degrees(-90))
-                    .animation(.easeInOut(duration: 0.9), value: pct)
-            }
-        }
-        .frame(width: size, height: size)
-    }
-}
-
-// MARK: - Care Section
-
-private struct CareSection: View {
+/// Health, collapsed.
+///
+/// The care dashboard was a rings card plus a six-tile grid — the single
+/// tallest thing on Today, above tasks, repeating what the Health tab shows in
+/// full. Here it is one summary row that expands, and the figures it shows come
+/// from the canonical snapshot rather than being read out of the store again.
+/// That is what stops Today reporting "no HRV" while Health, one tab across,
+/// shows 79 ms.
+private struct HealthSummarySection: View {
 
     @Environment(AppState.self) private var appState
+    @AppStorage("today_health_expanded_v1") private var isExpanded = false
     @State private var healthSyncTask: Task<Void, Never>? = nil
     @State private var showMealSheet = false
+    @State private var hkManager = HealthKitManager()
 
+    private var snapshot: HealthSnapshot { appState.healthSnapshot }
     private var today: CareDay { appState.today }
     private var settings: CareSettings { appState.careSettings }
     private var healthSettings: HealthSettings { appState.healthSettings }
 
-    @State private var hkManager = HealthKitManager()
-
-    private var workedOutToday: Bool {
-        let key = Date().dayKey
-        return appState.completedWorkouts.contains { $0.startedAt.dayKey == key }
-    }
-
-    private var lastNight: HealthDay? { appState.lastNightSleep }
-
-    /// "8h", or "7h30m" when the goal isn't a whole number of hours.
-    private var sleepGoalLabel: String {
-        let goal = healthSettings.sleepGoalMinutes
-        return goal % 60 == 0 ? "\(goal / 60)h" : "\(goal / 60)h\(goal % 60)m"
-    }
-
-    /// The latest resting HR and HRV, plus how far the resting HR sits from its
-    /// own 7-day baseline. The delta is nil until there's enough history to
-    /// compare against, so the tile never shows a meaningless figure.
-    /// "Steps · Fitbit · 10,000 goal". Naming the device matters here: the
-    /// iPhone and the tracker give different counts, and without knowing which
-    /// one produced the number there's no way to tell a quiet day from a day
-    /// the phone stayed on the desk.
-    @MainActor private var stepsLabel: String {
-        let source = HealthSync.source(for: healthSettings)
-        let goal = "\(settings.stepGoal.formatted()) goal"
-        return source == .none ? "Steps · " + goal : "Steps · " + source.displayName + " · " + goal
-    }
-
-    private var recovery: (restingHr: Double?, hrvMs: Double?, hrDelta: Double?) {
-        // Recovery metrics are recorded overnight, so today's record usually has
-        // them; fall back to the most recent day that does.
-        let latest = appState.healthHistory.last { $0.restingHr != nil || $0.hrvMs != nil }
-        let hr = latest?.restingHr
-        let baseline = appState.healthBaseline { $0.restingHr }
-        return (hr, latest?.hrvMs, hr.flatMap { v in baseline.map { v - $0 } })
-    }
-
-    private var rings: [ActivityRingsView.Ring] {
-        [
-            .init(color: .blue,   progress: settings.waterGoal > 0 ? Double(today.waterGlasses) / Double(settings.waterGoal) : 0),
-            .init(color: .orange, progress: settings.mealGoal > 0  ? Double(today.meals.count)  / Double(settings.mealGoal)  : 0),
-            .init(color: AppTheme.primary,  progress: settings.stepGoal > 0  ? Double(today.steps)        / Double(settings.stepGoal)  : 0),
-        ]
-    }
-
-    private let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
+    private let columns = [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)]
 
     var body: some View {
-        VStack(spacing: 12) {
-            // Rings card
-            HStack {
-                Spacer()
-                ActivityRingsView(rings: rings, size: 150)
-                    .padding(.vertical, 22)
-                Spacer()
+        VStack(alignment: .leading, spacing: TodayLayout.itemSpacing) {
+            SectionHeading(title: "Health")
+
+            VStack(spacing: 0) {
+                disclosureRow
+
+                if isExpanded {
+                    Divider().padding(.leading, 16)
+                    detail
+                        .padding(16)
+                        .transition(.opacity)
+                }
             }
-            .frame(maxWidth: .infinity)
             .background(AppTheme.cardBg)
-            .cornerRadius(AppTheme.cardRadius)
-            .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
-
-            // Stat boxes
-            LazyVGrid(columns: columns, spacing: 12) {
-                TodayStatBox(
-                    icon: "drop.fill", iconColor: .blue,
-                    value: "\(today.waterGlasses)/\(settings.waterGoal)", label: "Water",
-                    done: today.waterGlasses >= settings.waterGoal,
-                    action: { appState.addWater() },
-                    secondaryAction: { appState.removeWater() }
-                )
-
-                TodayStatBox(
-                    icon: "fork.knife", iconColor: .orange,
-                    value: "\(today.meals.count)/\(settings.mealGoal)", label: "Meals",
-                    done: today.meals.count >= settings.mealGoal,
-                    action: { showMealSheet = true }
-                )
-
-                TodayStatBox(
-                    icon: "figure.walk", iconColor: AppTheme.primary,
-                    value: today.steps.formatted(), label: stepsLabel,
-                    done: today.steps >= settings.stepGoal
-                )
-
-                TodayStatBox(
-                    icon: "flame.fill", iconColor: workedOutToday ? .orange : .secondary,
-                    value: workedOutToday ? "Done" : "Rest", label: "Workout",
-                    done: workedOutToday
-                )
-
-                sleepBox
-
-                if healthSettings.showRecoveryTile { recoveryBox }
-            }
+            .clipShape(RoundedRectangle(cornerRadius: AppTheme.cardRadius, style: .continuous))
+            .padding(.horizontal, 16)
         }
-        .padding(.horizontal, 16)
+        .animation(.easeInOut(duration: 0.2), value: isExpanded)
         .sheet(isPresented: $showMealSheet) {
-            MealLogSheet { name in
-                appState.addMeal(name: name)
-            }
+            MealLogSheet { name in appState.addMeal(name: name) }
         }
-        .task {
-            await syncHealthFromApple()
-        }
+        .task { await syncHealth() }
         .onAppear {
             healthSyncTask?.cancel()
             healthSyncTask = Task {
@@ -429,63 +584,199 @@ private struct CareSection: View {
                     // instead of a re-download, which is what made five minutes
                     // the safe number before.
                     try? await Task.sleep(nanoseconds: 2 * 60 * 1_000_000_000)
-                    if !Task.isCancelled { await syncHealthFromApple() }
+                    if !Task.isCancelled { await syncHealth() }
                 }
             }
         }
         .onDisappear { healthSyncTask?.cancel() }
     }
 
-    /// Last night's sleep against the goal. Kept out of the grid's ViewBuilder
-    /// like `recoveryBox` below — inline conditionals plus string interpolation
-    /// there is what pushes the Swift type-checker over its time limit.
-    @ViewBuilder
-    private var sleepBox: some View {
-        if let night = lastNight, let minutes = night.sleepMin {
+    // MARK: Collapsed row
+
+    private var disclosureRow: some View {
+        Button {
+            isExpanded.toggle()
+            HapticManager.selection()
+        } label: {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(summaryLine)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundColor(.primary)
+                        .multilineTextAlignment(.leading)
+                    Text(snapshot.freshnessStatement)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.down")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(.secondary)
+                    .rotationEffect(.degrees(isExpanded ? 180 : 0))
+                    .accessibilityHidden(true)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Health summary. \(summaryLine). \(snapshot.freshnessStatement)")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
+    }
+
+    /// The one line worth reading when the section is closed.
+    ///
+    /// Built from the snapshot's states rather than from raw optionals, so a
+    /// tracker that hasn't synced, a night that wasn't recorded and a night
+    /// recorded but not yet comparable each produce a different sentence.
+    private var summaryLine: String {
+        if !snapshot.hasConnectedSource {
+            return "No tracker connected"
+        }
+        var parts: [String] = []
+        if let minutes = snapshot.sleepMinutes.value {
+            let text = HealthInsights.formatDuration(minutes)
+            parts.append(snapshot.sleepMinutes.state == .stale ? "Sleep \(text) (not last night)" : "Slept \(text)")
+        }
+        if let steps = snapshot.steps.value {
+            parts.append("\(steps.formatted()) steps")
+        }
+        if let readiness = snapshot.readiness.value {
+            parts.append("Readiness \(readiness)")
+        } else if snapshot.readiness.state == .insufficientHistory {
+            parts.append("Recovery: not enough history yet")
+        }
+        return parts.isEmpty ? "Nothing recorded yet today" : parts.joined(separator: " · ")
+    }
+
+    // MARK: Expanded detail
+
+    private var detail: some View {
+        LazyVGrid(columns: columns, spacing: 10) {
             TodayStatBox(
-                icon: "bed.double.fill", iconColor: .indigo,
-                value: "\(minutes / 60)h \(minutes % 60)m",
-                label: "Sleep · \(sleepGoalLabel) goal",
-                done: minutes >= healthSettings.sleepGoalMinutes
+                icon: "drop.fill", iconColor: .blue,
+                value: "\(today.waterGlasses)/\(settings.waterGoal)", label: "Water",
+                done: today.waterGlasses >= settings.waterGoal,
+                action: { appState.addWater() },
+                secondaryAction: { appState.removeWater() }
+            )
+
+            TodayStatBox(
+                icon: "fork.knife", iconColor: .orange,
+                value: "\(today.meals.count)/\(settings.mealGoal)", label: "Meals",
+                done: today.meals.count >= settings.mealGoal,
+                action: { showMealSheet = true }
+            )
+
+            stepsBox
+            sleepBox
+            if healthSettings.showRecoveryTile { recoveryBox }
+        }
+    }
+
+    /// Steps, or a statement of why there aren't any.
+    ///
+    /// A dash rather than a zero. "0 steps" and "your tracker hasn't synced"
+    /// look identical as a number and need opposite responses, and the whole
+    /// point of the snapshot's `missing` state is that the app knows which.
+    @ViewBuilder
+    private var stepsBox: some View {
+        let source = HealthSync.source(for: healthSettings)
+        let goalLabel = "\(settings.stepGoal.formatted()) goal"
+        let sourceLabel = source == .none ? goalLabel : source.displayName + " · " + goalLabel
+
+        if let steps = snapshot.steps.value {
+            TodayStatBox(
+                icon: "figure.walk", iconColor: AppTheme.primary,
+                value: steps.formatted(), label: "Steps · " + sourceLabel,
+                done: steps >= settings.stepGoal
+            )
+        } else {
+            TodayStatBox(
+                icon: "figure.walk", iconColor: Color(.tertiaryLabel),
+                value: "—",
+                label: source == .none ? "Steps · no tracker" : "Steps · not synced yet"
             )
         }
     }
 
-    /// Resting HR with its drift from baseline. Informational, so no action —
-    /// `TodayStatBox` renders a non-tappable card when `action` is nil.
+    /// Last night's sleep against the goal, or the reason there isn't one.
+    @ViewBuilder
+    private var sleepBox: some View {
+        let goal = healthSettings.sleepGoalMinutes
+        let goalLabel = goal % 60 == 0 ? "\(goal / 60)h" : "\(goal / 60)h\(goal % 60)m"
+
+        if let minutes = snapshot.sleepMinutes.value {
+            TodayStatBox(
+                icon: "bed.double.fill", iconColor: .indigo,
+                value: HealthInsights.formatDuration(minutes),
+                label: snapshot.sleepMinutes.state == .stale
+                    ? "Sleep · not last night"
+                    : "Sleep · \(goalLabel) goal",
+                done: minutes >= goal
+            )
+        } else {
+            TodayStatBox(
+                icon: "bed.double.fill", iconColor: Color(.tertiaryLabel),
+                value: "—", label: "Sleep · not recorded"
+            )
+        }
+    }
+
+    /// Recovery, including the case that used to be reported as nothing at all.
+    ///
+    /// A resting heart rate of 59 with only four nights behind it is a real
+    /// measurement without an interpretation. It gets shown, with "not enough
+    /// history yet" underneath — not withheld, and never described as absent.
     @ViewBuilder
     private var recoveryBox: some View {
-        let r = recovery
-        if let hr = r.restingHr {
+        if let hr = snapshot.restingHeartRate.value {
             TodayStatBox(
                 icon: "heart.fill", iconColor: .pink,
                 value: "\(Int(hr))",
-                label: recoveryLabel(hrDelta: r.hrDelta, hrvMs: r.hrvMs)
+                label: recoveryLabel
             )
-        } else if let hrv = r.hrvMs {
+        } else if let hrv = snapshot.hrvMs.value {
             TodayStatBox(
                 icon: "waveform.path.ecg", iconColor: AppTheme.primary,
                 value: "\(Int(hrv))",
-                label: "HRV ms"
+                label: snapshot.hrvMs.state == .insufficientHistory
+                    ? "HRV ms · no baseline yet"
+                    : "HRV ms"
+            )
+        } else {
+            TodayStatBox(
+                icon: "heart", iconColor: Color(.tertiaryLabel),
+                value: "—",
+                label: snapshot.hasConnectedSource ? "Recovery · not recorded" : "Recovery · no tracker"
             )
         }
     }
 
-    /// "Resting HR · 2 below usual", or the HRV reading when there's no
-    /// baseline yet. Deltas under a beat are noise, so they're not shown.
-    private func recoveryLabel(hrDelta: Double?, hrvMs: Double?) -> String {
-        if let delta = hrDelta, abs(delta) >= 1 {
-            let rounded = Int(abs(delta).rounded())
-            return delta < 0 ? "Resting HR · \(rounded) below usual" : "Resting HR · \(rounded) above usual"
+    private var recoveryLabel: String {
+        if let comparison = snapshot.restingHeartRateBaseline, comparison.isMeaningful {
+            return comparison.direction == .below
+                ? "Resting HR · below usual"
+                : "Resting HR · above usual"
         }
-        if let hrvMs = hrvMs {
-            return "Resting HR · HRV \(Int(hrvMs))ms"
+        if snapshot.restingHeartRate.state == .insufficientHistory {
+            let recorded = snapshot.restingHeartRate.sampleCount
+            let required = snapshot.restingHeartRate.requiredSamples
+            return "Resting HR · \(recorded)/\(required) nights"
+        }
+        if let hrv = snapshot.hrvMs.value {
+            return "Resting HR · HRV \(Int(hrv))ms"
         }
         return "Resting HR"
     }
 
+    // MARK: Syncing
+
     @MainActor
-    private func syncHealthFromApple() async {
+    private func syncHealth() async {
         // Routed through HealthSync so this agrees with the Health tab about
         // which source is authoritative — Fitbit when connected, Apple Health
         // otherwise. Syncing HealthKit here regardless would let an iPhone-only
@@ -497,8 +788,15 @@ private struct CareSection: View {
         // path so the Move ring stays live between the coarser daily merges.
         if HealthSync.source(for: appState.healthSettings) == .appleHealth {
             appState.syncSteps(await hkManager.fetchStepsForToday())
+            appState.invalidateHealthSnapshot()
         }
     }
+}
+
+/// Shared spacing, so the health section and the Today section agree without
+/// either one owning the other's constant.
+private enum TodayLayout {
+    static let itemSpacing: CGFloat = 10
 }
 
 // MARK: - Meal Log Sheet
@@ -588,6 +886,18 @@ private struct TodayStatBox: View {
     var action: (() -> Void)? = nil
     var secondaryAction: (() -> Void)? = nil
 
+    /// One spoken string for the whole tile.
+    ///
+    /// VoiceOver used to read the glyph, the number and the label as three
+    /// elements — "drop fill, 3 slash 8, Water" — which is three swipes to learn
+    /// one fact. The symbol is hidden and the rest is combined, so it reads
+    /// "Water, 3 of 8" and the tile's own state comes through as a value rather
+    /// than a fourth element.
+    private var spokenLabel: String {
+        let core = "\(label), \(value.replacingOccurrences(of: "/", with: " of "))"
+        return done ? "\(core), complete" : core
+    }
+
     var body: some View {
         if let action {
             Button {
@@ -596,89 +906,74 @@ private struct TodayStatBox: View {
             } label: { content.contentShape(Rectangle()) }
             .buttonStyle(PressableButtonStyle())
             .modifier(LongPressActionModifier(action: secondaryAction))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(spokenLabel)
+            .accessibilityAddTraits(.isButton)
         } else {
             content
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(spokenLabel)
         }
     }
 
     private var content: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack {
                 ZStack {
-                    Circle().fill(iconColor.opacity(0.15)).frame(width: 38, height: 38)
+                    Circle().fill(iconColor.opacity(0.15)).frame(width: 34, height: 34)
                     Image(systemName: icon)
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(.system(size: 15, weight: .semibold))
                         .foregroundColor(iconColor)
                 }
+                .accessibilityHidden(true)
                 Spacer()
                 if action != nil {
                     Image(systemName: "plus")
-                        .font(.system(size: 14, weight: .bold))
+                        .font(.system(size: 13, weight: .bold))
                         .foregroundColor(iconColor)
-                        .frame(width: 30, height: 30)
+                        .frame(width: 28, height: 28)
                         .background(iconColor.opacity(0.12))
                         .clipShape(Circle())
                         .overlay(alignment: .topTrailing) {
                             if done {
                                 Image(systemName: "checkmark.circle.fill")
-                                    .font(.system(size: 13))
+                                    .font(.system(size: 12))
                                     .foregroundColor(.green)
                                     .background(Circle().fill(Color(.systemBackground)))
                                     .offset(x: 4, y: -4)
                             }
                         }
+                        .accessibilityHidden(true)
                 } else if done {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 19))
+                        .font(.system(size: 17))
                         .foregroundColor(iconColor)
+                        .accessibilityHidden(true)
                 }
             }
             Text(value)
-                .font(.system(size: 24, weight: .bold, design: .rounded))
+                .font(.system(size: 22, weight: .bold, design: .rounded))
                 .foregroundColor(.primary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
             Text(label)
-                .font(.system(size: 13))
+                .font(.system(size: 12))
                 .foregroundColor(.secondary)
-                .lineLimit(1)
+                .lineLimit(2)
                 .minimumScaleFactor(0.8)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .background(AppTheme.cardBg)
-        .cornerRadius(AppTheme.cardRadius)
-        .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
+        .padding(12)
+        // Tertiary, not secondary. These tiles sit *inside* a card already
+        // painted `AppTheme.cardBg` (secondary), so the same fill would make
+        // them invisible — one flat rectangle with numbers floating on it.
+        .background(Color(.tertiarySystemGroupedBackground))
+        .cornerRadius(12)
         .animation(.spring(response: 0.3, dampingFraction: 0.6), value: done)
     }
 }
 
-// MARK: - Today Supplements Section
-
-private struct TodaySupplementsSection: View {
-    @Environment(AppState.self) private var appState
-    let supplements: [Supplement]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Supplements")
-                .font(.headline)
-                .padding(.horizontal, 20)
-
-            VStack(spacing: 0) {
-                ForEach(supplements) { supplement in
-                    TodaySupplementRow(supplement: supplement)
-                    if supplement.id != supplements.last?.id {
-                        Divider().padding(.leading, 16)
-                    }
-                }
-            }
-            .background(Color(.secondarySystemGroupedBackground))
-            .cornerRadius(12)
-            .padding(.horizontal, 16)
-        }
-    }
-}
+// MARK: - Supplement row
 
 private struct TodaySupplementRow: View {
     @Environment(AppState.self) private var appState
@@ -694,6 +989,7 @@ private struct TodaySupplementRow: View {
         HStack(spacing: 12) {
             Text(supplement.emoji)
                 .font(.title2)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(supplement.name)
@@ -705,6 +1001,7 @@ private struct TodaySupplementRow: View {
                             .foregroundColor(i < taken ? AppTheme.primary : .secondary)
                     }
                 }
+                .accessibilityHidden(true)
             }
 
             Spacer()
@@ -725,6 +1022,7 @@ private struct TodaySupplementRow: View {
                         .cornerRadius(8)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Undo last dose of \(supplement.name)")
                 .transition(.opacity.combined(with: .scale))
             } else {
                 Button {
@@ -741,12 +1039,20 @@ private struct TodaySupplementRow: View {
                     Image(systemName: done ? "checkmark" : "plus")
                         .font(.system(size: 16, weight: .bold))
                         .foregroundColor(.white)
-                        .frame(width: 36, height: 36)
+                        .frame(width: 34, height: 34)
                         .background(done ? Color.purple : Color.purple.opacity(0.85))
                         .clipShape(Circle())
                 }
                 .buttonStyle(PressableButtonStyle())
                 .disabled(done)
+                // The control and what it acts on, as one announcement. A bare
+                // "plus, button" gives VoiceOver no way to tell which of five
+                // supplement rows it is sitting on.
+                .accessibilityLabel(
+                    done
+                        ? "\(supplement.name), all \(supplement.dosesPerDay) doses taken"
+                        : "Take a dose of \(supplement.name), \(taken) of \(supplement.dosesPerDay) taken"
+                )
             }
         }
         .padding(.horizontal, 16)
@@ -754,77 +1060,7 @@ private struct TodaySupplementRow: View {
     }
 }
 
-// MARK: - Today Empty Card
-
-private struct TodayEmptyCard: View {
-    let icon: String
-    let iconColor: Color
-    let message: String
-
-    var body: some View {
-        HStack {
-            Spacer()
-            VStack(spacing: 6) {
-                Image(systemName: icon)
-                    .font(.largeTitle)
-                    .foregroundColor(iconColor)
-                Text(message)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-            .padding()
-            Spacer()
-        }
-        .background(AppTheme.cardBg)
-        .cornerRadius(12)
-        .padding(.horizontal, 16)
-    }
-}
-
-// MARK: - Today Tasks Section
-
-private struct TodayTasksSection: View {
-
-    @Environment(AppState.self) private var appState
-    let tasks: [AppTask]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Today's Tasks")
-                    .font(.headline)
-                Spacer()
-                if !tasks.isEmpty {
-                    Text("\(tasks.count) remaining")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-            .padding(.horizontal, 20)
-
-            if tasks.isEmpty {
-                TodayEmptyCard(
-                    icon: "checkmark.circle.fill",
-                    iconColor: .green,
-                    message: "All done for today!"
-                )
-            } else {
-                VStack(spacing: 0) {
-                    ForEach(tasks) { task in
-                        TodayTaskRow(task: task)
-                        if task.id != tasks.last?.id {
-                            Divider().padding(.leading, 48)
-                        }
-                    }
-                }
-                .background(Color(.secondarySystemGroupedBackground))
-                .cornerRadius(12)
-                .padding(.horizontal, 16)
-            }
-        }
-    }
-}
+// MARK: - Task row
 
 private struct TodayTaskRow: View {
     @Environment(AppState.self) private var appState
@@ -833,10 +1069,23 @@ private struct TodayTaskRow: View {
     private static let timeFmt: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "h:mm a"
+        f.locale = Locale(identifier: "en_GB")
         return f
     }()
 
     private var list: TaskList? { appState.taskList(for: task) }
+
+    /// "Refill water bottle, incomplete" — the toggle and the thing it toggles,
+    /// spoken together.
+    ///
+    /// Separately they are a circle with no name and a title with no state,
+    /// which is two elements to convey one fact and neither of them sufficient.
+    private var toggleLabel: String {
+        var parts = [task.title, task.done ? "complete" : "incomplete"]
+        if task.priority != .none { parts.append("\(task.priority.label) priority") }
+        if let time = task.scheduledTime { parts.append("at \(Self.timeFmt.string(from: time))") }
+        return parts.joined(separator: ", ")
+    }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -850,6 +1099,8 @@ private struct TodayTaskRow: View {
                     .font(.title3)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(toggleLabel)
+            .accessibilityHint(task.done ? "Marks as not done" : "Marks as done")
 
             // Tap row body → detail
             NavigationLink {
@@ -861,6 +1112,7 @@ private struct TodayTaskRow: View {
                         Circle()
                             .fill(task.priority.color)
                             .frame(width: 7, height: 7)
+                            .accessibilityHidden(true)
                     }
 
                     VStack(alignment: .leading, spacing: 2) {
@@ -885,49 +1137,18 @@ private struct TodayTaskRow: View {
                     Image(systemName: "chevron.right")
                         .font(.caption.weight(.semibold))
                         .foregroundColor(Color(.tertiaryLabel))
+                        .accessibilityHidden(true)
                 }
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Open \(task.title)")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
     }
 }
 
-// MARK: - Today Habits Section
-
-private struct TodayHabitsSection: View {
-    @Environment(AppState.self) private var appState
-    let habits: [Habit]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Today's Habits")
-                .font(.headline)
-                .padding(.horizontal, 20)
-
-            if habits.isEmpty {
-                TodayEmptyCard(
-                    icon: "repeat.circle.fill",
-                    iconColor: Color(.tertiaryLabel),
-                    message: "No habits yet.\nAdd some in the Habits tab."
-                )
-            } else {
-                VStack(spacing: 0) {
-                    ForEach(habits) { habit in
-                        TodayHabitRow(habit: habit)
-                        if habit.id != habits.last?.id {
-                            Divider().padding(.leading, 48)
-                        }
-                    }
-                }
-                .background(Color(.secondarySystemGroupedBackground))
-                .cornerRadius(12)
-                .padding(.horizontal, 16)
-            }
-        }
-    }
-}
+// MARK: - Habit row
 
 private struct TodayHabitRow: View {
     @Environment(AppState.self) private var appState
@@ -948,6 +1169,20 @@ private struct TodayHabitRow: View {
 
     private var streak: Int { appState.streakFor(habit) }
 
+    private var progressText: String {
+        if habit.kind == .build { return "\(todayLog?.count ?? 0) of \(habit.targetCount)" }
+        if todayLog?.slipped == true { return "Slipped today" }
+        if todayLog != nil { return "Maintained today" }
+        return "Clean so far"
+    }
+
+    /// The control and its subject in one announcement.
+    private var toggleLabel: String {
+        var parts = [habit.name, progressText]
+        if streak > 0 { parts.append("\(streak) day streak") }
+        return parts.joined(separator: ", ")
+    }
+
     var body: some View {
         HStack(spacing: 12) {
             NavigationLink {
@@ -956,6 +1191,7 @@ private struct TodayHabitRow: View {
                 HStack(spacing: 12) {
                     Text(habit.emoji)
                         .font(.title2)
+                        .accessibilityHidden(true)
 
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 6) {
@@ -974,34 +1210,24 @@ private struct TodayHabitRow: View {
                                 .padding(.vertical, 2)
                                 .background(Color.orange.opacity(0.12))
                                 .clipShape(Capsule())
+                                .accessibilityHidden(true)
                             }
                         }
 
-                        if habit.kind == .build {
-                            Text("\(todayLog?.count ?? 0) / \(habit.targetCount)")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        } else {
-                            if todayLog?.slipped == true {
-                                Text("Slipped today")
-                                    .font(.caption)
-                                    .foregroundColor(.red)
-                            } else if todayLog != nil {
-                                Text("Maintained today")
-                                    .font(.caption)
-                                    .foregroundColor(.green)
-                            } else {
-                                Text("Clean so far")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
+                        Text(progressText)
+                            .font(.caption)
+                            .foregroundColor(
+                                todayLog?.slipped == true
+                                    ? .red
+                                    : (habit.kind == .break && todayLog != nil ? .green : .secondary)
+                            )
                     }
 
                     Spacer()
                 }
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Open \(habit.name), \(progressText)\(streak > 0 ? ", \(streak) day streak" : "")")
 
             if showUndo {
                 Button {
@@ -1023,6 +1249,7 @@ private struct TodayHabitRow: View {
                         .cornerRadius(8)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Undo \(habit.name)")
                 .transition(.opacity.combined(with: .scale))
             } else {
                 Button {
@@ -1039,21 +1266,25 @@ private struct TodayHabitRow: View {
                         await MainActor.run { withAnimation { showUndo = false } }
                     }
                 } label: {
-                    if isComplete {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(.green)
-                    } else if todayLog?.slipped == true {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.red)
-                    } else {
-                        Image(systemName: "circle")
-                            .foregroundColor(.secondary)
+                    Group {
+                        if isComplete {
+                            Image(systemName: "checkmark.circle.fill").foregroundColor(.green)
+                        } else if todayLog?.slipped == true {
+                            Image(systemName: "xmark.circle.fill").foregroundColor(.red)
+                        } else {
+                            Image(systemName: "circle").foregroundColor(.secondary)
+                        }
                     }
+                    .font(.title3)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(toggleLabel)
+                .accessibilityHint(habit.kind == .build ? "Logs one" : "Records a slip")
             }
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.vertical, 8)
     }
 }

@@ -72,7 +72,7 @@ struct HealthSleepTab: View {
     private var stagePoints: [SleepStagePoint] {
         var out: [SleepStagePoint] = []
         for night in nights {
-            guard let date = _dayKeyFormatter.date(from: night.dayKey) else { continue }
+            guard let date = DayKey.date(from: night.dayKey) else { continue }
             let staged: [(String, Int?)] = [
                 ("Deep", night.deepMin),
                 ("REM", night.remMin),
@@ -241,7 +241,7 @@ struct HealthRecoveryTab: View {
         return history.compactMap { day in
             if let cutoffKey = cutoffKey, day.dayKey < cutoffKey { return nil }
             guard let value = metric.value(from: day),
-                  let date = _dayKeyFormatter.date(from: day.dayKey) else { return nil }
+                  let date = DayKey.date(from: day.dayKey) else { return nil }
             return (date, value)
         }
     }

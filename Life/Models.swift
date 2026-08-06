@@ -1075,6 +1075,24 @@ struct CoachSettings: Codable, Equatable {
     /// Categories the user would rather not be nudged about.
     var mutedCategories: [String] = []
 
+    /// Every permission that changes what the coach is told, as one short
+    /// string.
+    ///
+    /// Used as part of the Today card's refresh trigger. Turning off "share
+    /// task names" changes the advice — the coach can no longer name the thing
+    /// it was recommending — and without this in the trigger the card would go
+    /// on displaying a recommendation built from data the user has just
+    /// withdrawn.
+    var permissionsToken: String {
+        [
+            allowHealth, allowActivity, allowTraining, allowTasks, allowHabits, shareTitles
+        ]
+        .map { $0 ? "1" : "0" }
+        .joined()
+        + "|" + style.rawValue
+        + "|" + mutedCategories.sorted().joined(separator: ",")
+    }
+
     enum Style: String, Codable, CaseIterable, Identifiable {
         case supportive, concise, direct
         var id: String { rawValue }
