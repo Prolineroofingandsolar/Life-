@@ -2554,6 +2554,40 @@ final class AppState {
         save()
     }
 
+    /// Writes a generated programme in one pass.
+    ///
+    /// A plan is N routines, one programme and up to M dated sessions. Building
+    /// it out of `addRoutine`, `addProgram` and `planSession` would call `save()`
+    /// fifteen times and, if anything interrupted it halfway, leave orphan
+    /// routines with no programme pointing at them — visible in the routine list,
+    /// belonging to nothing, and impossible for the user to explain.
+    ///
+    /// Everything is appended together and saved once, so a generated plan is
+    /// either entirely present or entirely absent.
+    ///
+    /// Only ever called from `WorkoutBuilderActions.commit`, which is only ever
+    /// reached from an explicit tap.
+    func applyGeneratedPlan(
+        routines newRoutines: [Routine],
+        program: WorkoutProgram?,
+        plannedSessions newSessions: [PlannedSession],
+        makeActive: Bool
+    ) {
+        routines.append(contentsOf: newRoutines)
+
+        if let program {
+            programs.append(program)
+            if makeActive {
+                for index in programs.indices {
+                    programs[index].isActive = programs[index].id == program.id
+                }
+            }
+        }
+
+        plannedSessions.append(contentsOf: newSessions)
+        save()
+    }
+
     func deletePlannedSession(id: String) {
         plannedSessions.removeAll { $0.id == id }
         save()

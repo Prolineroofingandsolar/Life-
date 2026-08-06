@@ -12,38 +12,13 @@ struct CoachServiceTests {
 
     // MARK: Doubles
 
-    /// A transport that returns whatever the test tells it to, and counts how
-    /// many times it was asked. The count is the point in several tests: "did
-    /// this cost one call or two" is the difference between pennies and pounds.
-    final class StubTransport: CoachTransport, @unchecked Sendable {
-        var responses: [Result<[String: Any], Error>]
-        private(set) var sentBodies: [[String: Any]] = []
-
-        init(_ responses: [Result<[String: Any], Error>]) {
-            self.responses = responses
-        }
-
-        convenience init(_ single: [String: Any]) {
-            self.init([.success(single)])
-        }
-
-        var callCount: Int { sentBodies.count }
-
-        func send(_ body: [String: Any], idToken: String) async throws -> [String: Any] {
-            sentBodies.append(body)
-            guard !responses.isEmpty else { return ["ok": true] }
-            switch responses.removeFirst() {
-            case .success(let value): return value
-            case .failure(let error): throw error
-            }
-        }
-    }
+    // `StubTransport` and `isolatedCoachDefaults` now live in
+    // `CoachTestDoubles.swift`, shared with the workout-builder suites. Two
+    // stubs with subtly different behaviour is how one suite starts passing for
+    // a reason the other would have caught.
 
     /// Fresh UserDefaults per test, so the cache in one doesn't answer another.
-    static func isolatedDefaults() -> UserDefaults {
-        let suite = "coach-tests-\(UUID().uuidString)"
-        return UserDefaults(suiteName: suite) ?? .standard
-    }
+    static func isolatedDefaults() -> UserDefaults { isolatedCoachDefaults() }
 
     static func service(
         transport: CoachTransport,
