@@ -227,9 +227,36 @@ enum HealthSnapshotBuilder {
             )
         }
 
-        if let minutes = appState.healthDays[todayKey]?.exerciseMinutes {
+        let healthToday = appState.healthDays[todayKey]
+
+        if let minutes = healthToday?.exerciseMinutes {
             snapshot.activeMinutes = HealthMetric(
                 value: minutes,
+                state: .partial,
+                confidence: .high,
+                dayKey: todayKey,
+                measuredAt: settings.lastSyncedAt,
+                source: snapshot.source
+            )
+        }
+
+        // Zero is a real reading for these two — a day with no walking really
+        // does have 0 km — so unlike steps, presence of the figure is the test
+        // rather than its being above zero.
+        if let distance = healthToday?.distanceKm {
+            snapshot.distanceKm = HealthMetric(
+                value: distance,
+                state: .partial,
+                confidence: .high,
+                dayKey: todayKey,
+                measuredAt: settings.lastSyncedAt,
+                source: snapshot.source
+            )
+        }
+
+        if let energy = healthToday?.activeEnergyKcal {
+            snapshot.activeEnergyKcal = HealthMetric(
+                value: energy,
                 state: .partial,
                 confidence: .high,
                 dayKey: todayKey,

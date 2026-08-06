@@ -190,6 +190,14 @@ struct HealthSnapshot: Codable, Equatable, Sendable {
 
     var steps: HealthMetric<Int> = .missing
     var activeMinutes: HealthMetric<Int> = .missing
+    /// Distance in kilometres and active energy in kilocalories.
+    ///
+    /// Here rather than read out of `healthDays` by whichever view wants them,
+    /// for the same reason as everything else on this type: a second reader
+    /// applying its own rule for "is there a figure today?" is how Today came to
+    /// disagree with Health in the first place.
+    var distanceKm: HealthMetric<Double> = .missing
+    var activeEnergyKcal: HealthMetric<Double> = .missing
 
     /// How HRV and resting heart rate sit against their own baselines. Nil
     /// whenever the corresponding metric isn't `.ready` — a comparison needs
@@ -370,6 +378,8 @@ struct HealthSnapshot: Codable, Equatable, Sendable {
         stable.readiness.measuredAt = nil
         stable.steps.measuredAt = nil
         stable.activeMinutes.measuredAt = nil
+        stable.distanceKm.measuredAt = nil
+        stable.activeEnergyKcal.measuredAt = nil
         return stable
     }
 }

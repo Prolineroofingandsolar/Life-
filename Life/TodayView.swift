@@ -15,13 +15,16 @@ import SwiftUI
 /// 1. **Greeting and freshness.** One compact row. Who you are, and whether the
 ///    numbers below are current — because every figure on this page is only as
 ///    trustworthy as the last sync.
-/// 2. **Do this next.** One recommendation, one primary button, visually
+/// 2. **Health, swipeable.** Two pages of tiles rather than one tall grid. Every
+///    tile renders the snapshot's *state*, so a tile that can't tell you
+///    something says so instead of showing a zero that reads as a real reading.
+/// 3. **Log and Start.** The two things the tiles above can't do for
+///    themselves.
+/// 4. **Do this next.** One recommendation, one primary button, visually
 ///    unmistakable.
-/// 3. **Today.** Tasks, habits and the planned workout in one section rather
+/// 5. **Today.** Tasks, habits and the planned workout in one section rather
 ///    than three competing cards.
-/// 4. **Health.** Collapsed to a summary row, expandable. It is reference
-///    material, and the Health tab exists for the full version.
-/// 5. **Daily insight.** The briefing, as an entry rather than a second essay.
+/// 6. **Daily insight.** The briefing, as an entry rather than a second essay.
 ///
 /// Spacing follows the same logic: tight *within* a section, generous *between*
 /// them, so the grouping is visible without every card needing a shadow.
@@ -31,7 +34,10 @@ struct TodayView: View {
     @State private var showSettings = false
     @State private var presentedWorkout: PresentedWorkout?
     @State private var showQuickStartPicker = false
+    @State private var showMealSheet = false
     @State private var dayToken = UUID()
+    @State private var healthSyncTask: Task<Void, Never>? = nil
+    @State private var hkManager = HealthKitManager()
 
     /// Gaps between conceptual sections. Everything inside a section is tighter
     /// than this; nothing else is looser.
@@ -120,14 +126,22 @@ struct TodayView: View {
                 LazyVStack(spacing: Self.sectionSpacing) {
                     GreetingHeader(greeting: greeting)
 
-                    // The one thing on the page meant to be acted on, directly
-                    // under the greeting rather than third behind two cards of
-                    // prose.
+                    // Health first, and swipeable. Every tile renders the
+                    // snapshot's *state* rather than a bare number, so a tile
+                    // that can't tell you something says so instead of showing
+                    // a zero that reads as a real reading.
+                    VStack(spacing: 12) {
+                        HealthCarousel()
+                        QuickActionRow(
+                            onLogMeal: { showMealSheet = true },
+                            onStartWorkout: startOrResumeWorkout
+                        )
+                    }
+
+                    // The one thing on the page meant to be acted on.
                     CoachCard()
 
                     todaySection
-
-                    HealthSummarySection()
 
                     // Reference, not an equal-weight card. The morning briefing
                     // used to sit above the recommendation and open with "Good
@@ -141,6 +155,28 @@ struct TodayView: View {
                 .id(dayToken)
             }
             .background(Color(.systemGroupedBackground))
+            // The sync loop lives here rather than inside the health section it
+            // used to belong to. That section is now a carousel that can be
+            // swiped away from, and a view that stops polling because you
+            // scrolled past it is a screen that quietly goes stale.
+            .task { await syncHealth() }
+            .onAppear {
+                healthSyncTask?.cancel()
+                healthSyncTask = Task {
+                    while !Task.isCancelled {
+                        // Two minutes rather than five. The sync is incremental
+                        // — each metric asks only for what it hasn't already got
+                        // — so a poll that finds nothing new costs a handful of
+                        // requests instead of a re-download.
+                        try? await Task.sleep(nanoseconds: 2 * 60 * 1_000_000_000)
+                        if !Task.isCancelled { await syncHealth() }
+                    }
+                }
+            }
+            .onDisappear { healthSyncTask?.cancel() }
+            .sheet(isPresented: $showMealSheet) {
+                MealLogSheet { name in appState.addMeal(name: name) }
+            }
             .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in
                 // The day rolled over while the app was open. Everything on this
                 // page is keyed to "today", so it all has to be rebuilt — and
@@ -186,6 +222,45 @@ struct TodayView: View {
         }
     }
 
+    // MARK: Actions
+
+    /// Resume, start the plan, or pick an exercise — in that order.
+    ///
+    /// Shared by the quick-action row and the workout row in the Today section,
+    /// because two buttons that say "Start" and behave differently is worse than
+    /// either of them not existing.
+    private func startOrResumeWorkout() {
+        if let active = appState.activeSession {
+            presentedWorkout = PresentedWorkout(id: active.id)
+        } else if let plan = todaysPlan, !plan.isRestDay {
+            appState.startSession(name: plan.routineName, routineId: plan.routineId)
+            presentedWorkout = appState.activeSession.map { PresentedWorkout(id: $0.id) }
+        } else {
+            // No routine to start from, so there's nothing to put in the workout
+            // yet. Same rule as Train's Quick Start: pick the exercise first, and
+            // only then does a workout — and its running timer — come into
+            // existence.
+            showQuickStartPicker = true
+        }
+    }
+
+    @MainActor
+    private func syncHealth() async {
+        // Routed through HealthSync so this agrees with the Health tab about
+        // which source is authoritative — Fitbit when connected, Apple Health
+        // otherwise. Syncing HealthKit here regardless would let an iPhone-only
+        // step count overwrite the wrist tracker's.
+        let window = appState.healthSettings.hasBackfilled ? 7 : 365
+        await HealthSync.run(appState: appState, healthKit: hkManager, daysBack: window)
+
+        // Today's step count comes straight from HealthKit on the Apple Health
+        // path so the ring stays live between the coarser daily merges.
+        if HealthSync.source(for: appState.healthSettings) == .appleHealth {
+            appState.syncSteps(await hkManager.fetchStepsForToday())
+            appState.invalidateHealthSnapshot()
+        }
+    }
+
     // MARK: Today section
 
     /// Tasks, habits and the workout under one heading.
@@ -202,20 +277,11 @@ struct TodayView: View {
             )
 
             VStack(spacing: 0) {
-                TodayWorkoutRow(plan: todaysPlan, workedOutToday: workedOutToday) {
-                    if let active = appState.activeSession {
-                        presentedWorkout = PresentedWorkout(id: active.id)
-                    } else if let plan = todaysPlan, !plan.isRestDay {
-                        appState.startSession(name: plan.routineName, routineId: plan.routineId)
-                        presentedWorkout = appState.activeSession.map { PresentedWorkout(id: $0.id) }
-                    } else {
-                        // No routine to start from, so there's nothing to put in
-                        // the workout yet. Same rule as Train's Quick Start: pick
-                        // the exercise first, and only then does a workout — and
-                        // its running timer — come into existence.
-                        showQuickStartPicker = true
-                    }
-                }
+                TodayWorkoutRow(
+                    plan: todaysPlan,
+                    workedOutToday: workedOutToday,
+                    onStart: startOrResumeWorkout
+                )
 
                 if todayTasks.isEmpty {
                     Divider().padding(.leading, 16)
@@ -429,6 +495,91 @@ private struct TodayEmptyRow: View {
     }
 }
 
+// MARK: - Quick actions
+
+/// Log and Start, directly under the carousel.
+///
+/// Two things the health tiles above can't do for themselves: record something
+/// that has no sensor behind it, and begin a workout. They sit here rather than
+/// scattered through the page because the carousel replaced a six-tile care grid
+/// where water and meals each had their own tappable box — losing the grid must
+/// not lose the actions.
+///
+/// Water is still one tap on the carousel's own tile. This row is where the
+/// things needing a sheet or a decision live.
+private struct QuickActionRow: View {
+
+    @Environment(AppState.self) private var appState
+
+    let onLogMeal: () -> Void
+    let onStartWorkout: () -> Void
+
+    private var isActive: Bool { appState.activeSession != nil }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Menu {
+                Button {
+                    HapticManager.impact(.light)
+                    appState.addWater()
+                } label: {
+                    Label("Glass of water", systemImage: "drop.fill")
+                }
+                Button(action: onLogMeal) {
+                    Label("Meal", systemImage: "fork.knife")
+                }
+            } label: {
+                actionLabel(
+                    title: "Log",
+                    systemImage: "plus",
+                    filled: false
+                )
+            }
+            // A `Menu` exposes itself as a button but takes its label's
+            // accessibility text, which here would be the two words plus a
+            // symbol name. Named explicitly, and told it opens something.
+            .accessibilityLabel("Log")
+            .accessibilityHint("Choose water or a meal")
+
+            Button {
+                HapticManager.impact(.medium)
+                onStartWorkout()
+            } label: {
+                actionLabel(
+                    title: isActive ? "Resume" : "Start",
+                    systemImage: isActive ? "figure.run" : "play.fill",
+                    filled: true
+                )
+            }
+            .buttonStyle(PressableButtonStyle())
+            .accessibilityLabel(isActive ? "Resume workout" : "Start a workout")
+        }
+        .padding(.horizontal, 16)
+    }
+
+    private func actionLabel(title: String, systemImage: String, filled: Bool) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: systemImage)
+                .font(.system(size: 13, weight: .semibold))
+                .accessibilityHidden(true)
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+        }
+        .foregroundColor(filled ? .white : AppTheme.primary)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .background {
+            if filled {
+                AppTheme.brandGradient
+            } else {
+                AppTheme.primary.opacity(0.12)
+            }
+        }
+        .clipShape(Capsule())
+        .contentShape(Capsule())
+    }
+}
+
 // MARK: - Workout row
 
 /// Today's training, as one row rather than a card.
@@ -526,279 +677,6 @@ private struct TodayWorkoutRow: View {
     }
 }
 
-// MARK: - Health summary
-
-/// Health, collapsed.
-///
-/// The care dashboard was a rings card plus a six-tile grid — the single
-/// tallest thing on Today, above tasks, repeating what the Health tab shows in
-/// full. Here it is one summary row that expands, and the figures it shows come
-/// from the canonical snapshot rather than being read out of the store again.
-/// That is what stops Today reporting "no HRV" while Health, one tab across,
-/// shows 79 ms.
-private struct HealthSummarySection: View {
-
-    @Environment(AppState.self) private var appState
-    @AppStorage("today_health_expanded_v1") private var isExpanded = false
-    @State private var healthSyncTask: Task<Void, Never>? = nil
-    @State private var showMealSheet = false
-    @State private var hkManager = HealthKitManager()
-
-    private var snapshot: HealthSnapshot { appState.healthSnapshot }
-    private var today: CareDay { appState.today }
-    private var settings: CareSettings { appState.careSettings }
-    private var healthSettings: HealthSettings { appState.healthSettings }
-
-    private let columns = [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: TodayLayout.itemSpacing) {
-            SectionHeading(title: "Health")
-
-            VStack(spacing: 0) {
-                disclosureRow
-
-                if isExpanded {
-                    Divider().padding(.leading, 16)
-                    detail
-                        .padding(16)
-                        .transition(.opacity)
-                }
-            }
-            .background(AppTheme.cardBg)
-            .clipShape(RoundedRectangle(cornerRadius: AppTheme.cardRadius, style: .continuous))
-            .padding(.horizontal, 16)
-        }
-        .animation(.easeInOut(duration: 0.2), value: isExpanded)
-        .sheet(isPresented: $showMealSheet) {
-            MealLogSheet { name in appState.addMeal(name: name) }
-        }
-        .task { await syncHealth() }
-        .onAppear {
-            healthSyncTask?.cancel()
-            healthSyncTask = Task {
-                while !Task.isCancelled {
-                    // Two minutes rather than five. The sync is incremental —
-                    // each metric asks only for what it hasn't already got — so
-                    // a poll that finds nothing new costs a handful of requests
-                    // instead of a re-download, which is what made five minutes
-                    // the safe number before.
-                    try? await Task.sleep(nanoseconds: 2 * 60 * 1_000_000_000)
-                    if !Task.isCancelled { await syncHealth() }
-                }
-            }
-        }
-        .onDisappear { healthSyncTask?.cancel() }
-    }
-
-    // MARK: Collapsed row
-
-    private var disclosureRow: some View {
-        Button {
-            isExpanded.toggle()
-            HapticManager.selection()
-        } label: {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(summaryLine)
-                        .font(.subheadline.weight(.medium))
-                        .foregroundColor(.primary)
-                        .multilineTextAlignment(.leading)
-                    Text(snapshot.freshnessStatement)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 8)
-                Image(systemName: "chevron.down")
-                    .font(.caption.weight(.semibold))
-                    .foregroundColor(.secondary)
-                    .rotationEffect(.degrees(isExpanded ? 180 : 0))
-                    .accessibilityHidden(true)
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Health summary. \(summaryLine). \(snapshot.freshnessStatement)")
-        .accessibilityAddTraits(.isButton)
-        .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
-    }
-
-    /// The one line worth reading when the section is closed.
-    ///
-    /// Built from the snapshot's states rather than from raw optionals, so a
-    /// tracker that hasn't synced, a night that wasn't recorded and a night
-    /// recorded but not yet comparable each produce a different sentence.
-    private var summaryLine: String {
-        if !snapshot.hasConnectedSource {
-            return "No tracker connected"
-        }
-        var parts: [String] = []
-        if let minutes = snapshot.sleepMinutes.value {
-            let text = HealthInsights.formatDuration(minutes)
-            parts.append(snapshot.sleepMinutes.state == .stale ? "Sleep \(text) (not last night)" : "Slept \(text)")
-        }
-        if let steps = snapshot.steps.value {
-            parts.append("\(steps.formatted()) steps")
-        }
-        if let readiness = snapshot.readiness.value {
-            parts.append("Readiness \(readiness)")
-        } else if snapshot.readiness.state == .insufficientHistory {
-            parts.append("Recovery: not enough history yet")
-        }
-        return parts.isEmpty ? "Nothing recorded yet today" : parts.joined(separator: " · ")
-    }
-
-    // MARK: Expanded detail
-
-    private var detail: some View {
-        LazyVGrid(columns: columns, spacing: 10) {
-            TodayStatBox(
-                icon: "drop.fill", iconColor: .blue,
-                value: "\(today.waterGlasses)/\(settings.waterGoal)", label: "Water",
-                done: today.waterGlasses >= settings.waterGoal,
-                action: { appState.addWater() },
-                secondaryAction: { appState.removeWater() }
-            )
-
-            TodayStatBox(
-                icon: "fork.knife", iconColor: .orange,
-                value: "\(today.meals.count)/\(settings.mealGoal)", label: "Meals",
-                done: today.meals.count >= settings.mealGoal,
-                action: { showMealSheet = true }
-            )
-
-            stepsBox
-            sleepBox
-            if healthSettings.showRecoveryTile { recoveryBox }
-        }
-    }
-
-    /// Steps, or a statement of why there aren't any.
-    ///
-    /// A dash rather than a zero. "0 steps" and "your tracker hasn't synced"
-    /// look identical as a number and need opposite responses, and the whole
-    /// point of the snapshot's `missing` state is that the app knows which.
-    @ViewBuilder
-    private var stepsBox: some View {
-        let source = HealthSync.source(for: healthSettings)
-        let goalLabel = "\(settings.stepGoal.formatted()) goal"
-        let sourceLabel = source == .none ? goalLabel : source.displayName + " · " + goalLabel
-
-        if let steps = snapshot.steps.value {
-            TodayStatBox(
-                icon: "figure.walk", iconColor: AppTheme.primary,
-                value: steps.formatted(), label: "Steps · " + sourceLabel,
-                done: steps >= settings.stepGoal
-            )
-        } else {
-            TodayStatBox(
-                icon: "figure.walk", iconColor: Color(.tertiaryLabel),
-                value: "—",
-                label: source == .none ? "Steps · no tracker" : "Steps · not synced yet"
-            )
-        }
-    }
-
-    /// Last night's sleep against the goal, or the reason there isn't one.
-    @ViewBuilder
-    private var sleepBox: some View {
-        let goal = healthSettings.sleepGoalMinutes
-        let goalLabel = goal % 60 == 0 ? "\(goal / 60)h" : "\(goal / 60)h\(goal % 60)m"
-
-        if let minutes = snapshot.sleepMinutes.value {
-            TodayStatBox(
-                icon: "bed.double.fill", iconColor: .indigo,
-                value: HealthInsights.formatDuration(minutes),
-                label: snapshot.sleepMinutes.state == .stale
-                    ? "Sleep · not last night"
-                    : "Sleep · \(goalLabel) goal",
-                done: minutes >= goal
-            )
-        } else {
-            TodayStatBox(
-                icon: "bed.double.fill", iconColor: Color(.tertiaryLabel),
-                value: "—", label: "Sleep · not recorded"
-            )
-        }
-    }
-
-    /// Recovery, including the case that used to be reported as nothing at all.
-    ///
-    /// A resting heart rate of 59 with only four nights behind it is a real
-    /// measurement without an interpretation. It gets shown, with "not enough
-    /// history yet" underneath — not withheld, and never described as absent.
-    @ViewBuilder
-    private var recoveryBox: some View {
-        if let hr = snapshot.restingHeartRate.value {
-            TodayStatBox(
-                icon: "heart.fill", iconColor: .pink,
-                value: "\(Int(hr))",
-                label: recoveryLabel
-            )
-        } else if let hrv = snapshot.hrvMs.value {
-            TodayStatBox(
-                icon: "waveform.path.ecg", iconColor: AppTheme.primary,
-                value: "\(Int(hrv))",
-                label: snapshot.hrvMs.state == .insufficientHistory
-                    ? "HRV ms · no baseline yet"
-                    : "HRV ms"
-            )
-        } else {
-            TodayStatBox(
-                icon: "heart", iconColor: Color(.tertiaryLabel),
-                value: "—",
-                label: snapshot.hasConnectedSource ? "Recovery · not recorded" : "Recovery · no tracker"
-            )
-        }
-    }
-
-    private var recoveryLabel: String {
-        if let comparison = snapshot.restingHeartRateBaseline, comparison.isMeaningful {
-            return comparison.direction == .below
-                ? "Resting HR · below usual"
-                : "Resting HR · above usual"
-        }
-        if snapshot.restingHeartRate.state == .insufficientHistory {
-            let recorded = snapshot.restingHeartRate.sampleCount
-            let required = snapshot.restingHeartRate.requiredSamples
-            return "Resting HR · \(recorded)/\(required) nights"
-        }
-        if let hrv = snapshot.hrvMs.value {
-            return "Resting HR · HRV \(Int(hrv))ms"
-        }
-        return "Resting HR"
-    }
-
-    // MARK: Syncing
-
-    @MainActor
-    private func syncHealth() async {
-        // Routed through HealthSync so this agrees with the Health tab about
-        // which source is authoritative — Fitbit when connected, Apple Health
-        // otherwise. Syncing HealthKit here regardless would let an iPhone-only
-        // step count overwrite the wrist tracker's.
-        let window = appState.healthSettings.hasBackfilled ? 7 : 365
-        await HealthSync.run(appState: appState, healthKit: hkManager, daysBack: window)
-
-        // Today's step count comes straight from HealthKit on the Apple Health
-        // path so the Move ring stays live between the coarser daily merges.
-        if HealthSync.source(for: appState.healthSettings) == .appleHealth {
-            appState.syncSteps(await hkManager.fetchStepsForToday())
-            appState.invalidateHealthSnapshot()
-        }
-    }
-}
-
-/// Shared spacing, so the health section and the Today section agree without
-/// either one owning the other's constant.
-private enum TodayLayout {
-    static let itemSpacing: CGFloat = 10
-}
-
 // MARK: - Meal Log Sheet
 
 private struct MealLogSheet: View {
@@ -855,121 +733,6 @@ private struct MealLogSheet: View {
             .onAppear { focused = true }
         }
         .presentationDetents([.medium])
-    }
-}
-
-private struct LongPressActionModifier: ViewModifier {
-    let action: (() -> Void)?
-
-    func body(content: Content) -> some View {
-        if let action {
-            content.simultaneousGesture(
-                LongPressGesture(minimumDuration: 0.4).onEnded { _ in
-                    HapticManager.impact(.rigid)
-                    action()
-                }
-            )
-        } else {
-            content
-        }
-    }
-}
-
-// MARK: - Today Stat Box
-
-private struct TodayStatBox: View {
-    let icon: String
-    let iconColor: Color
-    let value: String
-    let label: String
-    var done: Bool = false
-    var action: (() -> Void)? = nil
-    var secondaryAction: (() -> Void)? = nil
-
-    /// One spoken string for the whole tile.
-    ///
-    /// VoiceOver used to read the glyph, the number and the label as three
-    /// elements — "drop fill, 3 slash 8, Water" — which is three swipes to learn
-    /// one fact. The symbol is hidden and the rest is combined, so it reads
-    /// "Water, 3 of 8" and the tile's own state comes through as a value rather
-    /// than a fourth element.
-    private var spokenLabel: String {
-        let core = "\(label), \(value.replacingOccurrences(of: "/", with: " of "))"
-        return done ? "\(core), complete" : core
-    }
-
-    var body: some View {
-        if let action {
-            Button {
-                HapticManager.impact(done ? .light : .medium)
-                action()
-            } label: { content.contentShape(Rectangle()) }
-            .buttonStyle(PressableButtonStyle())
-            .modifier(LongPressActionModifier(action: secondaryAction))
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(spokenLabel)
-            .accessibilityAddTraits(.isButton)
-        } else {
-            content
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(spokenLabel)
-        }
-    }
-
-    private var content: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                ZStack {
-                    Circle().fill(iconColor.opacity(0.15)).frame(width: 34, height: 34)
-                    Image(systemName: icon)
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(iconColor)
-                }
-                .accessibilityHidden(true)
-                Spacer()
-                if action != nil {
-                    Image(systemName: "plus")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundColor(iconColor)
-                        .frame(width: 28, height: 28)
-                        .background(iconColor.opacity(0.12))
-                        .clipShape(Circle())
-                        .overlay(alignment: .topTrailing) {
-                            if done {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .font(.system(size: 12))
-                                    .foregroundColor(.green)
-                                    .background(Circle().fill(Color(.systemBackground)))
-                                    .offset(x: 4, y: -4)
-                            }
-                        }
-                        .accessibilityHidden(true)
-                } else if done {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 17))
-                        .foregroundColor(iconColor)
-                        .accessibilityHidden(true)
-                }
-            }
-            Text(value)
-                .font(.system(size: 22, weight: .bold, design: .rounded))
-                .foregroundColor(.primary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-            Text(label)
-                .font(.system(size: 12))
-                .foregroundColor(.secondary)
-                .lineLimit(2)
-                .minimumScaleFactor(0.8)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        // Tertiary, not secondary. These tiles sit *inside* a card already
-        // painted `AppTheme.cardBg` (secondary), so the same fill would make
-        // them invisible — one flat rectangle with numbers floating on it.
-        .background(Color(.tertiarySystemGroupedBackground))
-        .cornerRadius(12)
-        .animation(.spring(response: 0.3, dampingFraction: 0.6), value: done)
     }
 }
 
