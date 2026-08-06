@@ -314,20 +314,44 @@ struct HealthSnapshot: Codable, Equatable, Sendable {
     /// sleep arriving late, or a recovery reading landing after the briefing
     /// was written, means the briefing is now describing a night it never saw.
     /// That is the case worth catching, and only that one.
+    /// Built by appending to a declared array rather than as one literal.
+    ///
+    /// A ten-element literal mixing `map(String.init)`, `String(format:)` and
+    /// `??` gives the type-checker ten independent overload sets to resolve
+    /// simultaneously, and it gives up: "unable to type-check this expression in
+    /// reasonable time". Each `append` below is its own statement with a known
+    /// element type, so there is nothing left to infer.
     var overnightHash: String {
         let stable = withoutTimestamps
-        return StableHash.of([
-            stable.sleepMinutes.value.map(String.init) ?? "-",
-            stable.sleepMinutes.state.rawValue,
-            stable.sleepScore.value.map(String.init) ?? "-",
-            stable.sleepScore.state.rawValue,
-            stable.hrvMs.value.map { String(format: "%.1f", $0) } ?? "-",
-            stable.hrvMs.state.rawValue,
-            stable.restingHeartRate.value.map { String(format: "%.1f", $0) } ?? "-",
-            stable.restingHeartRate.state.rawValue,
-            stable.readiness.value.map(String.init) ?? "-",
-            stable.readiness.state.rawValue
-        ])
+        var parts: [String] = []
+
+        parts.append(Self.describe(stable.sleepMinutes))
+        parts.append(Self.describe(stable.sleepScore))
+        parts.append(Self.describe(stable.hrvMs))
+        parts.append(Self.describe(stable.restingHeartRate))
+        parts.append(Self.describe(stable.readiness))
+
+        return StableHash.of(parts)
+    }
+
+    /// One metric as "value|state", to one decimal place.
+    ///
+    /// The state is part of the string on purpose: a reading going stale or a
+    /// baseline becoming computable changes what a briefing should say even
+    /// when the number itself has not moved.
+    private static func describe(_ metric: HealthMetric<Int>) -> String {
+        let value = metric.value.map { String($0) } ?? "-"
+        return value + "|" + metric.state.rawValue
+    }
+
+    private static func describe(_ metric: HealthMetric<Double>) -> String {
+        let value: String
+        if let number = metric.value {
+            value = String(format: "%.1f", number)
+        } else {
+            value = "-"
+        }
+        return value + "|" + metric.state.rawValue
     }
 
     /// A copy with every clock reading flattened, so two snapshots of the same
