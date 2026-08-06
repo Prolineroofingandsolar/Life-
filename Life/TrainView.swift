@@ -21,6 +21,9 @@ struct TrainView: View {
     @State private var detailRoutine: Routine? = nil
     @State private var showImportRoutine = false
     @State private var showQuickStartPicker = false
+    /// The AI builder. Nil when closed; the value carries what kind of thing to
+    /// build, so the sheet opens straight into the right form.
+    @State private var builderKind: WorkoutPreviewSheet.Kind?
 
     private var finishedSessions: [WorkoutSession] {
         appState.sessions
@@ -92,12 +95,34 @@ struct TrainView: View {
                                         .foregroundColor(AppTheme.trainAccent)
                                 }
                                 .accessibilityLabel("My programs")
-                                Button { showImportRoutine = true } label: {
+                                // A menu rather than a button. The sparkles
+                                // used to open the CSV importer, which is not
+                                // what a sparkle promises — and now that there
+                                // is a real generator, both need a way in.
+                                Menu {
+                                    Button {
+                                        builderKind = .workout
+                                    } label: {
+                                        Label("Build a workout", systemImage: "wand.and.stars")
+                                    }
+                                    Button {
+                                        builderKind = .plan
+                                    } label: {
+                                        Label("Build a programme", systemImage: "calendar.badge.plus")
+                                    }
+                                    Divider()
+                                    Button {
+                                        showImportRoutine = true
+                                    } label: {
+                                        Label("Import from a file", systemImage: "square.and.arrow.down")
+                                    }
+                                } label: {
                                     Image(systemName: "sparkles")
                                         .foregroundColor(AppTheme.trainAccent)
                                         .font(.system(size: 18))
                                 }
-                                .accessibilityLabel("Generate a routine")
+                                .accessibilityLabel("Build with the coach")
+                                .accessibilityHint("Build a workout or programme, or import one")
                                 Button { showAddRoutine = true } label: {
                                     Image(systemName: "plus.circle.fill")
                                         .foregroundColor(AppTheme.trainAccent)
@@ -203,6 +228,9 @@ struct TrainView: View {
             .sheet(isPresented: $showExerciseLibrary) { ExerciseLibraryView() }
             .sheet(isPresented: $showAddRoutine) { AddRoutineSheet() }
             .sheet(isPresented: $showImportRoutine) { ImportRoutineSheet() }
+            .sheet(item: $builderKind) { kind in
+                WorkoutPreviewSheet(initialKind: kind)
+            }
             .sheet(item: $detailRoutine) { routine in
                 RoutineDetailSheet(routine: routine) {
                     appState.startSession(name: routine.name, routineId: routine.id)

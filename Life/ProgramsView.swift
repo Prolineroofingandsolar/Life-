@@ -6,6 +6,7 @@ struct ProgramsView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.dismiss) private var dismiss
     @State private var showAddProgram = false
+    @State private var showBuilder = false
     @State private var editingProgram: WorkoutProgram? = nil
 
     var body: some View {
@@ -32,6 +33,9 @@ struct ProgramsView: View {
             }
             .sheet(isPresented: $showAddProgram) {
                 AddProgramSheet()
+            }
+            .sheet(isPresented: $showBuilder) {
+                WorkoutPreviewSheet(initialKind: .plan)
             }
             .sheet(item: $editingProgram) { program in
                 EditProgramSheet(program: program)
@@ -121,6 +125,15 @@ struct ProgramsView: View {
         }
 
         Section {
+            Button {
+                HapticManager.impact(.medium)
+                showBuilder = true
+            } label: {
+                Label("Build one with the coach", systemImage: "wand.and.stars")
+                    .foregroundColor(AppTheme.primary)
+            }
+            .buttonStyle(PressableButtonStyle())
+
             Button {
                 HapticManager.impact(.medium)
                 showAddProgram = true
