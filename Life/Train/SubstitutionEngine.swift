@@ -73,34 +73,65 @@ enum SubstitutionEngine {
     static func candidates(for request: Request) -> [Candidate] {
         let replacing = request.replacing
 
-        let pool = request.library.filter { candidate in
-            // Never itself, never something already in the workout.
-            guard candidate.id != replacing.id else { return false }
-            guard !request.idsInWorkout.contains(candidate.id) else { return false }
-
-            // Exclusions are absolute. A model that ignores one must not be
-            // able to route round it by suggesting a substitution.
-            if let muscle = BlueprintMuscle(rawValue: candidate.muscle),
-               request.excludedMuscles.contains(muscle) {
-                return false
-            }
-
-            // Equipment the user doesn't have is a hard filter, not a penalty.
-            if !request.availableEquipment.isEmpty,
-               !request.availableEquipment.contains(candidate.equipment) {
-                return false
-            }
-
-            // Must train something related. A calf raise is not a substitute
-            // for a bench press however conveniently it scores.
-            return trainsSomethingRelated(candidate, to: replacing)
+        var pool: [Exercise] = []
+        for candidate in request.library where isEligible(candidate, request: request) {
+            pool.append(candidate)
         }
 
-        return pool
-            .map { build($0, replacing: replacing, request: request) }
-            .sorted { $0.score == $1.score ? $0.exercise.id < $1.exercise.id : $0.score > $1.score }
-            .prefix(maximumCandidates)
-            .map { $0 }
+        // Built as separate statements rather than one chain.
+        //
+        // `map` into `sorted` into `prefix` into `map`, with a ternary inside
+        // the sort closure, gives the type-checker four generic signatures and a
+        // branch to resolve simultaneously — and it gives up: "unable to
+        // type-check this expression in reasonable time". Each step now has a
+        // declared type and nothing left to infer.
+        var scored: [Candidate] = []
+        scored.reserveCapacity(pool.count)
+        for candidate in pool {
+            scored.append(build(candidate, replacing: replacing, request: request))
+        }
+
+        scored.sort(by: isBetterMatch)
+        return Array(scored.prefix(maximumCandidates))
+    }
+
+    /// Descending by score, then ascending by id.
+    ///
+    /// The tie-break is what makes the ordering deterministic — without it two
+    /// equally good candidates resolve in whatever order the library happened to
+    /// be in, and "regenerate" would appear to shuffle at random.
+    private static func isBetterMatch(_ a: Candidate, _ b: Candidate) -> Bool {
+        if a.score != b.score { return a.score > b.score }
+        return a.exercise.id < b.exercise.id
+    }
+
+    /// Whether a candidate may be offered at all.
+    ///
+    /// A named function rather than a closure inside `filter`. Five clauses
+    /// mixing optional binding, set membership and a call is enough to make the
+    /// type-checker give up on the whole expression it sits in — and every one
+    /// of these is a rule worth being able to read on its own line.
+    private static func isEligible(_ candidate: Exercise, request: Request) -> Bool {
+        let replacing = request.replacing
+
+        // Never itself, never something already in the workout.
+        if candidate.id == replacing.id { return false }
+        if request.idsInWorkout.contains(candidate.id) { return false }
+
+        // Exclusions are absolute. A model that ignores one must not be able to
+        // route round it by suggesting a substitution.
+        if let muscle = BlueprintMuscle(rawValue: candidate.muscle) {
+            if request.excludedMuscles.contains(muscle) { return false }
+        }
+
+        // Equipment the user doesn't have is a hard filter, not a penalty.
+        if !request.availableEquipment.isEmpty {
+            if !request.availableEquipment.contains(candidate.equipment) { return false }
+        }
+
+        // Must train something related. A calf raise is not a substitute for a
+        // bench press however conveniently it scores.
+        return trainsSomethingRelated(candidate, to: replacing)
     }
 
     /// Whether two exercises are in the same neighbourhood at all.
