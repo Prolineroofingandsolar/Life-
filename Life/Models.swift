@@ -1081,6 +1081,16 @@ struct CoachSettings: Codable, Equatable {
     /// Categories the user would rather not be nudged about.
     var mutedCategories: [String] = []
 
+    /// Whether Life may send a photograph of a gym machine for identification.
+    ///
+    /// **Off by default, and separate from `cloudEnabled`.** Every other coach
+    /// feature sends derived numbers — a sleep score, a step count, a muscle
+    /// name. This one sends an image, which is a different kind of thing and a
+    /// different decision, so consenting to cloud coaching does not consent to
+    /// this. The photo is sent, used and discarded: never stored, never logged,
+    /// never attached to a synced document.
+    var allowMachineScanning: Bool = false
+
     /// Every permission that changes what the coach is told, as one short
     /// string.
     ///

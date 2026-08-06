@@ -358,3 +358,48 @@ function urlCheck(value: unknown): ValidationResult {
   }
   return { ok: true };
 }
+
+// MARK: - Machine identification
+
+/**
+ * What the model may say about a photographed machine.
+ *
+ * The only free-text field is `name`, and it never resolves anything by itself
+ * — the app matches it against the library and, on a miss, puts it in a form the
+ * user edits and confirms. Nothing here creates a record.
+ */
+export const MACHINE_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    name: { type: "STRING" },
+    muscle: { type: "STRING", enum: [...MUSCLES] },
+    equipment: { type: "STRING", enum: [...EQUIPMENT] },
+    movementType: { type: "STRING", enum: [...MOVEMENT_TYPES] },
+    /** 0-100. Shown to the user, not used as a threshold. */
+    confidence: { type: "INTEGER" },
+  },
+  required: ["name", "muscle", "equipment", "confidence"],
+} as const;
+
+export function validateMachineIdentification(value: unknown): ValidationResult {
+  if (!isRecord(value)) return fail("not an object");
+
+  const nameError = checkText(value.name, "name", MAX_NAME_CHARS, true);
+  if (nameError) return nameError;
+
+  if (!MUSCLES.includes(value.muscle as (typeof MUSCLES)[number])) {
+    return fail(`unknown muscle: ${String(value.muscle)}`);
+  }
+  if (!EQUIPMENT.includes(value.equipment as (typeof EQUIPMENT)[number])) {
+    return fail(`unknown equipment: ${String(value.equipment)}`);
+  }
+  if (value.movementType !== undefined && value.movementType !== null &&
+      !MOVEMENT_TYPES.includes(value.movementType as (typeof MOVEMENT_TYPES)[number])) {
+    return fail("unknown movement type");
+  }
+
+  const confidenceError = checkInt(value.confidence, "confidence", 0, 100);
+  if (confidenceError) return confidenceError;
+
+  return urlCheck(value);
+}

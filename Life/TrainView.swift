@@ -26,6 +26,8 @@ struct TrainView: View {
     @State private var builderKind: WorkoutPreviewSheet.Kind?
     /// Progression proposals awaiting review. Non-empty presents the sheet.
     @State private var reviewingProposals: [ProgressionEngine.Proposal] = []
+    @State private var showSettings = false
+    @State private var showScanner = false
 
     private var finishedSessions: [WorkoutSession] {
         appState.sessions
@@ -68,6 +70,21 @@ struct TrainView: View {
             return
         }
         presentedWorkout = appState.activeSession.map { PresentedWorkout(id: $0.id) }
+    }
+
+    private func circularToolbarButton(
+        _ systemImage: String,
+        label: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(.primary)
+                .frame(width: 32, height: 32)
+                .background(Circle().fill(AppTheme.cardBg))
+        }
+        .accessibilityLabel(label)
     }
 
     /// One heading style for the page.
@@ -164,7 +181,7 @@ struct TrainView: View {
                         TrainYourWayGrid(
                             onBuildProgramme: { builderKind = .plan },
                             onBuildWorkout: { builderKind = .workout },
-                            onBrowseProgrammes: { showBrowsePrograms = true },
+                            onScanMachine: { showScanner = true },
                             onExerciseLibrary: { showExerciseLibrary = true }
                         )
                         .padding(.horizontal, 16)
@@ -195,15 +212,16 @@ struct TrainView: View {
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
-                    Button { hubTab = .activity } label: {
-                        Image(systemName: "chart.xyaxis.line")
-                            .foregroundColor(AppTheme.trainAccent)
+                    // Circular, so they read as controls rather than as
+                    // decoration sitting next to the title. The exercise library
+                    // moved into the grid below, where it has a name; settings
+                    // takes its place because Train had no way into them at all.
+                    circularToolbarButton("chart.bar.fill", label: "Training progress") {
+                        hubTab = .activity
                     }
-                    .accessibilityLabel("Training progress")
-                    Button { showExerciseLibrary = true } label: {
-                        Image(systemName: "books.vertical")
+                    circularToolbarButton("gearshape.fill", label: "Settings") {
+                        showSettings = true
                     }
-                    .accessibilityLabel("Exercise library")
                 }
             }
             .sheet(item: $sessionForDetail) { session in
@@ -252,6 +270,8 @@ struct TrainView: View {
                 }
             }
             .sheet(isPresented: $showBrowsePrograms) { BrowseProgramsSheet() }
+            .sheet(isPresented: $showSettings) { SettingsView() }
+            .sheet(isPresented: $showScanner) { MachineScanSheet() }
             .sheet(isPresented: $showPrograms) { ProgramsView() }
             .sheet(item: $hubTab) { tab in
                 TrainProgressHubView(initialTab: tab)
@@ -582,137 +602,104 @@ struct WorkoutCalendarCard: View {
 
 // MARK: - Week Strip View (compact main-page calendar)
 
+/// The week, bare, as seven columns.
+///
+/// No card, no month header, no paging chevrons. The previous version wrapped
+/// all three in a container that took as much vertical room as the workout card
+/// underneath it — on a screen whose job is "what am I doing today", the
+/// calendar was competing with the answer.
+///
+/// Days with a completed workout carry a filled dot; planned ones a hollow
+/// dot. Today is the filled pill.
 private struct WeekStripView: View {
+
     @Environment(AppState.self) private var appState
-    @State private var weekOffset: Int = 0
+
     let onPlanDate: (Date) -> Void
     let onTapSession: (WorkoutSession) -> Void
 
-    private var finishedSessions: [WorkoutSession] {
-        appState.completedWorkouts
-    }
-
+    /// Monday-first, derived from the weekday component rather than
+    /// `Calendar.weekOfYear` — which starts on Sunday under en_US and would put
+    /// every date one column from its own name.
     private var weekDates: [Date] {
-        let cal = Calendar.current
-        let today = cal.startOfDay(for: Date())
-        let weekday = cal.component(.weekday, from: today)
-        let daysToMonday = (weekday == 1 ? -6 : 2 - weekday)
-        let monday = cal.date(byAdding: .day, value: daysToMonday + weekOffset * 7, to: today) ?? today
-        return (0..<7).compactMap { cal.date(byAdding: .day, value: $0, to: monday) }
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let daysSinceMonday = (calendar.component(.weekday, from: today) + 5) % 7
+        guard let monday = calendar.date(byAdding: .day, value: -daysSinceMonday, to: today) else {
+            return [today]
+        }
+        return (0..<7).compactMap { calendar.date(byAdding: .day, value: $0, to: monday) }
     }
 
-    private static let monthLabelFmt: DateFormatter = {
-        let f = DateFormatter(); f.dateFormat = "MMMM yyyy"; return f
-    }()
-
-    private var monthLabel: String {
-        Self.monthLabelFmt.string(from: weekDates[3])
-    }
+    private static let labels = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
 
     var body: some View {
-        VStack(spacing: 8) {
-            HStack {
-                Button { weekOffset -= 1 } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.primary)
-                        .frame(width: 32, height: 32)
-                }
-                Spacer()
-                Text(monthLabel)
-                    .font(.subheadline.weight(.semibold))
-                Spacer()
-                Button { weekOffset += 1 } label: {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.primary)
-                        .frame(width: 32, height: 32)
-                }
+        HStack(spacing: 0) {
+            ForEach(Array(weekDates.enumerated()), id: \.element) { index, date in
+                dayColumn(date: date, label: Self.labels[min(index, 6)])
             }
-            .padding(.horizontal, 4)
+        }
+    }
 
-            HStack(spacing: 4) {
-                ForEach(weekDates, id: \.self) { date in
-                    let session = finishedSessions.first { Calendar.current.isDate($0.startedAt, inSameDayAs: date) }
-                    WeekDayCell(
-                        date: date,
-                        isToday: Calendar.current.isDateInToday(date),
-                        isCompleted: session != nil,
-                        isPlanned: appState.plannedSessions.contains { !$0.completed && Calendar.current.isDate($0.date, inSameDayAs: date) },
-                        sessionName: session?.name
-                    ) {
-                        let today = Calendar.current.startOfDay(for: Date())
-                        if let s = session {
-                            onTapSession(s)
-                        } else if date >= today {
-                            onPlanDate(date)
+    @ViewBuilder
+    private func dayColumn(date: Date, label: String) -> some View {
+        let calendar = Calendar.current
+        let isToday = calendar.isDateInToday(date)
+        let session = appState.completedWorkouts.first {
+            calendar.isDate($0.startedAt, inSameDayAs: date)
+        }
+        let isPlanned = appState.plannedSessions.contains {
+            !$0.completed && calendar.isDate($0.date, inSameDayAs: date)
+        }
+
+        Button {
+            HapticManager.selection()
+            if let session {
+                onTapSession(session)
+            } else if date >= calendar.startOfDay(for: Date()) {
+                onPlanDate(date)
+            }
+        } label: {
+            VStack(spacing: 5) {
+                Text(label)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.secondary)
+
+                Text("\(calendar.component(.day, from: date))")
+                    .font(.system(size: 20, weight: isToday ? .semibold : .regular))
+                    .foregroundColor(isToday ? .white : .primary)
+                    .frame(width: 40, height: 40)
+                    .background {
+                        if isToday {
+                            Circle().fill(AppTheme.trainAccent)
                         }
                     }
-                }
-            }
-        }
-        .padding(14)
-        .background(AppTheme.cardBg)
-        .cornerRadius(AppTheme.cardRadius)
-    }
-}
 
-private struct WeekDayCell: View {
-    let date: Date
-    let isToday: Bool
-    let isCompleted: Bool
-    let isPlanned: Bool
-    let sessionName: String?
-    let onTap: () -> Void
-
-    private static let dayLetterFmt: DateFormatter = { let f = DateFormatter(); f.dateFormat = "EEE"; return f }()
-    private static let dayNumberFmt: DateFormatter = { let f = DateFormatter(); f.dateFormat = "d"; return f }()
-
-    private var dayLetter: String { Self.dayLetterFmt.string(from: date).uppercased() }
-    private var dayNumber: String { Self.dayNumberFmt.string(from: date) }
-    private var isFuture: Bool { date > Calendar.current.startOfDay(for: Date()) }
-
-    var body: some View {
-        Button(action: onTap) {
-            VStack(spacing: 5) {
-                Text(dayLetter)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(isToday ? AppTheme.trainAccent : Color(hex: "#A0A0B0"))
-
-                ZStack {
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(isCompleted ? AppTheme.trainAccent :
-                              isToday ? AppTheme.trainAccent.opacity(0.15) :
-                              Color.white.opacity(0.06))
-                        .frame(width: 36, height: 36)
-                    if isCompleted {
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundColor(.black)
-                    } else {
-                        Text(dayNumber)
-                            .font(.system(size: 15, weight: isToday ? .bold : .medium))
-                            .foregroundColor(isToday ? AppTheme.trainAccent : isFuture ? Color(hex: "#606070") : .primary)
+                Circle()
+                    .fill(session != nil ? AppTheme.trainAccent : Color.clear)
+                    .frame(width: 5, height: 5)
+                    .overlay {
+                        if session == nil && isPlanned {
+                            Circle().strokeBorder(AppTheme.trainAccent.opacity(0.6), lineWidth: 1.2)
+                        }
                     }
-                }
-
-                if isPlanned && !isCompleted {
-                    Circle()
-                        .fill(AppTheme.trainAccent)
-                        .frame(width: 4, height: 4)
-                } else {
-                    Circle()
-                        .fill(Color.clear)
-                        .frame(width: 4, height: 4)
-                }
             }
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
         }
-        .frame(maxWidth: .infinity)
         .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityLabel(date: date, hasSession: session != nil, isPlanned: isPlanned))
+        .accessibilityAddTraits(isToday ? [.isButton, .isSelected] : [.isButton])
+    }
+
+    private func accessibilityLabel(date: Date, hasSession: Bool, isPlanned: Bool) -> String {
+        var parts = [date.formatted(.dateTime.weekday(.wide).day().month(.wide))]
+        if hasSession { parts.append("workout completed") }
+        else if isPlanned { parts.append("workout planned") }
+        return parts.joined(separator: ", ")
     }
 }
-
-// MARK: - Plan Session Sheet
 
 struct PlanSessionSheet: View {
     @Environment(AppState.self) private var appState

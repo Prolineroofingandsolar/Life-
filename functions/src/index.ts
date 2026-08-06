@@ -13,8 +13,10 @@ import {
 import {
   WORKOUT_BLUEPRINT_SCHEMA,
   PLAN_BLUEPRINT_SCHEMA,
+  MACHINE_SCHEMA,
   validateWorkoutBlueprint,
   validatePlanBlueprint,
+  validateMachineIdentification,
 } from "./workoutSchema";
 import { reserveCall, recordUsage, readUsage, LimitExceeded } from "./limits";
 
@@ -57,7 +59,8 @@ type Mode =
   | "eveningReview"
   | "ask"
   | "buildWorkout"
-  | "buildPlan";
+  | "buildPlan"
+  | "identifyExercise";
 
 /**
  * Output budget, per mode.
@@ -75,6 +78,9 @@ const MAX_OUTPUT_TOKENS: Record<Mode, number> = {
   ask: 700,
   buildWorkout: 900,
   buildPlan: 1800,
+  // One small object. A generous ceiling here would only pay for prose nobody
+  // reads.
+  identifyExercise: 200,
 };
 
 /** Modes that carry a free-text brief or question in `question`. */
@@ -128,6 +134,14 @@ interface CoachRequestData {
   question?: string;
   /** Set when a first attempt failed validation, so the retry can say why. */
   repairReason?: string;
+  /**
+   * A base64 JPEG, for `identifyExercise` only.
+   *
+   * Never logged, never persisted, never echoed back. It exists for the length
+   * of one request and then it is gone.
+   */
+  image?: string;
+  imageMimeType?: string;
 }
 
 /**
@@ -243,6 +257,24 @@ Your job: a short evening review. Two or three sentences.
   not sync is a day you know little about, not a day nothing happened.
 `.trim(),
 
+  identifyExercise: `
+Your job: name the piece of gym equipment in the photograph.
+
+- Give the movement it is used for, not the manufacturer's product name. "Lat
+  pulldown", not "Cybex VR3 Pulldown".
+- Pick the muscle and equipment values from the lists in the schema. If the
+  photo shows a cable stack, that is "cable"; a selectorised machine is
+  "machine"; free weights are "barbell" or "dumbbell".
+- confidence is 0-100 and should be honest. A clear photo of a familiar machine
+  is high; a dark corner of a gym is not. The app shows your figure to the
+  person rather than hiding a poor guess, so a low number is useful and a
+  dishonest high one is not.
+- If the photograph does not show gym equipment at all, still answer in the
+  schema, with a confidence at or below 10.
+- Say nothing about any person in the photograph. Not their build, not their
+  form, not their presence. You are looking at a machine.
+`.trim(),
+
   ask: `
 Your job: answer the question that was asked, from the data you were given.
 
@@ -318,6 +350,7 @@ const RESPONSE_SCHEMAS: Record<Mode, unknown> = {
   ask: ASK_SCHEMA,
   buildWorkout: WORKOUT_BLUEPRINT_SCHEMA,
   buildPlan: PLAN_BLUEPRINT_SCHEMA,
+  identifyExercise: MACHINE_SCHEMA,
 };
 
 /**
@@ -332,6 +365,7 @@ const VALIDATORS: Partial<Record<Mode, (value: unknown) => ValidationResult>> = 
   ask: validateAsk,
   buildWorkout: validateWorkoutBlueprint,
   buildPlan: validatePlanBlueprint,
+  identifyExercise: validateMachineIdentification,
 };
 
 /** The one-line reminder that leads the user content. */
@@ -342,6 +376,7 @@ const MODE_INSTRUCTIONS: Record<Mode, string> = {
   ask: "Answer the question below using only the data provided.",
   buildWorkout: "Describe the shape of one session matching the brief below.",
   buildPlan: "Describe the shape of a training week matching the brief below.",
+  identifyExercise: "Identify the gym machine or equipment in this photograph.",
 };
 
 function systemInstruction(mode: Mode): string {
@@ -384,6 +419,10 @@ export const coach = onCall(
         "failed-precondition",
         "GEMINI_MODEL isn't set. Add it to functions/.env.<project> and redeploy."
       );
+    }
+
+    if (mode === "identifyExercise" && !data?.image) {
+      throw new HttpsError("invalid-argument", "No photo was included.");
     }
 
     const contextJSON = JSON.stringify(data?.context ?? {});
@@ -444,6 +483,8 @@ export const coach = onCall(
         systemInstruction: systemInstruction(mode),
         userContent,
         responseSchema: RESPONSE_SCHEMAS[mode],
+        inlineImageBase64: mode === "identifyExercise" ? data?.image : undefined,
+        inlineImageMimeType: data?.imageMimeType,
         maxOutputTokens: MAX_OUTPUT_TOKENS[mode],
         // Lower for generation than for prose. A workout is a structured
         // prescription, and variety in it is noise rather than voice — the same

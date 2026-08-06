@@ -27,6 +27,13 @@ export interface GeminiRequest {
   systemInstruction: string;
   userContent: string;
   responseSchema: unknown;
+  /**
+   * A base64 JPEG to send alongside the text, for the one mode that needs to
+   * look at something. Absent for every other mode — and deliberately not
+   * logged, echoed or persisted anywhere in this file.
+   */
+  inlineImageBase64?: string;
+  inlineImageMimeType?: string;
   maxOutputTokens: number;
   /** Low by default — this is guidance from data, not creative writing. */
   temperature: number;
@@ -45,16 +52,24 @@ export async function generateJSON(request: GeminiRequest): Promise<GeminiResult
     `https://generativelanguage.googleapis.com/v1beta/models/` +
     `${encodeURIComponent(request.model)}:generateContent`;
 
+  // The image goes first when there is one: Gemini reads a prompt that refers
+  // to "this photo" more reliably when the photo precedes it.
+  const parts: Array<Record<string, unknown>> = [];
+  if (request.inlineImageBase64) {
+    parts.push({
+      inlineData: {
+        mimeType: request.inlineImageMimeType ?? "image/jpeg",
+        data: request.inlineImageBase64,
+      },
+    });
+  }
+  parts.push({ text: request.userContent });
+
   const body = {
     systemInstruction: {
       parts: [{ text: request.systemInstruction }],
     },
-    contents: [
-      {
-        role: "user",
-        parts: [{ text: request.userContent }],
-      },
-    ],
+    contents: [{ role: "user", parts }],
     generationConfig: {
       temperature: request.temperature,
       maxOutputTokens: request.maxOutputTokens,

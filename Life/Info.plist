@@ -86,6 +86,14 @@
         <string>uk.co.prolineroofingandsolar.life.health-refresh</string>
     </array>
 
+    <!-- Camera, for identifying gym equipment.
+         The only feature that uses the camera, and the only one that sends an
+         image anywhere. Off by default behind CoachSettings.allowMachineScanning:
+         granting the system permission is not the same as agreeing that photos
+         may leave the device, so both are asked for separately. -->
+    <key>NSCameraUsageDescription</key>
+    <string>Life uses the camera so you can photograph a gym machine and have it identified. The photo is used once to recognise the equipment and is never saved to your device or your account.</string>
+
     <!-- Location -->
     <key>NSLocationWhenInUseUsageDescription</key>
     <string>Life uses your location to reveal the world map as you explore.</string>

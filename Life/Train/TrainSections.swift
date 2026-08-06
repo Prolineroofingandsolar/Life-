@@ -85,16 +85,21 @@ struct TodaysWorkoutCard: View {
     private var header: some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(titleText)
-                    .font(.title3.weight(.bold))
+                // "Today's workout" is the heading; the routine's name belongs
+                // on the detail line beside its length. The card is answering
+                // "what am I doing today", and the answer is the whole line —
+                // "Push A · 42 min · 6 exercises" — not just the name.
+                Text(headingText)
+                    .font(.system(size: 22, weight: .bold))
                 Text(metaText)
-                    .font(.subheadline)
+                    .font(.system(size: 15))
                     .foregroundColor(.secondary)
                 if let focus = focusText {
                     Text(focus)
-                        .font(.subheadline)
+                        .font(.system(size: 15))
                         .foregroundColor(Color(.tertiaryLabel))
                         .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             Spacer(minLength: 0)
@@ -114,24 +119,24 @@ struct TodaysWorkoutCard: View {
     // Four different days, four different sentences. "Rest" used to appear
     // whenever nothing had been completed, which said the same thing about a
     // planned rest day and a hard session still ahead of it.
-    private var titleText: String {
+    private var headingText: String {
         if completedToday { return "Workout done" }
         if isRestDay { return "Rest day" }
-        guard let today else { return "No workout planned" }
-        return today.name
+        if today == nil { return "No workout planned" }
+        return "Today's workout"
     }
 
     private var metaText: String {
         if completedToday { return "Logged today" }
-        if isRestDay { return "Scheduled rest" }
+        if isRestDay { return "Scheduled rest — nothing to do" }
         guard let today else { return "Build one, or start from a routine" }
 
         guard let routine = today.routine else {
-            return today.isPlanned ? "Planned for today" : "From your programme"
+            return today.isPlanned ? "\(today.name) · planned for today" : today.name
         }
         let minutes = estimatedMinutes(for: routine)
         let count = routine.exercises.count
-        return "\(minutes) min · \(count) exercise\(count == 1 ? "" : "s")"
+        return "\(today.name) · \(minutes) min · \(count) exercise\(count == 1 ? "" : "s")"
     }
 
     /// The muscles the session covers, named from its own exercises rather than
@@ -219,43 +224,46 @@ struct CoachSuggestionCard: View {
     }
 
     private var card: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "sparkles")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(AppTheme.brandGradient)
                     .accessibilityHidden(true)
 
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text("Coach suggestion")
-                        .font(.subheadline.weight(.semibold))
+                        .font(.system(size: 15, weight: .semibold))
                     Text(summaryText)
-                        .font(.subheadline)
+                        .font(.system(size: 15))
                         .foregroundColor(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                Spacer(minLength: 0)
+
+                Spacer(minLength: 8)
+
+                // Beside the message rather than under it. The actions belong to
+                // the sentence, and a separate row below pushed the card taller
+                // than the suggestion warranted.
+                VStack(alignment: .trailing, spacing: 10) {
+                    Button("Review") { onReview(proposals) }
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(AppTheme.primary)
+
+                    Button("Dismiss") { dismissedKey = suggestionKey }
+                        .font(.system(size: 15))
+                        .foregroundColor(.secondary)
+                        .accessibilityHint("Hides this until your next workout")
+                }
+                .fixedSize()
             }
 
-            HStack(spacing: 18) {
-                // The provenance line, in miniature. These come from rules, and
-                // saying so is the difference between a suggestion you can check
-                // and one you have to take on faith.
-                Text("From your training history")
-                    .font(.caption2)
-                    .foregroundColor(Color(.tertiaryLabel))
-
-                Spacer()
-
-                Button("Review") { onReview(proposals) }
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundColor(AppTheme.primary)
-
-                Button("Dismiss") { dismissedKey = suggestionKey }
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .accessibilityHint("Hides this until your next workout")
-            }
+            // The provenance line, in miniature. These come from rules, and
+            // saying so is the difference between a suggestion you can check and
+            // one you have to take on faith.
+            Text("Based on your training history")
+                .font(.system(size: 11))
+                .foregroundColor(Color(.tertiaryLabel))
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -290,7 +298,7 @@ struct TrainYourWayGrid: View {
 
     let onBuildProgramme: () -> Void
     let onBuildWorkout: () -> Void
-    let onBrowseProgrammes: () -> Void
+    let onScanMachine: () -> Void
     let onExerciseLibrary: () -> Void
 
     private let columns = [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)]
@@ -313,16 +321,13 @@ struct TrainYourWayGrid: View {
                 isCompact: true,
                 action: onBuildWorkout
             )
-            // Scan-a-machine takes this slot once the camera flow lands. Until
-            // then it holds something that works — a tile wired to nothing is
-            // worse than one tile fewer.
             ActionTile(
-                icon: "square.grid.2x2",
+                icon: "camera.viewfinder",
                 tint: AppTheme.trainAccent,
-                title: "Browse programmes",
-                subtitle: "Start from a ready-made plan",
+                title: "Scan a machine",
+                subtitle: "Identify and add an exercise",
                 isCompact: true,
-                action: onBrowseProgrammes
+                action: onScanMachine
             )
             ActionTile(
                 icon: "books.vertical",
@@ -502,6 +507,23 @@ private struct Sparkline: View {
             let points = normalised(in: proxy.size)
             ZStack {
                 if points.count >= 2 {
+                    // A soft fill under the line. It carries no extra
+                    // information — it makes the line read as a quantity rather
+                    // than a squiggle, which at this size is most of the value.
+                    Path { path in
+                        path.move(to: CGPoint(x: points[0].x, y: proxy.size.height))
+                        for point in points { path.addLine(to: point) }
+                        path.addLine(to: CGPoint(x: points[points.count - 1].x, y: proxy.size.height))
+                        path.closeSubpath()
+                    }
+                    .fill(
+                        LinearGradient(
+                            colors: [AppTheme.trainAccent.opacity(0.22), AppTheme.trainAccent.opacity(0.02)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+
                     Path { path in
                         path.move(to: points[0])
                         for point in points.dropFirst() { path.addLine(to: point) }
@@ -511,7 +533,7 @@ private struct Sparkline: View {
                     if let last = points.last {
                         Circle()
                             .fill(AppTheme.trainAccent)
-                            .frame(width: 5, height: 5)
+                            .frame(width: 6, height: 6)
                             .position(last)
                     }
                 }

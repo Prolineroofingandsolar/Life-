@@ -378,3 +378,168 @@ struct SubstitutionEngineTests {
         #expect(updated.restSeconds == 180)
     }
 }
+
+// MARK: - Machine matching
+
+/// Turning a photographed machine into an exercise — the one place model output
+/// may become a permanent record.
+///
+/// The matching is pure, so it is testable without a camera. The rule that
+/// matters most is the last one: a miss produces a *draft*, never a write.
+struct MachineMatcherTests {
+
+    static var library: [Exercise] { WorkoutResolverTests.library }
+
+    static func identification(
+        _ name: String,
+        muscle: BlueprintMuscle = .chest,
+        equipment: ExerciseEquipment = .machine,
+        confidence: Int = 80
+    ) -> MachineIdentification {
+        MachineIdentification(name: name, muscle: muscle, equipment: equipment, confidence: confidence)
+    }
+
+    @Test("An exact name match finds the library exercise")
+    func exactNameMatches() {
+        let outcome = MachineMatcher.match(
+            Self.identification("Barbell Bench Press", equipment: .barbell),
+            library: Self.library
+        )
+        #expect(outcome == .matched(Self.library.first { $0.id == "ex-bench" }!))
+    }
+
+    @Test("Punctuation and case don't prevent a match")
+    func matchingIsNormalised() {
+        let outcome = MachineMatcher.match(
+            Self.identification("barbell bench-press", equipment: .barbell),
+            library: Self.library
+        )
+        if case .matched(let exercise) = outcome {
+            #expect(exercise.id == "ex-bench")
+        } else {
+            Issue.record("expected a match")
+        }
+    }
+
+    @Test("A library name inside a longer scanned name still matches")
+    func containmentMatchesInTheSafeDirection() {
+        // "Cybex Lat Pulldown Machine" contains "Lat Pulldown".
+        let outcome = MachineMatcher.match(
+            Self.identification("Cybex Lat Pulldown Machine", muscle: .back, equipment: .cable),
+            library: Self.library
+        )
+        if case .matched(let exercise) = outcome {
+            #expect(exercise.id == "ex-pulldown")
+        } else {
+            Issue.record("expected a match")
+        }
+    }
+
+    @Test("A short fragment does not match indiscriminately")
+    func shortFragmentsDoNotMatch() {
+        // "Row" appears inside three library names. Matching on it would pick
+        // one at random and put the wrong exercise in a workout.
+        let outcome = MachineMatcher.match(
+            Self.identification("Row", muscle: .back, equipment: .machine),
+            library: Self.library
+        )
+        if case .draft = outcome {
+            // Correct — ambiguous, so it asks.
+        } else {
+            Issue.record("a three-letter fragment should not resolve to an exercise")
+        }
+    }
+
+    @Test("Muscle and equipment together can resolve a single candidate")
+    func shapeMatchesWhenUnambiguous() {
+        // Exactly one Legs + machine exercise in the fixture library.
+        let outcome = MachineMatcher.match(
+            Self.identification("Unknown Leg Machine", muscle: .legs, equipment: .machine),
+            library: Self.library
+        )
+        if case .matched(let exercise) = outcome {
+            #expect(exercise.id == "ex-legpress")
+        } else {
+            Issue.record("expected the leg press")
+        }
+    }
+
+    @Test("Two candidates of the same shape are a guess, so it asks instead")
+    func ambiguousShapeProducesADraft() {
+        var extra = WorkoutResolverTests.exercise(
+            "ex-hacksquat", "Hack Squat", "Legs", equipment: .machine
+        )
+        extra.isCustom = true
+
+        let outcome = MachineMatcher.match(
+            Self.identification("Unknown Leg Machine", muscle: .legs, equipment: .machine),
+            library: Self.library + [extra]
+        )
+        if case .draft = outcome {
+            // Correct. A guess here adds the wrong exercise to a workout.
+        } else {
+            Issue.record("two candidates should not resolve to one")
+        }
+    }
+
+    @Test("A miss produces a draft, and the draft is not an entry")
+    func missProducesADraftNotARecord() {
+        let library = Self.library
+        let outcome = MachineMatcher.match(
+            Self.identification("Reverse Hyper", muscle: .glutes, equipment: .machine),
+            library: library
+        )
+
+        guard case .draft(let draft) = outcome else {
+            Issue.record("expected a draft")
+            return
+        }
+        #expect(draft.name == "Reverse Hyper")
+        // The whole point. `importFromText` appends an Exercise mid-parse;
+        // nothing on this path may.
+        #expect(library.count == Self.library.count)
+    }
+
+    @Test("A drafted exercise is always marked custom")
+    func draftsAreCustom() {
+        let exercise = MachineMatcher.draftExercise(
+            from: Self.identification("Reverse Hyper", muscle: .glutes)
+        )
+        // So an exercise that arrived by camera stays distinguishable from a
+        // seeded one for as long as it exists.
+        #expect(exercise.isCustom)
+        #expect(exercise.muscle == "Glutes")
+    }
+
+    @Test("A bodyweight identification becomes a bodyweight exercise")
+    func bodyweightKindFollowsEquipment() {
+        let exercise = MachineMatcher.draftExercise(
+            from: Self.identification("Dip Station", muscle: .triceps, equipment: .bodyweight)
+        )
+        #expect(exercise.kind == .bodyweight)
+    }
+
+    @Test("An unknown muscle from the model throws rather than defaulting")
+    func unknownMuscleThrows() {
+        let json = """
+        {"name":"Something","muscle":"Forearms","equipment":"machine","confidence":80}
+        """.data(using: .utf8)!
+
+        #expect(throws: BlueprintError.self) {
+            try JSONDecoder().decode(MachineIdentification.self, from: json)
+        }
+    }
+
+    @Test("A well-formed identification decodes")
+    func validIdentificationDecodes() throws {
+        let json = """
+        {"name":"Lat Pulldown","muscle":"Back","equipment":"cable",
+         "movementType":"compound","confidence":92}
+        """.data(using: .utf8)!
+
+        let identification = try JSONDecoder().decode(MachineIdentification.self, from: json)
+        #expect(identification.muscle == .back)
+        #expect(identification.equipment == .cable)
+        #expect(identification.confidence == 92)
+    }
+}

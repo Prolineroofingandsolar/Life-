@@ -80,26 +80,26 @@ struct ActionTileLabel: View {
     var isCompact: Bool = false
 
     var body: some View {
-        HStack(spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .fill(tint.opacity(0.15))
-                    .frame(width: 36, height: 36)
-                Image(systemName: icon)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(tint)
-            }
-            .accessibilityHidden(true)
+        HStack(spacing: 10) {
+            // The glyph on its own, not sitting in a tinted rounded rectangle.
+            // At half width that container is most of the tile's height and
+            // leaves the title nowhere to wrap.
+            Image(systemName: icon)
+                .font(.system(size: 21, weight: .regular))
+                .foregroundColor(tint)
+                .frame(width: 26)
+                .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 1) {
                 Text(title)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(.primary)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
                 if let subtitle {
                     Text(subtitle)
-                        .font(.caption)
+                        .font(.system(size: 11))
                         .foregroundColor(.secondary)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
@@ -107,20 +107,16 @@ struct ActionTileLabel: View {
                 }
             }
 
-            Spacer(minLength: 4)
+            Spacer(minLength: 2)
 
-            // Hidden in a grid cell: at half width the chevron competes with the
-            // text for room it doesn't have, and a tile that is obviously a
-            // button doesn't need one.
-            if !isCompact {
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.semibold))
-                    .foregroundColor(Color(.tertiaryLabel))
-            }
+            Image(systemName: "chevron.right")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(Color(.tertiaryLabel))
+                .accessibilityHidden(true)
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 12)
-        .frame(maxWidth: .infinity, minHeight: isCompact ? 76 : 60, alignment: .leading)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity, minHeight: isCompact ? 74 : 60, alignment: .leading)
         .background(AppTheme.cardBg)
         .clipShape(RoundedRectangle(cornerRadius: AppTheme.cardRadius, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: AppTheme.cardRadius, style: .continuous))

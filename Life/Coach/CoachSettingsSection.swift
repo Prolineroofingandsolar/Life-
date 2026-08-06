@@ -220,11 +220,15 @@ struct CoachSettingsSection: View {
             Toggle("Habits", isOn: binding(\.allowHabits))
             Toggle("Include task and habit names", isOn: binding(\.shareTitles))
                 .accessibilityHint("When off, the coach knows how many are outstanding but not what they are called")
+            // Its own switch, below a divider in meaning if not in pixels.
+            // Everything above sends derived numbers; this sends a photograph,
+            // which is a different kind of thing and a different decision.
+            Toggle("Photos of gym equipment", isOn: binding(\.allowMachineScanning))
+                .accessibilityHint("Allows Scan a machine to send a photo for identification")
         } header: {
             Text("What the coach may use")
         } footer: {
-            // The reason for the last toggle, in the words that make it obvious.
-            Text("Switching a category off means it is never sent, not merely ignored. Names are separate because a task can name a real person — with it off, the coach knows you have two important tasks left but not what they say.")
+            Text("Switching a category off means it is never sent, not merely ignored. Names are separate because a task can name a real person — with it off, the coach knows you have two important tasks left but not what they say.\n\nPhotos are separate again: everything else here is a number Life worked out, and a photograph is not. It is sent once to identify the machine, then discarded — never saved to your device, your account, or a log.")
         }
     }
 
