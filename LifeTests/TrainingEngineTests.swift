@@ -543,3 +543,141 @@ struct MachineMatcherTests {
         #expect(identification.confidence == 92)
     }
 }
+
+// MARK: - Builder conversation
+
+/// The interview that produces a brief.
+///
+/// The app asks and Gemini builds, which is what makes these testable at all —
+/// the script is data, so the flow can be checked without a view or a network.
+struct BuilderConversationTests {
+
+    @Test("A workout doesn't ask about scheduling, and a programme does")
+    func scriptsDifferByKind() {
+        let workout = BuilderConversation.script(for: .workout)
+        let plan = BuilderConversation.script(for: .plan)
+
+        #expect(!workout.contains(.daysPerWeek))
+        #expect(!workout.contains(.weeks))
+        #expect(plan.contains(.daysPerWeek))
+        #expect(plan.contains(.weeks))
+        // How you feel today says nothing about week three.
+        #expect(workout.contains(.energy))
+        #expect(!plan.contains(.energy))
+    }
+
+    @Test("Both scripts ask what equipment is available")
+    func everyScriptAsksAboutEquipment() {
+        // The one field the resolver cannot work without. A model steering its
+        // own interview would sometimes skip it; a fixed script can't.
+        #expect(BuilderConversation.script(for: .workout).contains(.equipment))
+        #expect(BuilderConversation.script(for: .plan).contains(.equipment))
+    }
+
+    @Test("Tapping a chip sets the value")
+    func chipsSetValues() {
+        var brief = WorkoutBrief()
+        BuilderConversation.apply(answer: "", chips: ["strength"], for: .goal, to: &brief)
+        #expect(brief.goal == .strength)
+    }
+
+    @Test("A number in prose is understood")
+    func freeTextNumbersParse() {
+        var brief = WorkoutBrief()
+        BuilderConversation.apply(answer: "about 40 minutes", chips: [], for: .duration, to: &brief)
+
+        // Refusing this because it wasn't one of the chips would be the app
+        // being difficult on purpose.
+        #expect(brief.availableMinutes == 40)
+    }
+
+    @Test("A goal named in prose is understood")
+    func freeTextGoalsParse() {
+        var brief = WorkoutBrief()
+        BuilderConversation.apply(answer: "I want to get stronger", chips: [], for: .goal, to: &brief)
+        #expect(brief.goal == .strength)
+    }
+
+    @Test("Absurd numbers are clamped rather than accepted")
+    func numbersAreClamped() {
+        var brief = WorkoutBrief()
+        BuilderConversation.apply(answer: "600", chips: [], for: .duration, to: &brief)
+        #expect(brief.availableMinutes == 180)
+
+        BuilderConversation.apply(answer: "40", chips: [], for: .daysPerWeek, to: &brief)
+        #expect(brief.daysPerWeek == 6)
+
+        BuilderConversation.apply(answer: "99", chips: [], for: .weeks, to: &brief)
+        #expect(brief.weeks == 12)
+    }
+
+    @Test("Text that doesn't parse is kept rather than dropped")
+    func unparseableTextSurvives() {
+        var brief = WorkoutBrief()
+        BuilderConversation.apply(
+            answer: "my left shoulder is sore", chips: ["dumbbell"], for: .equipment, to: &brief
+        )
+
+        // Someone who says that while answering the equipment question has said
+        // something that matters, and the builder should hear it.
+        #expect(brief.availableEquipment == [.dumbbell])
+        #expect(brief.text.contains("shoulder"))
+    }
+
+    @Test("Notes accumulate in the order they were said")
+    func notesAccumulate() {
+        var brief = WorkoutBrief()
+        BuilderConversation.apply(answer: "bad knee", chips: [], for: .avoid, to: &brief)
+        BuilderConversation.apply(answer: "race in June", chips: [], for: .anythingElse, to: &brief)
+
+        #expect(brief.text.contains("bad knee"))
+        #expect(brief.text.contains("race in June"))
+    }
+
+    @Test("Multiple chips all land")
+    func multipleChipsApply() {
+        var brief = WorkoutBrief()
+        BuilderConversation.apply(
+            answer: "", chips: ["dumbbell", "bodyweight"], for: .equipment, to: &brief
+        )
+        #expect(brief.availableEquipment == [.dumbbell, .bodyweight])
+    }
+
+    @Test("Exclusions from the conversation reach the brief")
+    func exclusionsApply() {
+        var brief = WorkoutBrief()
+        BuilderConversation.apply(answer: "", chips: ["Legs", "Calves"], for: .avoid, to: &brief)
+        #expect(brief.avoidMuscles == [.legs, .calves])
+    }
+
+    @Test("The coach says the answer back in the app's own words")
+    func acknowledgementsRepeatTheAnswer() {
+        var brief = WorkoutBrief()
+        BuilderConversation.apply(answer: "45", chips: [], for: .duration, to: &brief)
+
+        // This is how someone catches "45" being read as 45 weeks before a
+        // programme gets built on it.
+        let ack = BuilderConversation.acknowledgement(for: .duration, brief: brief)
+        #expect(ack?.contains("45") == true)
+        #expect(ack?.contains("minutes") == true)
+    }
+
+    @Test("Skipping equipment says a full gym is assumed")
+    func skippingEquipmentIsExplained() {
+        let brief = WorkoutBrief()
+        let ack = BuilderConversation.acknowledgement(for: .equipment, brief: brief)
+        #expect(ack?.contains("full gym") == true)
+    }
+
+    @Test("Every step in every script has a question")
+    func everyStepIsAnswerable() {
+        for kind in [BuilderConversation.BuilderKind.workout, .plan] {
+            for stepKind in BuilderConversation.script(for: kind) {
+                let step = BuilderConversation.step(stepKind, for: kind)
+                #expect(!step.question.isEmpty)
+                // A step with no chips must accept typing, or it's a dead end.
+                #expect(!step.chips.isEmpty || step.allowsFreeText)
+            }
+        }
+    }
+}

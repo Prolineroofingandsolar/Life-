@@ -42,6 +42,23 @@ struct WorkoutPreviewSheet: View {
     @State private var scheduleSessions = true
     @State private var confirmation: String?
 
+    // The conversation.
+    @State private var turns: [Turn] = []
+    @State private var stepIndex = 0
+    @State private var selectedChips: Set<String> = []
+    @State private var draft = ""
+
+    /// One line of the transcript.
+    struct Turn: Identifiable, Equatable {
+        enum Speaker { case coach, you }
+        let id = UUID()
+        var speaker: Speaker
+        var text: String
+        /// Smaller type under the question, when it needs a word of
+        /// explanation to be answerable.
+        var hint: String?
+    }
+
     private var settings: CoachSettings { appState.coachSettings }
     private var service: WorkoutBuilderService { WorkoutBuilderService() }
 
@@ -59,7 +76,7 @@ struct WorkoutPreviewSheet: View {
         NavigationStack {
             Group {
                 switch stage {
-                case .brief:                       briefForm
+                case .brief:                       conversation
                 case .building:                    buildingState
                 case .workout(let w, let p):       workoutPreview(w, provenance: p)
                 case .plan(let plan, let p):       planPreview(plan, provenance: p)
@@ -76,7 +93,6 @@ struct WorkoutPreviewSheet: View {
             }
         }
         .onAppear {
-            brief = initialBrief
             kind = initialKind
         }
     }
@@ -89,112 +105,190 @@ struct WorkoutPreviewSheet: View {
         }
     }
 
-    // MARK: Brief
+    // MARK: Brief — a conversation
 
-    /// A guided form, with free text as the last field rather than the only one.
+    /// One question at a time, answered by tapping or typing.
     ///
-    /// Six specific answers produce a far better blueprint than a sentence, and
-    /// — more importantly — they give the local template fallback the same
-    /// inputs to work from when the network isn't there.
-    private var briefForm: some View {
-        Form {
-            Section {
-                Picker("What are we building?", selection: $kind) {
-                    ForEach(Kind.allCases) { Text($0.label).tag($0) }
+    /// The app asks and Gemini builds. A model free to steer its own interview
+    /// will sometimes finish without having asked what equipment you have —
+    /// which is the one field `WorkoutResolver` cannot work without, and the
+    /// difference between a programme you can do and a barbell plan for someone
+    /// with a pair of dumbbells. A fixed script guarantees those arrive, and
+    /// costs one model call at the end rather than one per turn.
+    private var conversation: some View {
+        VStack(spacing: 0) {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        ForEach(turns) { turn in
+                            ChatBubble(turn: turn)
+                                .id(turn.id)
+                        }
+
+                        if let step = currentStep {
+                            answerControls(for: step)
+                                .id("controls")
+                        }
+                    }
+                    .padding(16)
                 }
-                .pickerStyle(.segmented)
+                .onChange(of: turns.count) { _, _ in
+                    withAnimation { proxy.scrollTo("controls", anchor: .bottom) }
+                }
             }
 
-            Section("Your goal") {
-                Picker("Goal", selection: $brief.goal) {
-                    ForEach(WorkoutBrief.Goal.allCases) { Text($0.label).tag($0) }
-                }
-                Picker("Experience", selection: $brief.experience) {
-                    ForEach(WorkoutBrief.Experience.allCases) { Text($0.label).tag($0) }
-                }
-            }
+            Divider()
+            composer
+        }
+        .onAppear { startConversationIfNeeded() }
+    }
 
-            if kind == .workout {
-                Section("Today") {
-                    Stepper(
-                        "Time available: \(brief.availableMinutes) min",
-                        value: $brief.availableMinutes, in: 15...120, step: 15
-                    )
-                    Picker("Energy", selection: $brief.energy) {
-                        ForEach(WorkoutBrief.Energy.allCases) { Text($0.label).tag($0) }
+    private var currentStep: BuilderConversation.Step? {
+        let script = BuilderConversation.script(for: kind == .workout ? .workout : .plan)
+        guard stepIndex < script.count else { return nil }
+        return BuilderConversation.step(script[stepIndex], for: kind == .workout ? .workout : .plan)
+    }
+
+    @ViewBuilder
+    private func answerControls(for step: BuilderConversation.Step) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if !step.chips.isEmpty {
+                ChipCloud(
+                    chips: step.chips,
+                    selected: selectedChips,
+                    allowsMultiple: step.allowsMultipleChips
+                ) { value in
+                    HapticManager.selection()
+                    if step.allowsMultipleChips {
+                        if selectedChips.contains(value) {
+                            selectedChips.remove(value)
+                        } else {
+                            selectedChips.insert(value)
+                        }
+                    } else {
+                        selectedChips = [value]
+                        advance()
                     }
                 }
-            } else {
-                Section("Schedule") {
-                    Stepper("\(brief.daysPerWeek) days a week", value: $brief.daysPerWeek, in: 2...6)
-                    Stepper("For \(brief.weeks) weeks", value: $brief.weeks, in: 1...12)
-                    Stepper(
-                        "Up to \(brief.availableMinutes) min a session",
-                        value: $brief.availableMinutes, in: 20...120, step: 10
+            }
+
+            HStack(spacing: 14) {
+                if step.allowsMultipleChips || step.chips.isEmpty {
+                    Button(selectedChips.isEmpty && draft.isEmpty ? "Skip" : "Next") { advance() }
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(AppTheme.primary)
+                } else if step.isSkippable {
+                    Button("Skip") { advance() }
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                // Available from the second question on. Someone who knows what
+                // they want should not have to sit through the rest of the
+                // interview to get it.
+                if stepIndex > 0 {
+                    Button("Just build it") { Task { await build() } }
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(AppTheme.primary)
+                }
+            }
+        }
+    }
+
+    private var composer: some View {
+        HStack(spacing: 10) {
+            TextField(composerPrompt, text: $draft, axis: .vertical)
+                .lineLimit(1...3)
+                .textFieldStyle(.plain)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(Color(.tertiarySystemFill))
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .accessibilityLabel("Your answer")
+                .disabled(currentStep?.allowsFreeText == false)
+
+            Button {
+                advance()
+            } label: {
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.system(size: 30))
+                    .foregroundStyle(
+                        draft.isEmpty || currentStep == nil
+                            ? AnyShapeStyle(Color.secondary.opacity(0.4))
+                            : AnyShapeStyle(AppTheme.brandGradient)
                     )
-                }
             }
-
-            Section("Equipment") {
-                MuscleOrEquipmentGrid(
-                    items: ExerciseEquipment.allCases.map { ($0.rawValue, $0.label) },
-                    selected: Set(brief.availableEquipment.map(\.rawValue))
-                ) { raw in
-                    guard let value = ExerciseEquipment(rawValue: raw) else { return }
-                    toggle(value, in: &brief.availableEquipment)
-                }
-                Text("Leave everything off if you train somewhere well equipped.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-
-            Section("Avoid") {
-                MuscleOrEquipmentGrid(
-                    items: BlueprintMuscle.allCases.map { ($0.rawValue, $0.rawValue) },
-                    selected: Set(brief.avoidMuscles.map(\.rawValue))
-                ) { raw in
-                    guard let value = BlueprintMuscle(rawValue: raw) else { return }
-                    toggle(value, in: &brief.avoidMuscles)
-                }
-                Text("Anything selected here is never programmed, whatever the coach suggests.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-
-            Section("Anything else") {
-                TextField("Optional — e.g. my left shoulder is sore", text: $brief.text, axis: .vertical)
-                    .lineLimit(2...4)
-            }
-
-            Section {
-                Button {
-                    Task { await build() }
-                } label: {
-                    Text(kind == .workout ? "Build my workout" : "Build my programme")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .listRowInsets(EdgeInsets())
-                .listRowBackground(Color.clear)
-            } footer: {
-                Text(footerText)
-            }
+            .buttonStyle(.plain)
+            .disabled(draft.isEmpty || currentStep == nil)
+            .accessibilityLabel("Send answer")
         }
+        .padding(12)
+        .background(.regularMaterial)
     }
 
-    private var footerText: String {
-        if !settings.enabled {
-            return "The coach is switched off, so this uses Life's own templates."
-        }
-        if !settings.mayUseCloud {
-            return "AI coaching is off, so this uses Life's own templates. Nothing is sent anywhere."
-        }
-        return "Nothing is saved until you confirm the result."
+    private var composerPrompt: String {
+        settings.mayUseCloud ? "Type an answer…" : "Type an answer — AI is off, so I'll use a template"
     }
 
-    private func toggle<T: Hashable>(_ value: T, in set: inout Set<T>) {
-        if set.contains(value) { set.remove(value) } else { set.insert(value) }
+    // MARK: Conversation flow
+
+    private func startConversationIfNeeded() {
+        guard turns.isEmpty else { return }
+        brief = initialBrief
+        stepIndex = 0
+        selectedChips = []
+
+        turns = [
+            Turn(speaker: .coach, text: kind == .workout
+                 ? "Let's put today's session together. A few quick questions."
+                 : "Let's build you a programme. A few quick questions.")
+        ]
+        if let step = currentStep { ask(step) }
+    }
+
+    private func ask(_ step: BuilderConversation.Step) {
+        turns.append(Turn(speaker: .coach, text: step.question, hint: step.hint))
+    }
+
+    /// Records the answer, says it back, and moves on.
+    private func advance() {
+        guard let step = currentStep else { return }
+
+        let chips = Array(selectedChips)
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Echoed in the user's own words where they typed, and in the chip's
+        // label where they tapped — so the transcript reads as what happened.
+        let spoken = !text.isEmpty
+            ? text
+            : chips.compactMap { value in step.chips.first { $0.value == value }?.label }
+                .sorted().joined(separator: ", ")
+
+        if !spoken.isEmpty {
+            turns.append(Turn(speaker: .you, text: spoken))
+        } else if step.isSkippable {
+            turns.append(Turn(speaker: .you, text: "Skip"))
+        }
+
+        BuilderConversation.apply(answer: text, chips: chips, for: step.kind, to: &brief)
+
+        // Said back in the app's own words. This is how someone catches "45"
+        // being read as 45 weeks before a programme is built on it.
+        if !spoken.isEmpty, let ack = BuilderConversation.acknowledgement(for: step.kind, brief: brief) {
+            turns.append(Turn(speaker: .coach, text: ack))
+        }
+
+        draft = ""
+        selectedChips = []
+        stepIndex += 1
+
+        if let next = currentStep {
+            ask(next)
+        } else {
+            Task { await build() }
+        }
     }
 
     // MARK: Building
@@ -657,35 +751,74 @@ private struct WeekStrip: View {
     }
 }
 
-/// A wrapping set of toggle chips, for equipment and muscles.
-private struct MuscleOrEquipmentGrid: View {
-    let items: [(raw: String, label: String)]
-    let selected: Set<String>
-    let onToggle: (String) -> Void
+/// One line of the transcript.
+private struct ChatBubble: View {
+    let turn: WorkoutPreviewSheet.Turn
 
-    private let columns = [GridItem(.adaptive(minimum: 92), spacing: 8)]
+    private var isYou: Bool { turn.speaker == .you }
 
     var body: some View {
-        LazyVGrid(columns: columns, spacing: 8) {
-            ForEach(items, id: \.raw) { item in
-                let isOn = selected.contains(item.raw)
-                Button {
-                    HapticManager.selection()
-                    onToggle(item.raw)
-                } label: {
-                    Text(item.label)
+        HStack {
+            if isYou { Spacer(minLength: 40) }
+
+            VStack(alignment: isYou ? .trailing : .leading, spacing: 3) {
+                Text(turn.text)
+                    .font(.subheadline)
+                    .foregroundColor(isYou ? .white : .primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .multilineTextAlignment(isYou ? .trailing : .leading)
+
+                if let hint = turn.hint {
+                    Text(hint)
+                        .font(.caption)
+                        .foregroundColor(isYou ? .white.opacity(0.85) : .secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background {
+                if isYou { AppTheme.brandGradient } else { AppTheme.cardBg }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+
+            if !isYou { Spacer(minLength: 40) }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            (isYou ? "You said: " : "Coach: ") + turn.text + (turn.hint.map { ". \($0)" } ?? "")
+        )
+    }
+}
+
+/// The answer chips under a question.
+private struct ChipCloud: View {
+    let chips: [BuilderConversation.Chip]
+    let selected: Set<String>
+    let allowsMultiple: Bool
+    let onTap: (String) -> Void
+
+    private let columns = [GridItem(.adaptive(minimum: 96), spacing: 8)]
+
+    var body: some View {
+        LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
+            ForEach(chips) { chip in
+                let isOn = selected.contains(chip.value)
+                Button { onTap(chip.value) } label: {
+                    Text(chip.label)
                         .font(.footnote.weight(.medium))
-                        .foregroundColor(isOn ? .white : .primary)
+                        .foregroundColor(isOn ? .white : AppTheme.primary)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 9)
-                        .background(isOn ? AppTheme.primary : Color(.tertiarySystemFill))
+                        .background(isOn ? AnyShapeStyle(AppTheme.primary) : AnyShapeStyle(AppTheme.primary.opacity(0.12)))
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(item.label)
-                .accessibilityAddTraits(isOn ? [.isButton, .isSelected] : [.isButton])
+                .accessibilityLabel(chip.label)
+                .accessibilityAddTraits(
+                    allowsMultiple && isOn ? [.isButton, .isSelected] : [.isButton]
+                )
             }
         }
-        .padding(.vertical, 4)
     }
 }
