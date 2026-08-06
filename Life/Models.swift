@@ -383,7 +383,13 @@ enum MovementType: String, Codable, CaseIterable, Identifiable {
     var label: String { rawValue.capitalized }
 }
 
-struct Exercise: Codable, Identifiable {
+/// `Equatable` and `Sendable` are additive and change no behaviour.
+///
+/// `WorkoutResolver` needs both: it is a pure value transform that runs off the
+/// main actor, and its tests assert the library array is *unchanged* after a
+/// resolve — the check that nothing on the model path ever manufactures an
+/// exercise the way `ImportRoutineSheet` does. That assertion needs `==`.
+struct Exercise: Codable, Identifiable, Equatable, Sendable {
     var id: String = UUID().uuidString
     var name: String
     var muscle: String
@@ -396,7 +402,7 @@ struct Exercise: Codable, Identifiable {
     var movementType: MovementType = .compound
 }
 
-struct RoutineExercise: Codable, Identifiable {
+struct RoutineExercise: Codable, Identifiable, Equatable, Sendable {
     var id: String = UUID().uuidString
     var exerciseId: String
     var defaultSets: Int = 3
