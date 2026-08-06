@@ -19,7 +19,7 @@ struct TrainView: View {
     @State private var planDate: Date? = nil
     @State private var sessionForDetail: WorkoutSession? = nil
     @State private var detailRoutine: Routine? = nil
-    @State private var showAIRoutine = false
+    @State private var showImportRoutine = false
     @State private var showQuickStartPicker = false
 
     private var finishedSessions: [WorkoutSession] {
@@ -92,7 +92,7 @@ struct TrainView: View {
                                         .foregroundColor(AppTheme.trainAccent)
                                 }
                                 .accessibilityLabel("My programs")
-                                Button { showAIRoutine = true } label: {
+                                Button { showImportRoutine = true } label: {
                                     Image(systemName: "sparkles")
                                         .foregroundColor(AppTheme.trainAccent)
                                         .font(.system(size: 18))
@@ -202,7 +202,7 @@ struct TrainView: View {
             }
             .sheet(isPresented: $showExerciseLibrary) { ExerciseLibraryView() }
             .sheet(isPresented: $showAddRoutine) { AddRoutineSheet() }
-            .sheet(isPresented: $showAIRoutine) { AIRoutineSheet() }
+            .sheet(isPresented: $showImportRoutine) { ImportRoutineSheet() }
             .sheet(item: $detailRoutine) { routine in
                 RoutineDetailSheet(routine: routine) {
                     appState.startSession(name: routine.name, routineId: routine.id)
@@ -2142,7 +2142,22 @@ private extension Array {
 
 // MARK: - Import Routine Sheet
 
-struct AIRoutineSheet: View {
+/// Imports a routine from a CSV file or pasted text.
+///
+/// **Was called `AIRoutineSheet`, and is not an AI feature.** Its "AI" is a
+/// *Copy AI Prompt* button that tells you to paste a prompt into a chatbot
+/// elsewhere and bring the CSV back by hand. The name is now taken by nothing —
+/// the real generator lives in `WorkoutBuilderService` and resolves exercises by
+/// id, never by name.
+///
+/// The distinction matters because `importFromText` below resolves exercises by
+/// *name* and manufactures a custom `Exercise` when the name doesn't match
+/// anything in the library. That is acceptable for a file the user chose to
+/// import — they typed those names, and an import that silently dropped half the
+/// rows would be worse. It is emphatically **not** acceptable for model output,
+/// which is why the generator never reuses this path and why nothing new should
+/// call it.
+struct ImportRoutineSheet: View {
     @Environment(AppState.self) private var appState
     @Environment(\.dismiss) private var dismiss
 

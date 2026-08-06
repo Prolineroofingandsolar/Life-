@@ -8,7 +8,14 @@ import {
   ASK_SCHEMA,
   validateRecommendation,
   validateAsk,
+  ValidationResult,
 } from "./schema";
+import {
+  WORKOUT_BLUEPRINT_SCHEMA,
+  PLAN_BLUEPRINT_SCHEMA,
+  validateWorkoutBlueprint,
+  validatePlanBlueprint,
+} from "./workoutSchema";
 import { reserveCall, recordUsage, readUsage, LimitExceeded } from "./limits";
 
 initializeApp();
@@ -42,10 +49,38 @@ const COACH_ENABLED = defineString("COACH_ENABLED", { default: "true" });
 /** Caps on what the app may send and what the model may return. */
 const MAX_CONTEXT_BYTES = 12_000;
 const MAX_QUESTION_CHARS = 500;
-const MAX_OUTPUT_TOKENS = 700;
 const REQUEST_TIMEOUT_MS = 20_000;
 
-type Mode = "recommendation" | "morningBriefing" | "eveningReview" | "ask";
+type Mode =
+  | "recommendation"
+  | "morningBriefing"
+  | "eveningReview"
+  | "ask"
+  | "buildWorkout"
+  | "buildPlan";
+
+/**
+ * Output budget, per mode.
+ *
+ * This was one shared constant of 700, which is ample for a coach tip and not
+ * nearly enough for a plan. A four-session programme runs to roughly 1,800
+ * output tokens; truncated at 700 it returns JSON that stops mid-object, and
+ * `generateJSON` reports that as "response was not valid JSON" — an error which
+ * blames the model for a limit we set. Per-mode, so a tip still costs a tip.
+ */
+const MAX_OUTPUT_TOKENS: Record<Mode, number> = {
+  recommendation: 700,
+  morningBriefing: 700,
+  eveningReview: 700,
+  ask: 700,
+  buildWorkout: 900,
+  buildPlan: 1800,
+};
+
+/** Modes that carry a free-text brief or question in `question`. */
+const MODES_REQUIRING_QUESTION: ReadonlySet<Mode> = new Set<Mode>([
+  "ask", "buildWorkout", "buildPlan",
+]);
 
 /**
  * Logs a failure without logging what caused it to be sent.
@@ -236,6 +271,67 @@ Proposals (the buttons under your answer):
   targetId if you do not have a real one.
 - Return an empty proposals array when there is nothing worth offering.
 `.trim(),
+
+  buildWorkout: `
+Your job: describe the SHAPE of one training session. You do not name exercises.
+
+- You never write the name of a movement. Not in a slot, not in the session
+  name, not in the notes. The app owns this person's exercise library and picks
+  the movement for each slot itself. Naming one would be guessing at a library
+  you cannot see, and the app would have to throw your answer away.
+- Each slot is a muscle group, optionally an equipment preference and a movement
+  type, then sets, a rep range, a rest period and optionally reps in reserve.
+- Only use muscle groups that appear in the library figures you were given. A
+  muscle with a count of zero has nothing behind it — asking for it wastes a
+  slot the person will never see.
+- Compounds before isolation. Largest muscle groups first.
+- Between three and eight slots for a typical session. Respect the time budget
+  you were given: roughly one slot per seven minutes.
+- "name" is a label for the session — "Upper Body — Strength", "Push A". It is
+  never a movement.
+- Do not estimate a duration. The app calculates it exactly and will show its
+  own figure.
+`.trim(),
+
+  buildPlan: `
+Your job: describe the SHAPE of a training week, to be repeated.
+
+Everything in the buildWorkout instructions applies to each session here.
+
+- "sessions" are the distinct sessions in a typical week. "weekdays" schedules
+  them, 1 being Monday. A weekday with no sessionKey is a rest day.
+- The same week repeats for "weeks". You cannot describe a different week three
+  — the app schedules a repeating week and cannot enact variation between them.
+  Put the week-to-week intent in "progression" as one sentence the person reads.
+- Match the number of training days to what was asked for. Do not add a session
+  because it would be better; the days they gave you are the days they have.
+- Leave at least one rest day between sessions that work the same large muscle
+  group.
+`.trim(),
+};
+
+/** Each mode answers in its own shape. */
+const RESPONSE_SCHEMAS: Record<Mode, unknown> = {
+  recommendation: RECOMMENDATION_SCHEMA,
+  morningBriefing: BRIEFING_SCHEMA,
+  eveningReview: BRIEFING_SCHEMA,
+  ask: ASK_SCHEMA,
+  buildWorkout: WORKOUT_BLUEPRINT_SCHEMA,
+  buildPlan: PLAN_BLUEPRINT_SCHEMA,
+};
+
+/**
+ * The second gate, per mode.
+ *
+ * Briefings have no validator: they are prose in a fixed envelope with nothing
+ * the app will act on, so there is no content claim to check. Everything that
+ * can reach a button or a saved record has one.
+ */
+const VALIDATORS: Partial<Record<Mode, (value: unknown) => ValidationResult>> = {
+  recommendation: validateRecommendation,
+  ask: validateAsk,
+  buildWorkout: validateWorkoutBlueprint,
+  buildPlan: validatePlanBlueprint,
 };
 
 /** The one-line reminder that leads the user content. */
@@ -244,6 +340,8 @@ const MODE_INSTRUCTIONS: Record<Mode, string> = {
   morningBriefing: "Write the morning briefing.",
   eveningReview: "Write the evening review.",
   ask: "Answer the question below using only the data provided.",
+  buildWorkout: "Describe the shape of one session matching the brief below.",
+  buildPlan: "Describe the shape of a training week matching the brief below.",
 };
 
 function systemInstruction(mode: Mode): string {
@@ -294,8 +392,11 @@ export const coach = onCall(
     }
 
     const question = (data?.question ?? "").slice(0, MAX_QUESTION_CHARS);
-    if (mode === "ask" && question.trim().length === 0) {
-      throw new HttpsError("invalid-argument", "Ask a question first.");
+    if (MODES_REQUIRING_QUESTION.has(mode) && question.trim().length === 0) {
+      throw new HttpsError(
+        "invalid-argument",
+        mode === "ask" ? "Ask a question first." : "Say what you'd like built."
+      );
     }
 
     const limits = {
@@ -324,16 +425,6 @@ export const coach = onCall(
       );
     }
 
-    const isBriefing = mode === "morningBriefing" || mode === "eveningReview";
-    const isAsk = mode === "ask";
-
-    /** Each mode answers in its own shape. */
-    const responseSchema = isBriefing
-      ? BRIEFING_SCHEMA
-      : isAsk
-        ? ASK_SCHEMA
-        : RECOMMENDATION_SCHEMA;
-
     const userContent = [
       MODE_INSTRUCTIONS[mode],
       question ? `Question: ${question}` : "",
@@ -352,18 +443,20 @@ export const coach = onCall(
         model: GEMINI_MODEL.value(),
         systemInstruction: systemInstruction(mode),
         userContent,
-        responseSchema,
-        maxOutputTokens: MAX_OUTPUT_TOKENS,
-        temperature: 0.4,
+        responseSchema: RESPONSE_SCHEMAS[mode],
+        maxOutputTokens: MAX_OUTPUT_TOKENS[mode],
+        // Lower for generation than for prose. A workout is a structured
+        // prescription, and variety in it is noise rather than voice — the same
+        // brief on two days should not produce two materially different plans.
+        temperature: mode === "buildWorkout" || mode === "buildPlan" ? 0.2 : 0.4,
         timeoutMs: REQUEST_TIMEOUT_MS,
       });
 
       const cost = await recordUsage(uid, result.usage, limits.pricing);
 
-      if (!isBriefing) {
-        const check = isAsk
-          ? validateAsk(result.value)
-          : validateRecommendation(result.value);
+      const validator = VALIDATORS[mode];
+      if (validator) {
+        const check = validator(result.value);
         if (!check.ok) {
           // Reported as data, not thrown. The app decides whether to ask for a
           // repair or fall back to its local suggestion, and it needs the
