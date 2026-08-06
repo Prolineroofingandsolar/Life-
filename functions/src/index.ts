@@ -326,6 +326,11 @@ Your job: describe the SHAPE of one training session. You do not name exercises.
   muscle with a count of zero has nothing behind it — asking for it wastes a
   slot the person will never see.
 - Compounds before isolation. Largest muscle groups first.
+- Read the recovery figures. A muscle at 70% fatigue or above was trained hard
+  and recently: leave it alone unless the person explicitly asked for it, and
+  say why in the notes if you use it anyway. Fatigue of zero with hasHistory
+  false means never trained, NOT fully recovered — treat it as unknown.
+- Prefer muscles below their weekly set target over ones already above it.
 - Between three and eight slots for a typical session. Respect the time budget
   you were given: roughly one slot per seven minutes.
 - "name" is a label for the session — "Upper Body — Strength", "Push A". It is

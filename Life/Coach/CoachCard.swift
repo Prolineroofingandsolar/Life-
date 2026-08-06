@@ -392,6 +392,9 @@ struct CoachCard: View {
     private func dismissToday() {
         if let context { CoachCache.shared.dismiss(context) }
         outcome = nil
+        // Dismissed here means dismissed everywhere. Leaving it on the home
+        // screen after it was swiped away on Today would be the app arguing.
+        WidgetSync.syncCoachTip(nil)
         HapticManager.impact(.light)
     }
 
@@ -419,7 +422,30 @@ struct CoachCard: View {
         )
         snapshot = health
         context = built
-        outcome = await service.recommendation(for: built, settings: settings, snapshot: health)
+        let result = await service.recommendation(for: built, settings: settings, snapshot: health)
+        outcome = result
+        publishToWidget(result)
+    }
+
+    /// Puts the same words, with the same provenance, on the home screen.
+    ///
+    /// The provenance travels with them because a widget is where a mislabelled
+    /// suggestion would do the most quiet damage: no explanation sheet behind
+    /// it, no Retry beside it, nothing to correct the impression that a model
+    /// wrote a line the rules produced.
+    private func publishToWidget(_ outcome: CoachService.Outcome?) {
+        guard let outcome else {
+            WidgetSync.syncCoachTip(nil)
+            return
+        }
+        WidgetSync.syncCoachTip(
+            WidgetSync.WidgetCoachTip(
+                headline: outcome.recommendation.headline,
+                summary: outcome.recommendation.summary,
+                origin: outcome.provenance.origin.rawValue,
+                generatedAt: outcome.provenance.generatedAt
+            )
+        )
     }
 }
 

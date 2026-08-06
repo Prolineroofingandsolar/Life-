@@ -13,6 +13,7 @@ struct LifeTasksWidgetBundle: WidgetBundle {
     var body: some Widget {
         LifeTasksWidget()
         LifeHabitsWidget()
+        LifeCoachWidget()
         LifeTasksWidgetLiveActivity()
     }
 }

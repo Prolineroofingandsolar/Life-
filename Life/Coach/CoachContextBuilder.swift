@@ -73,6 +73,12 @@ enum CoachContextBuilder {
     /// transmit items that cannot be chosen.
     private static let maximumCandidates = 5
 
+    /// Exercises worth reporting progress on.
+    ///
+    /// Six, because the context has a byte ceiling and because nobody asks
+    /// "how am I doing on my seventh most-trained lift".
+    private static let maximumExercises = 6
+
     static func build(
         appState: AppState,
         permissions: Permissions = Permissions(),
@@ -100,7 +106,7 @@ enum CoachContextBuilder {
             ? activitySection(health, appState: appState, warnings: &warnings)
             : nil
         let training = permissions.training
-            ? trainingSection(appState: appState, now: now, calendar: calendar)
+            ? trainingSection(appState: appState, permissions: permissions, now: now, calendar: calendar)
             : nil
         let tasks = permissions.tasks
             ? tasksSection(appState: appState, permissions: permissions, now: now, calendar: calendar)
@@ -383,6 +389,7 @@ enum CoachContextBuilder {
 
     private static func trainingSection(
         appState: AppState,
+        permissions: Permissions,
         now: Date,
         calendar: Calendar
     ) -> CoachContext.Training? {
@@ -427,8 +434,132 @@ enum CoachContextBuilder {
             lastWorkoutDaysAgo: lastDaysAgo,
             recentLoad: load(sessionsThisWeek: thisWeek.count),
             sessionsThisWeek: thisWeek.count,
-            library: library
+            library: library,
+            recovery: recoverySection(appState: appState),
+            trainingReadiness: finished.isEmpty
+                ? nil
+                : MuscleRecoveryEngine.readiness(from: MuscleRecoveryEngine.statuses(appState: appState)),
+            topExercises: exerciseProgress(
+                appState: appState,
+                permissions: permissions,
+                now: now,
+                calendar: calendar
+            )
         )
+    }
+
+    /// Fatigue per muscle, in the blueprint's vocabulary.
+    ///
+    /// The map works in finer-grained groups — lats, traps and lower back are
+    /// three regions of one `Back`. They are folded together on the *worst*
+    /// fatigue rather than the average, because a session that hammered the lats
+    /// and left the traps alone has still left the back needing a day. Weekly
+    /// sets are taken once per muscle, never summed, since all three groups read
+    /// the same underlying figure and adding them would treble it.
+    private static func recoverySection(appState: AppState) -> [CoachContext.Training.MuscleRecovery] {
+        var byMuscle: [BlueprintMuscle: CoachContext.Training.MuscleRecovery] = [:]
+
+        for status in MuscleRecoveryEngine.statuses(appState: appState) {
+            guard let muscle = status.blueprintMuscle else { continue }
+            let entry = CoachContext.Training.MuscleRecovery(
+                muscle: muscle.rawValue,
+                fatigue: status.fatigue,
+                band: status.band.rawValue,
+                setsThisWeek: status.weeklySets,
+                weeklyTargetMin: status.weeklyTarget.lowerBound,
+                weeklyTargetMax: status.weeklyTarget.upperBound,
+                hasHistory: status.hasTrainingHistory
+            )
+            if let existing = byMuscle[muscle], existing.fatigue >= entry.fatigue {
+                // Keep the worst, but never lose the fact that some part of this
+                // muscle has been trained.
+                if entry.hasHistory { byMuscle[muscle]?.hasHistory = true }
+                continue
+            }
+            byMuscle[muscle] = entry
+        }
+
+        return byMuscle.values.sorted { $0.muscle < $1.muscle }
+    }
+
+    /// The exercises with enough history to say anything about.
+    ///
+    /// Ranked by how much they have actually been done, not by weight — the
+    /// question this answers is "am I progressing", and the lift someone does
+    /// once a month is the one they know least about anyway.
+    private static func exerciseProgress(
+        appState: AppState,
+        permissions: Permissions,
+        now: Date,
+        calendar: Calendar
+    ) -> [CoachContext.Training.ExerciseProgress] {
+        /// Below this, a change is noise: two sessions can differ by a warm-up
+        /// that was marked as working, or by a day's sleep.
+        let minimumSessions = 3
+
+        struct Entry {
+            var sessions: Int = 0
+            /// Heaviest working set per session, most recent first.
+            var recent: [(date: Date, weight: Double)] = []
+        }
+
+        var entries: [String: Entry] = [:]
+
+        for session in appState.completedWorkouts {
+            guard let finishedAt = session.finishedAt else { continue }
+            for exercise in session.exercises {
+                let working = exercise.sets
+                    .filter { $0.done && !$0.isWarmup && $0.weight > 0 }
+                    .map(\.weight)
+                guard let heaviest = working.max() else { continue }
+                var entry = entries[exercise.exerciseId] ?? Entry()
+                entry.sessions += 1
+                entry.recent.append((date: finishedAt, weight: heaviest))
+                entries[exercise.exerciseId] = entry
+            }
+        }
+
+        let fourWeeksAgo = calendar.date(byAdding: .day, value: -28, to: now) ?? now
+
+        let ranked = entries
+            .sorted { lhs, rhs in
+                if lhs.value.sessions != rhs.value.sessions {
+                    return lhs.value.sessions > rhs.value.sessions
+                }
+                // A stable tie-break, so the same data produces the same context
+                // and the cache isn't defeated by dictionary ordering.
+                return lhs.key < rhs.key
+            }
+            .prefix(maximumExercises)
+
+        var progress: [CoachContext.Training.ExerciseProgress] = []
+        for (id, entry) in ranked {
+            let sorted = entry.recent.sorted { $0.date > $1.date }
+            let latest = sorted.first?.weight
+            // The last figure at or before four weeks ago, so the comparison is
+            // against a session that happened rather than an interpolation.
+            let baseline = sorted.first { $0.date <= fourWeeksAgo }?.weight
+
+            var change: Double?
+            if let latest, let baseline { change = latest - baseline }
+
+            var name: String?
+            if permissions.includeTitles {
+                name = appState.exercises.first { $0.id == id }?.name
+            }
+
+            progress.append(
+                CoachContext.Training.ExerciseProgress(
+                    exerciseId: id,
+                    name: name,
+                    recentWorkingWeightKg: latest,
+                    changeOverFourWeeksKg: change,
+                    sessionsRecorded: entry.sessions,
+                    state: entry.sessions >= minimumSessions ? .ready : .insufficientHistory
+                )
+            )
+        }
+        return progress
     }
 
     /// What the library can build, counted rather than listed.

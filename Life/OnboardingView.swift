@@ -9,7 +9,9 @@ struct OnboardingView: View {
     @State private var nameInput = ""
     @FocusState private var nameFocused: Bool
 
-    private let pages = 3
+    @State private var showBuilder = false
+
+    private let pages = 4
 
     var body: some View {
         ZStack {
@@ -20,6 +22,7 @@ struct OnboardingView: View {
                     welcomePage.tag(0)
                     namePage.tag(1)
                     readyPage.tag(2)
+                    trainingPage.tag(3)
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
                 .animation(.easeInOut, value: page)
@@ -46,7 +49,7 @@ struct OnboardingView: View {
                             isPresented = false
                         }
                     } label: {
-                        Text(page == pages - 1 ? "Get Started" : "Continue")
+                        Text(page == pages - 1 ? "Not right now" : "Continue")
                             .font(.headline)
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
@@ -59,6 +62,16 @@ struct OnboardingView: View {
                 }
                 .padding(.bottom, 48)
             }
+        }
+        .sheet(isPresented: $showBuilder, onDismiss: {
+            // A programme built means onboarding did its job; one abandoned
+            // means they'd rather look around first. Either way they land in the
+            // app, and the Train tab offers the same builder whenever they want
+            // it.
+            UserDefaults.standard.set(true, forKey: "onboarding_complete")
+            isPresented = false
+        }) {
+            WorkoutPreviewSheet(initialKind: .plan)
         }
     }
 
@@ -156,6 +169,55 @@ struct OnboardingView: View {
             .cornerRadius(AppTheme.cardRadius)
             .shadow(color: .black.opacity(0.07), radius: 10, x: 0, y: 3)
             .padding(.horizontal, 24)
+
+            Spacer()
+        }
+    }
+
+    // MARK: - Page 4: A first programme
+
+    /// The last screen asks for something rather than announcing something.
+    ///
+    /// Onboarding used to end by listing five features and dropping the person
+    /// into an empty Train tab. This offers the one thing that makes the tab
+    /// worth opening — a week of sessions built around what they can actually
+    /// do — and it works on first run even though cloud AI is off by default,
+    /// because the builder falls back to `LocalProgrammeTemplates` when it is.
+    /// Nothing is written until the preview is confirmed, here as everywhere.
+    private var trainingPage: some View {
+        VStack(spacing: 28) {
+            Spacer()
+            Image(systemName: "figure.strengthtraining.traditional")
+                .font(.system(size: 64))
+                .foregroundColor(AppTheme.primary)
+                .padding(24)
+                .background(AppTheme.primary.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 28))
+
+            VStack(spacing: 12) {
+                Text("Want a programme to start from?")
+                    .font(.title2.bold())
+                    .multilineTextAlignment(.center)
+                Text("A few questions — your goal, your days, what equipment you've got — and you'll get a week of sessions. You can change any of it, and nothing is saved until you say so.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+            }
+
+            Button {
+                showBuilder = true
+            } label: {
+                Text("Build my programme")
+                    .font(.headline)
+                    .foregroundColor(AppTheme.primary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(AppTheme.primary.opacity(0.12))
+                    .cornerRadius(AppTheme.buttonRadius)
+            }
+            .buttonStyle(PressableButtonStyle())
+            .padding(.horizontal, 32)
 
             Spacer()
         }

@@ -25,87 +25,50 @@ struct MuscleRecoveryMapView: View {
 
     private var groups: [MuscleGroup] { showBack ? MuscleGroup.back : MuscleGroup.front }
 
-    // MARK: Recovery math (from real app data)
+    // MARK: Recovery math
+
+    /// All of it now lives in `MuscleRecoveryEngine`.
+    ///
+    /// It used to live here, as private methods on this view — which meant the
+    /// workout builder couldn't see that legs were trained yesterday, and the
+    /// arithmetic behind a number shown as a percentage had never been tested.
+    /// This view renders those figures; it no longer computes them.
+    private func status(_ g: MuscleGroup) -> MuscleRecoveryEngine.Status {
+        MuscleRecoveryEngine.status(for: g, appState: appState)
+    }
 
     private func trainingInfo(_ g: MuscleGroup) -> AppState.MuscleTrainingInfo? {
         guard let m = g.appMuscle else { return nil }
         return appState.lastTrainingInfo(muscle: m)
     }
 
-    /// Set-count baseline — meaningful from the very first session, with no
-    /// training history required (a personal-best comparison alone collapses
-    /// to "full effort" whenever the latest session happens to also be the
-    /// only/heaviest one on record, which is exactly the case for anyone who
-    /// hasn't logged much yet).
-    private func setIntensity(_ sets: Int) -> Double {
-        switch sets {
-        case ..<3:   return 0.35
-        case 3..<6:  return 0.6
-        case 6..<10: return 0.85
-        default:     return 1.0
+    private func fatigue(_ g: MuscleGroup) -> Int { status(g).fatigue }
+
+    private func color(_ fat: Int) -> Color {
+        switch MuscleRecoveryEngine.Band(fatigue: fat) {
+        case .fatigued:   return red
+        case .recovering: return orange
+        case .light:      return gold
+        case .fresh:      return green
         }
     }
 
-    /// Blends the set-count baseline with this session's volume (sets ×
-    /// weight moved) relative to the best single session ever recorded for
-    /// this muscle, once there's actually a prior session to compare
-    /// against. Falls back to the set-count baseline alone otherwise, so a
-    /// light session reads as light from day one instead of only after
-    /// enough history has built up.
-    private func intensity(_ g: MuscleGroup, info: AppState.MuscleTrainingInfo) -> Double {
-        let bySets = setIntensity(info.completedSets)
-        guard let m = g.appMuscle else { return bySets }
-        let best = appState.personalBestVolume(muscle: m, excludingSessionId: info.sessionId)
-        guard best > 0 else { return bySets }
-        let byVolume = Swift.min(1.0, info.volume / best)
-        return (bySets + byVolume) / 2
-    }
-
-    /// Day-based fatigue for a muscle with the given full-recovery window:
-    /// always high right after training, then tapers to a small residual
-    /// floor by the time that muscle's own recovery window has elapsed —
-    /// so a 1.5-day muscle (biceps) is back to baseline well before a
-    /// 3-day one (legs, back).
-    private func dayFatigue(daysAgo: Int, recoveryDays: Double) -> Double {
-        guard daysAgo > 0 else { return 85 }
-        let remaining = Swift.max(0, 1 - Double(daysAgo) / recoveryDays)
-        return 8 + remaining * 77
-    }
-
-    private func fatigue(_ g: MuscleGroup) -> Int {
-        guard let m = g.appMuscle, let info = trainingInfo(g) else { return 0 }
-        let base = dayFatigue(daysAgo: info.daysAgo, recoveryDays: appState.recoveryDays(forMuscle: m))
-        return Int((base * intensity(g, info: info)).rounded())
-    }
-
-    private func color(_ fat: Int) -> Color {
-        if fat >= 70 { return red }
-        if fat >= 45 { return orange }
-        if fat >= 25 { return gold }
-        return green
-    }
-
     private func statusLabel(_ fat: Int) -> String {
-        if fat >= 70 { return "Fatigued" }
-        if fat >= 45 { return "Recovering" }
-        if fat >= 25 { return "Light" }
-        return "Fresh"
+        MuscleRecoveryEngine.Band(fatigue: fat).label
     }
 
     private func lastTrained(_ g: MuscleGroup) -> String {
-        guard let info = trainingInfo(g) else { return "—" }
-        switch info.daysAgo {
+        guard let days = status(g).daysSinceTrained else { return "—" }
+        switch days {
         case 0: return "Today"
         case 1: return "Yesterday"
-        default: return "\(info.daysAgo)d ago"
+        default: return "\(days)d ago"
         }
     }
 
     private func freshIn(_ g: MuscleGroup) -> String {
-        let fat = fatigue(g)
-        guard fat >= 25, let m = g.appMuscle, let info = trainingInfo(g) else { return "Ready" }
-        let remaining = Swift.max(1, Int(appState.recoveryDays(forMuscle: m).rounded(.up)) - info.daysAgo)
-        return "~\(remaining)d"
+        guard let days = status(g).freshInDays else { return "Ready" }
+        return "~\(days)d"
     }
 
     /// The actual exercises, set counts, and weight moved from the muscle's
@@ -115,14 +78,11 @@ struct MuscleRecoveryMapView: View {
         trainingInfo(g)?.exerciseBreakdown ?? []
     }
 
-    private func weeklySets(_ g: MuscleGroup) -> Int {
-        guard let m = g.appMuscle else { return 0 }
-        return appState.setsThisWeekByMuscle().first { $0.muscle == m }?.sets ?? 0
-    }
+    private func weeklySets(_ g: MuscleGroup) -> Int { status(g).weeklySets }
 
     private func weeklyTarget(_ g: MuscleGroup) -> (min: Int, max: Int) {
-        guard let m = g.appMuscle else { return (8, 16) }
-        return appState.weeklySetTarget(forMuscle: m)
+        let range = status(g).weeklyTarget
+        return (range.lowerBound, range.upperBound)
     }
 
     /// "Bicep Curls · 2 sets · 60kg" — the weight figure is omitted for
@@ -136,11 +96,12 @@ struct MuscleRecoveryMapView: View {
         return "\(ex.name) · \(setsPart) · \(Int(displayVolume))\(unit.label.lowercased())"
     }
 
+    private var statuses: [MuscleRecoveryEngine.Status] {
+        MuscleRecoveryEngine.statuses(appState: appState)
+    }
+
     private var readiness: Int {
-        let all = MuscleGroup.allUnique
-        guard !all.isEmpty else { return 100 }
-        let avg = all.map { fatigue($0) }.reduce(0, +) / all.count
-        return Swift.max(0, Swift.min(100, 100 - avg))
+        MuscleRecoveryEngine.readiness(from: statuses)
     }
 
     private var ringColor: Color {
@@ -160,17 +121,12 @@ struct MuscleRecoveryMapView: View {
         return f.localizedString(for: date, relativeTo: Date())
     }
 
-    private var needsRecovery: [MuscleGroup] {
-        MuscleGroup.allUnique
-            .map { ($0, fatigue($0)) }
-            .filter { $0.1 >= 40 }
-            .sorted { $0.1 > $1.1 }
-            .prefix(4)
-            .map { $0.0 }
+    private var needsRecovery: [MuscleRecoveryEngine.Status] {
+        MuscleRecoveryEngine.needingRecovery(appState: appState)
     }
 
     private var freshCount: Int {
-        MuscleGroup.allUnique.filter { fatigue($0) < 25 }.count
+        statuses.filter { $0.band == .fresh }.count
     }
 
     var body: some View {
@@ -419,13 +375,13 @@ struct MuscleRecoveryMapView: View {
                     .font(.system(size: 14)).foregroundColor(subtext)
                     .padding(.vertical, 10)
             } else {
-                ForEach(needsRecovery) { g in
-                    let fat = fatigue(g)
+                ForEach(needsRecovery) { item in
+                    let fat = item.fatigue
                     HStack(spacing: 11) {
                         Circle().fill(color(fat)).frame(width: 10, height: 10)
-                        Text(g.name).font(.system(size: 15, weight: .medium)).foregroundColor(.primary)
+                        Text(item.name).font(.system(size: 15, weight: .medium)).foregroundColor(.primary)
                         Spacer()
-                        Text(statusLabel(fat)).font(.system(size: 13)).foregroundColor(subtext)
+                        Text(item.band.label).font(.system(size: 13)).foregroundColor(subtext)
                         Text("\(fat)%").font(.system(size: 16, weight: .semibold, design: .rounded))
                             .foregroundColor(color(fat)).frame(minWidth: 38, alignment: .trailing)
                     }

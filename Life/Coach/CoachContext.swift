@@ -225,8 +225,65 @@ struct CoachContext: Codable, Equatable, Sendable {
         /// never quote from anyway.
         var library: Library?
 
+        /// How fatigued each muscle is, and how much of its weekly target it
+        /// has had.
+        ///
+        /// The app has computed this since long before there was a coach, and
+        /// the coach was never told any of it — so it would recommend a leg
+        /// session the day after a leg session while the recovery map, one tap
+        /// away, showed quads at 80%. Sent in the blueprint's ten-word
+        /// vocabulary so a recommendation can be acted on by the builder.
+        var recovery: [MuscleRecovery] = []
+        /// Whole-body readiness, 0–100. The same figure the recovery ring shows.
+        var trainingReadiness: Int?
+
+        /// A handful of exercises with enough history to say something about.
+        ///
+        /// Answers "am I getting stronger on bench?", which is the most obvious
+        /// question a training app should field and which the context could not
+        /// previously support at all. Capped at six to stay well inside the
+        /// context size limit.
+        var topExercises: [ExerciseProgress] = []
+
         enum Load: String, Codable, Sendable {
             case light, moderate, heavy
+        }
+
+        struct MuscleRecovery: Codable, Equatable, Sendable {
+            /// One of the ten blueprint muscles.
+            var muscle: String
+            /// 0–100.
+            var fatigue: Int
+            /// fresh / light / recovering / fatigued — the same four words the
+            /// map colours by, so the coach and the screen agree.
+            var band: String
+            var setsThisWeek: Int
+            var weeklyTargetMin: Int
+            var weeklyTargetMax: Int
+            /// False when this muscle has never been trained. Zero fatigue then
+            /// means "no record", not "fully recovered" — and telling someone
+            /// their never-trained calves are fresh is true and useless.
+            var hasHistory: Bool
+        }
+
+        struct ExerciseProgress: Codable, Equatable, Sendable {
+            /// A real id from the library, so a proposal about it can be acted
+            /// on. Never invented: the model may quote these back, and only
+            /// these.
+            var exerciseId: String
+            /// Only when `permissions.includeTitles`. A custom exercise is
+            /// user-written text like any task title.
+            var name: String?
+            /// The heaviest working set recently performed, in kilograms.
+            var recentWorkingWeightKg: Double?
+            /// Change against four weeks ago, in kilograms. Nil when there is
+            /// nothing that far back to compare with.
+            var changeOverFourWeeksKg: Double?
+            var sessionsRecorded: Int
+            /// `ready` or `insufficientHistory` — the same vocabulary as the
+            /// health figures, so "not enough history yet" reads identically
+            /// wherever it appears.
+            var state: MetricState
         }
 
         /// Shape, not contents.

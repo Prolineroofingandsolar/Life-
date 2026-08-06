@@ -165,6 +165,9 @@ struct ContentView: View {
             // Habits no longer has a tab, but the habit widget still links here,
             // so present it rather than dropping the tap on the floor.
             case "habits": showHabits = true
+            // The coach widget links here. It shows a suggestion and nothing
+            // else — the card on Today is where it can be acted on.
+            case "coach":  selectedTab = .today
             default:       break
             }
         }

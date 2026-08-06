@@ -487,4 +487,134 @@ struct CoachResponseTests {
 
         #expect(CoachContextBuilder.build(appState: state).training == nil)
     }
+
+    // MARK: Recovery and per-exercise progress
+
+    @Test("Recovery is reported in the blueprint's ten words, one entry each")
+    func recoveryUsesBlueprintVocabulary() {
+        let state = Self.emptyState()
+        state.exercises = [Exercise(name: "Row", muscle: "Back", kind: .weight)]
+
+        let recovery = CoachContextBuilder.build(appState: state).training?.recovery ?? []
+
+        #expect(!recovery.isEmpty)
+        // Lats, traps and lower back are three regions of one Back. Sending
+        // three "Back" entries would let the coach read three fatigued muscles
+        // where there is one.
+        #expect(Set(recovery.map(\.muscle)).count == recovery.count)
+        #expect(recovery.allSatisfy { BlueprintMuscle(rawValue: $0.muscle) != nil })
+        // Nothing trained: flagged as having no history rather than as fresh.
+        #expect(recovery.allSatisfy { !$0.hasHistory })
+    }
+
+    @Test("Per-exercise progress ranks by how often something is trained, capped at six")
+    func topExercisesAreCapped() {
+        let state = Self.emptyState()
+        var library: [Exercise] = []
+        for index in 0..<8 {
+            library.append(Exercise(name: "Lift \(index)", muscle: "Chest", kind: .weight))
+        }
+        state.exercises = library
+
+        // Exercise 0 done eight times, exercise 1 seven, and so on — so the
+        // ranking is unambiguous and the cap has something to cut.
+        var sessions: [WorkoutSession] = []
+        for (index, exercise) in library.enumerated() {
+            for repetition in 0..<(8 - index) {
+                var set = LoggedSet(weight: 50, reps: 8)
+                set.done = true
+                var performed = SessionExercise(exerciseId: exercise.id)
+                performed.sets = [set]
+                var session = WorkoutSession(name: "S\(index)-\(repetition)")
+                session.finishedAt = Date().addingTimeInterval(-Double(repetition) * 86_400)
+                session.exercises = [performed]
+                sessions.append(session)
+            }
+        }
+        state.sessions = sessions
+
+        let top = CoachContextBuilder.build(appState: state).training?.topExercises ?? []
+
+        #expect(top.count == 6)
+        #expect(top.first?.exerciseId == library[0].id)
+        #expect(top.first?.sessionsRecorded == 8)
+        // Descending, so the coach reads the most-trained first.
+        #expect(top.map(\.sessionsRecorded) == [8, 7, 6, 5, 4, 3])
+    }
+
+    /// An exercise name can be user-written text, the same as a task title. It
+    /// follows the same switch.
+    @Test("Exercise names are withheld unless titles may be shared")
+    func exerciseNamesFollowTitlePermission() {
+        let state = Self.emptyState()
+        let exercise = Exercise(name: "Hargreaves Special", muscle: "Chest", kind: .weight)
+        state.exercises = [exercise]
+
+        var set = LoggedSet(weight: 40, reps: 10)
+        set.done = true
+        var performed = SessionExercise(exerciseId: exercise.id)
+        performed.sets = [set]
+        var session = WorkoutSession(name: "Session")
+        session.finishedAt = Date()
+        session.exercises = [performed]
+        state.sessions = [session]
+
+        let withheld = CoachContextBuilder.build(appState: state).training?.topExercises.first
+        #expect(withheld?.name == nil)
+        #expect(withheld?.exerciseId == exercise.id)
+
+        let shared = CoachContextBuilder
+            .build(appState: state, permissions: .all)
+            .training?.topExercises.first
+        #expect(shared?.name == "Hargreaves Special")
+    }
+
+    /// One session is a data point, not a trend. Saying "you're getting
+    /// stronger" off a single reading is the failure this state exists to stop.
+    @Test("Too few sessions is insufficientHistory, not a figure")
+    func tooFewSessionsIsFlagged() {
+        let state = Self.emptyState()
+        let exercise = Exercise(name: "Press", muscle: "Shoulders", kind: .weight)
+        state.exercises = [exercise]
+
+        var set = LoggedSet(weight: 30, reps: 10)
+        set.done = true
+        var performed = SessionExercise(exerciseId: exercise.id)
+        performed.sets = [set]
+        var session = WorkoutSession(name: "Session")
+        session.finishedAt = Date()
+        session.exercises = [performed]
+        state.sessions = [session]
+
+        let progress = CoachContextBuilder.build(appState: state).training?.topExercises.first
+        #expect(progress?.state == .insufficientHistory)
+        // Nothing four weeks back to compare against, so no change is claimed.
+        #expect(progress?.changeOverFourWeeksKg == nil)
+        #expect(progress?.recentWorkingWeightKg == 30)
+    }
+
+    /// Warm-ups are not working sets. Counting them would drag the reported
+    /// working weight down and make a good week look like a plateau.
+    @Test("Warm-up sets don't count towards the working weight")
+    func warmupsAreExcluded() {
+        let state = Self.emptyState()
+        let exercise = Exercise(name: "Squat", muscle: "Legs", kind: .weight)
+        state.exercises = [exercise]
+
+        var warmup = LoggedSet(weight: 100, reps: 5)
+        warmup.done = true
+        warmup.isWarmup = true
+        var working = LoggedSet(weight: 60, reps: 8)
+        working.done = true
+
+        var performed = SessionExercise(exerciseId: exercise.id)
+        performed.sets = [warmup, working]
+        var session = WorkoutSession(name: "Session")
+        session.finishedAt = Date()
+        session.exercises = [performed]
+        state.sessions = [session]
+
+        let progress = CoachContextBuilder.build(appState: state).training?.topExercises.first
+        #expect(progress?.recentWorkingWeightKg == 60)
+    }
 }

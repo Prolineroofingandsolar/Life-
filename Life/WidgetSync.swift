@@ -141,4 +141,61 @@ enum WidgetSync {
 
         WidgetCenter.shared.reloadAllTimelines()
     }
+
+    // MARK: - Coach Tip
+    // Field names MUST match the widget's decoder
+    // (LifeTasksWidget/SharedCoachTip.swift) or the widget silently shows its
+    // placeholder instead.
+
+    /// What the coach said, and who said it.
+    ///
+    /// `origin` is not decoration. The whole point of `CoachProvenance` is that
+    /// a rule-written line is never shown under a label implying a model wrote
+    /// it — and a widget is the one surface where that mistake would be hardest
+    /// to notice, because there is no card, no explanation sheet and no Retry
+    /// button next to it. So the origin travels with the words.
+    ///
+    /// Deliberately carries no health figures. A widget sits on a lock screen
+    /// in full view of anyone holding the phone; "Your HRV is down 18%" is not
+    /// something to put there, and the headline the coach writes is general
+    /// enough not to be.
+    struct WidgetCoachTip: Codable {
+        let headline: String
+        let summary: String
+        /// "gemini" | "onDevice" | "offlineFallback" | "usageLimited".
+        let origin: String
+        let generatedAt: Date
+    }
+
+    private static let coachTipDefaultsKey = "life_widget_coach_tip"
+    private static let coachTipFileName = "life_coach_tip.json"
+
+    /// Writes the current tip, or clears it when there isn't one.
+    ///
+    /// Clearing matters: a stale tip left behind after the user switches AI off
+    /// would keep a Gemini label on their lock screen for a feature they turned
+    /// off, which is exactly the sort of thing provenance exists to prevent.
+    static func syncCoachTip(_ tip: WidgetCoachTip?) {
+        let defaults = UserDefaults(suiteName: appGroup)
+        let containerURL = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: appGroup
+        )
+        let fileURL = containerURL?.appendingPathComponent(coachTipFileName)
+
+        guard let tip else {
+            defaults?.removeObject(forKey: coachTipDefaultsKey)
+            if let fileURL { try? FileManager.default.removeItem(at: fileURL) }
+            WidgetCenter.shared.reloadAllTimelines()
+            return
+        }
+
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        guard let data = try? encoder.encode(tip) else { return }
+
+        defaults?.set(data, forKey: coachTipDefaultsKey)
+        if let fileURL { try? data.write(to: fileURL, options: .atomic) }
+
+        WidgetCenter.shared.reloadAllTimelines()
+    }
 }
