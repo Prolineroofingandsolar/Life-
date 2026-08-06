@@ -2554,6 +2554,32 @@ final class AppState {
         save()
     }
 
+    /// Applies an accepted progression to every routine holding this exercise.
+    ///
+    /// Updates the *stored prescription*, not the finished workout. A completed
+    /// session is a record of what happened and editing it retrospectively would
+    /// make the history a fiction — the progression changes what you are asked
+    /// to do next time, which is a different thing.
+    ///
+    /// Only ever called from `ProgressionReviewSheet`, from a tap.
+    func applyProgression(exerciseId: String, weight: Double, reps: Int) {
+        var changed = false
+
+        for routineIndex in routines.indices {
+            for exerciseIndex in routines[routineIndex].exercises.indices
+            where routines[routineIndex].exercises[exerciseIndex].exerciseId == exerciseId {
+                routines[routineIndex].exercises[exerciseIndex].defaultWeight = weight
+                routines[routineIndex].exercises[exerciseIndex].defaultReps = reps
+                changed = true
+            }
+        }
+
+        // One save for the lot, and none at all when the exercise isn't in any
+        // routine — accepting a suggestion for a one-off exercise shouldn't
+        // write a snapshot for nothing.
+        if changed { save() }
+    }
+
     /// Writes a generated programme in one pass.
     ///
     /// A plan is N routines, one programme and up to M dated sessions. Building

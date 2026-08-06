@@ -24,6 +24,8 @@ struct TrainView: View {
     /// The AI builder. Nil when closed; the value carries what kind of thing to
     /// build, so the sheet opens straight into the right form.
     @State private var builderKind: WorkoutPreviewSheet.Kind?
+    /// Progression proposals awaiting review. Non-empty presents the sheet.
+    @State private var reviewingProposals: [ProgressionEngine.Proposal] = []
 
     private var finishedSessions: [WorkoutSession] {
         appState.sessions
@@ -31,158 +33,161 @@ struct TrainView: View {
             .sorted { ($0.finishedAt ?? .distantPast) > ($1.finishedAt ?? .distantPast) }
     }
 
+    /// Gaps between conceptual sections. Everything inside a section is
+    /// tighter than this; nothing else is looser. Matches Today, so the two
+    /// tabs read as one app.
+    private static let sectionSpacing: CGFloat = 22
+
+    /// Today's routine, from a planned entry first and the programme second —
+    /// the same precedence `TodaysWorkoutCard` uses, so "View plan" always opens
+    /// what the card is describing.
+    private var todaysRoutine: Routine? {
+        if let planned = appState.plannedSessions.first(where: {
+            Calendar.current.isDateInToday($0.date) && !$0.completed
+        }), let id = planned.routineId {
+            return appState.routines.first { $0.id == id }
+        }
+        return appState.todaysSuggestedRoutine()
+    }
+
+    private func startTodaysWorkout() {
+        if let active = appState.activeSession {
+            presentedWorkout = PresentedWorkout(id: active.id)
+            return
+        }
+        if let planned = appState.plannedSessions.first(where: {
+            Calendar.current.isDateInToday($0.date) && !$0.completed && !$0.isRestDay
+        }) {
+            appState.startSession(name: planned.routineName, routineId: planned.routineId)
+        } else if let suggested = appState.todaysSuggestedRoutine() {
+            appState.startSession(name: suggested.name, routineId: suggested.id)
+        } else {
+            // Nothing planned, so there is nothing to put in a workout yet.
+            // Same rule as Quick Start: pick the exercise first.
+            showQuickStartPicker = true
+            return
+        }
+        presentedWorkout = appState.activeSession.map { PresentedWorkout(id: $0.id) }
+    }
+
+    /// One heading style for the page.
+    @ViewBuilder
+    private func section<Content: View>(
+        _ title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.headline)
+                .padding(.horizontal, 20)
+                .accessibilityAddTraits(.isHeader)
+            content()
+        }
+    }
+
+    /// Routines, kept below the new sections rather than removed.
+    ///
+    /// The four-glyph header row is gone: browse and programmes moved into the
+    /// grid above, and building moved with them. Only "new routine" is left,
+    /// because that is the one thing this section is actually about.
+    private var routinesSection: some View {
+        section("My routines") {
+            VStack(spacing: 12) {
+                QuickStartCard { showQuickStartPicker = true }
+                    .padding(.horizontal, 16)
+
+                if appState.routines.isEmpty {
+                    EmptyStateView(
+                        icon: "dumbbell",
+                        title: "No routines yet",
+                        actionLabel: "Create your first routine",
+                        action: { showAddRoutine = true }
+                    )
+                } else {
+                    LazyVGrid(
+                        columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)],
+                        spacing: 12
+                    ) {
+                        ForEach(appState.routines) { routine in
+                            RoutineTile(
+                                routine: routine,
+                                onStart: {
+                                    appState.startSession(name: routine.name, routineId: routine.id)
+                                    presentedWorkout = appState.activeSession.map { PresentedWorkout(id: $0.id) }
+                                },
+                                onTap: { detailRoutine = routine }
+                            )
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                }
+            }
+        }
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 20) {
+                LazyVStack(spacing: Self.sectionSpacing) {
 
-                    // Compact week strip
                     WeekStripView(
                         onPlanDate: { date in planDate = date },
-                        onTapSession: { session in
-                            sessionForDetail = session
-                        }
+                        onTapSession: { session in sessionForDetail = session }
                     )
                     .padding(.horizontal, 16)
 
-                    // Resume active workout
+                    // A live session outranks everything, including today's
+                    // plan — you are already doing the thing.
                     if let active = appState.activeSession {
                         ResumeCard(session: active, pulse: pulseResume) {
                             presentedWorkout = PresentedWorkout(id: active.id)
                         }
                         .padding(.horizontal, 16)
                         .onAppear { pulseResume = true }
-                    }
-
-                    // Today's planned or suggested routine
-                    if let planned = appState.plannedSessions.first(where: {
-                        Calendar.current.isDateInToday($0.date) && !$0.completed
-                    }) {
-                        TodayPlannedCard(plan: planned) {
-                            appState.startSession(
-                                name: planned.routineName,
-                                routineId: planned.routineId
-                            )
-                            presentedWorkout = appState.activeSession.map { PresentedWorkout(id: $0.id) }
-                        }
-                        .padding(.horizontal, 16)
-                    } else if let suggested = appState.todaysSuggestedRoutine() {
-                        TodayRoutineCard(routine: suggested) {
-                            appState.startSession(name: suggested.name, routineId: suggested.id)
-                            presentedWorkout = appState.activeSession.map { PresentedWorkout(id: $0.id) }
-                        }
+                    } else {
+                        TodaysWorkoutCard(
+                            onStart: startTodaysWorkout,
+                            onViewPlan: { detailRoutine = todaysRoutine }
+                        )
                         .padding(.horizontal, 16)
                     }
 
-                    // Personal Records
-                    PRSection()
+                    // Hides itself entirely when there is nothing to say. A card
+                    // permanently present and usually empty teaches people to
+                    // stop looking at it.
+                    CoachSuggestionCard { proposals in
+                        reviewingProposals = proposals
+                    }
+                    .padding(.horizontal, 16)
 
-                    // Routines section
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack {
-                            Text("MY ROUTINES")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundColor(Color(hex: "#A0A0B0"))
-                            Spacer()
-                            HStack(spacing: 14) {
-                                Button { showBrowsePrograms = true } label: {
-                                    Image(systemName: "square.grid.2x2")
-                                        .foregroundColor(AppTheme.trainAccent)
-                                }
-                                .accessibilityLabel("Browse training programs")
-                                Button { showPrograms = true } label: {
-                                    Image(systemName: "calendar")
-                                        .foregroundColor(AppTheme.trainAccent)
-                                }
-                                .accessibilityLabel("My programs")
-                                // A menu rather than a button. The sparkles
-                                // used to open the CSV importer, which is not
-                                // what a sparkle promises — and now that there
-                                // is a real generator, both need a way in.
-                                Menu {
-                                    Button {
-                                        builderKind = .workout
-                                    } label: {
-                                        Label("Build a workout", systemImage: "wand.and.stars")
-                                    }
-                                    Button {
-                                        builderKind = .plan
-                                    } label: {
-                                        Label("Build a programme", systemImage: "calendar.badge.plus")
-                                    }
-                                    Divider()
-                                    Button {
-                                        showImportRoutine = true
-                                    } label: {
-                                        Label("Import from a file", systemImage: "square.and.arrow.down")
-                                    }
-                                } label: {
-                                    Image(systemName: "sparkles")
-                                        .foregroundColor(AppTheme.trainAccent)
-                                        .font(.system(size: 18))
-                                }
-                                .accessibilityLabel("Build with the coach")
-                                .accessibilityHint("Build a workout or programme, or import one")
-                                Button { showAddRoutine = true } label: {
-                                    Image(systemName: "plus.circle.fill")
-                                        .foregroundColor(AppTheme.trainAccent)
-                                        .font(.system(size: 20))
-                                }
-                                .accessibilityLabel("New routine")
-                            }
-                        }
+                    section("Train your way") {
+                        TrainYourWayGrid(
+                            onBuildProgramme: { builderKind = .plan },
+                            onBuildWorkout: { builderKind = .workout },
+                            onBrowseProgrammes: { showBrowsePrograms = true },
+                            onExerciseLibrary: { showExerciseLibrary = true }
+                        )
                         .padding(.horizontal, 16)
+                    }
 
-                        // Quick Start opens the exercise picker; the workout
-                        // isn't created until something is chosen.
-                        QuickStartCard {
-                            showQuickStartPicker = true
-                        }
-                        .padding(.horizontal, 16)
-
-                        if appState.routines.isEmpty {
-                            EmptyStateView(
-                                icon: "dumbbell",
-                                title: "No routines yet",
-                                actionLabel: "Create your first routine",
-                                action: { showAddRoutine = true }
-                            )
-                        } else {
-                            LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
-                                ForEach(appState.routines) { routine in
-                                    RoutineTile(
-                                        routine: routine,
-                                        onStart: {
-                                            appState.startSession(name: routine.name, routineId: routine.id)
-                                            presentedWorkout = appState.activeSession.map { PresentedWorkout(id: $0.id) }
-                                        },
-                                        onTap: { detailRoutine = routine }
-                                    )
-                                }
-                            }
+                    section("Your programme") {
+                        ProgrammeProgressCard { showPrograms = true }
                             .padding(.horizontal, 16)
-                        }
                     }
 
-                    // Volume by muscle
+                    section("Progress") {
+                        TrainingProgressCard { hubTab = .progress }
+                            .padding(.horizontal, 16)
+                    }
+
+                    routinesSection
+
                     MuscleVolumeSection()
 
-                    // Clears the tab bar. 80pt was measured against a portrait
-                    // iPhone with a home indicator; in landscape the bar is
-                    // shorter and the inset is different again, so the constant
-                    // was wrong in every orientation but the one it was written
-                    // for — too much space below the content on some, the last
-                    // card cut off by the bar on others. The system knows the
-                    // real inset, so it supplies it.
                     Color.clear
                         .frame(height: 24)
                         .accessibilityHidden(true)
                 }
-                // Today, Tasks, Health and More all open with 8pt above their
-                // first card. Train carried 8 here plus another 4 on the week
-                // strip, which set its heading and everything under it 4pt lower
-                // than every other tab — enough to see when switching between
-                // them, and the only tab that didn't line up.
                 .padding(.vertical, 8)
             }
             .background(AppTheme.trainBg)
@@ -230,6 +235,14 @@ struct TrainView: View {
             .sheet(isPresented: $showImportRoutine) { ImportRoutineSheet() }
             .sheet(item: $builderKind) { kind in
                 WorkoutPreviewSheet(initialKind: kind)
+            }
+            .sheet(
+                isPresented: Binding(
+                    get: { !reviewingProposals.isEmpty },
+                    set: { if !$0 { reviewingProposals = [] } }
+                )
+            ) {
+                ProgressionReviewSheet(proposals: reviewingProposals)
             }
             .sheet(item: $detailRoutine) { routine in
                 RoutineDetailSheet(routine: routine) {
@@ -822,75 +835,6 @@ private struct ResumeCard: View {
 }
 
 // MARK: - Today Planned Card (from PlannedSession)
-
-private struct TodayPlannedCard: View {
-    let plan: PlannedSession
-    let onStart: () -> Void
-
-    var body: some View {
-        HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 4) {
-                Label("Planned Today", systemImage: "calendar.badge.checkmark")
-                    .font(.caption.weight(.semibold))
-                    .foregroundColor(AppTheme.trainAccent)
-                Text(plan.routineName)
-                    .font(.headline)
-                if !plan.notes.isEmpty {
-                    Text(plan.notes)
-                        .font(.caption)
-                        .foregroundColor(Color(hex: "#A0A0B0"))
-                }
-            }
-            Spacer()
-            Button(action: onStart) {
-                Image(systemName: "play.fill")
-                    .foregroundColor(.black)
-                    .frame(width: 44, height: 44)
-                    .background(AppTheme.trainAccent)
-                    .clipShape(Circle())
-            }
-            .buttonStyle(PressableButtonStyle())
-        }
-        .padding(16)
-        .background(AppTheme.trainCard)
-        .cornerRadius(14)
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(AppTheme.trainAccent.opacity(0.3), lineWidth: 1))
-    }
-}
-
-// MARK: - Today Routine Card (from program)
-
-private struct TodayRoutineCard: View {
-    let routine: Routine
-    let onStart: () -> Void
-
-    var body: some View {
-        HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 4) {
-                Label("Today's Workout", systemImage: "calendar.badge.checkmark")
-                    .font(.caption.weight(.semibold))
-                    .foregroundColor(AppTheme.trainAccent)
-                Text(routine.name)
-                    .font(.headline)
-                Text("\(routine.exercises.count) exercises")
-                    .font(.caption)
-                    .foregroundColor(Color(hex: "#A0A0B0"))
-            }
-            Spacer()
-            Button(action: onStart) {
-                Image(systemName: "play.fill")
-                    .foregroundColor(.black)
-                    .frame(width: 44, height: 44)
-                    .background(AppTheme.trainAccent)
-                    .clipShape(Circle())
-            }
-            .buttonStyle(PressableButtonStyle())
-        }
-        .padding(16)
-        .background(AppTheme.trainCard)
-        .cornerRadius(14)
-    }
-}
 
 // MARK: - Quick Start Card
 
