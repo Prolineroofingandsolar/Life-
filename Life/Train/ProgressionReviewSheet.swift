@@ -26,6 +26,7 @@ struct ProgressionReviewSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 12) {
+                    if let review { summaryCard(review) }
                     explanation
 
                     ForEach(proposals) { proposal in
@@ -60,6 +61,51 @@ struct ProgressionReviewSheet: View {
                 }
             }
         }
+    }
+
+    /// How the session went, in three lines at most.
+    ///
+    /// Computed from the session itself — no model call. This runs after every
+    /// workout, and paying for one to rephrase four numbers the app already
+    /// knows would be a standing cost for nothing.
+    private var review: PostWorkoutReview.Review? {
+        let finished = appState.completedWorkouts
+            .sorted { ($0.finishedAt ?? .distantPast) > ($1.finishedAt ?? .distantPast) }
+        guard let session = finished.first else { return nil }
+        return PostWorkoutReview.review(
+            PostWorkoutReview.input(for: session, appState: appState)
+        )
+    }
+
+    private func summaryCard(_ review: PostWorkoutReview.Review) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            line("checkmark.circle.fill", AppTheme.trainAccent, review.success)
+            if let attention = review.attention {
+                line("exclamationmark.circle", .orange, attention)
+            }
+            if let next = review.nextAction {
+                line("arrow.turn.down.right", .secondary, next)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(AppTheme.cardBg)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private func line(_ icon: String, _ colour: Color, _ text: String) -> some View {
+        HStack(alignment: .top, spacing: 9) {
+            Image(systemName: icon)
+                .font(.caption)
+                .foregroundColor(colour)
+                .frame(width: 18)
+                .accessibilityHidden(true)
+            Text(text)
+                .font(.subheadline)
+                .foregroundColor(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
     }
 
     private var explanation: some View {

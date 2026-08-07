@@ -32,6 +32,8 @@ struct TrainView: View {
     @State private var showSettings = false
     @State private var showScanner = false
     @State private var showWeeklyReview = false
+    /// Drift signals being reviewed. Empty dismisses the sheet.
+    @State private var driftSignals: [DriftEngine.Signal] = []
     /// The missed session being rescheduled, if any. Nil dismisses the sheet.
     @State private var reschedulingSession: PlannedSession?
 
@@ -194,6 +196,11 @@ struct TrainView: View {
                     WeeklyReviewCard { showWeeklyReview = true }
                         .padding(.horizontal, 16)
 
+                    DriftCard { signals in
+                        driftSignals = signals
+                    }
+                    .padding(.horizontal, 16)
+
                     section("Train your way") {
                         TrainYourWayGrid(
                             onBuildProgramme: { builderKind = .plan },
@@ -302,6 +309,17 @@ struct TrainView: View {
             }
             .sheet(item: $reschedulingSession) { session in
                 RescheduleSheet(missed: session)
+            }
+            .sheet(
+                isPresented: Binding(
+                    get: { !driftSignals.isEmpty },
+                    set: { if !$0 { driftSignals = [] } }
+                )
+            ) {
+                DriftReviewSheet(signals: driftSignals) { brief in
+                    pendingBrief = brief
+                    builderKind = .plan
+                }
             }
             .sheet(isPresented: $showPrograms) { ProgramsView() }
             .sheet(item: $hubTab) { tab in

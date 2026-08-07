@@ -316,6 +316,77 @@ struct WorkoutPreviewSheet: View {
         }
     }
 
+    // MARK: Guardrails
+
+    /// Programme-quality warnings, shown before the save button and never after.
+    ///
+    /// Calculated, not generated — `VolumeGuardrails` compares the proposed week
+    /// against the user's own recent weeks. They do not block the save: these
+    /// are observations about a programme, not medical limits, and the app has
+    /// no standing to refuse someone their own training plan.
+    @ViewBuilder
+    private func guardrailsBlock(for plan: WorkoutResolver.ResolvedPlan) -> some View {
+        let warnings = guardrailWarnings(for: plan)
+        if !warnings.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("WORTH KNOWING")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundColor(.secondary)
+                ForEach(warnings) { warning in
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: warning.isSevere ? "exclamationmark.triangle" : "info.circle")
+                            .font(.caption)
+                            .foregroundColor(warning.isSevere ? .orange : .secondary)
+                            .frame(width: 16)
+                            .accessibilityHidden(true)
+                        Text(warning.text)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .background(AppTheme.cardBg)
+            .clipShape(RoundedRectangle(cornerRadius: AppTheme.cardRadius, style: .continuous))
+            .padding(.horizontal, 16)
+        }
+    }
+
+    private func guardrailWarnings(for plan: WorkoutResolver.ResolvedPlan) -> [VolumeGuardrails.Warning] {
+        let sessionsByKey = Dictionary(
+            plan.sessions.map { ($0.key, $0.workout.items.map(\.prescription)) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let weekly = Array(sessionsByKey.values)
+
+        var byWeekday: [Int: [RoutineExercise]] = [:]
+        for (weekday, key) in plan.schedule {
+            byWeekday[weekday] = sessionsByKey[key] ?? []
+        }
+
+        let recent = VolumeGuardrails.recentWeeklySets(appState: appState)
+        var targets: [String: ClosedRange<Int>] = [:]
+        for status in MuscleRecoveryEngine.statuses(appState: appState) {
+            guard let muscle = status.blueprintMuscle else { continue }
+            targets[muscle.rawValue] = status.weeklyTarget
+        }
+
+        return VolumeGuardrails.check(
+            proposedSets: VolumeGuardrails.weeklySets(in: weekly, library: appState.exercises),
+            recentWeeklySets: recent.sets,
+            weeksOfHistory: recent.weeks,
+            targets: targets,
+            focus: brief.focusMuscles,
+            adjacentMuscles: VolumeGuardrails.adjacentHardMuscles(
+                byWeekday: byWeekday,
+                library: appState.exercises
+            )
+        )
+    }
+
     // MARK: Building
 
     private var buildingState: some View {
@@ -453,6 +524,8 @@ struct WorkoutPreviewSheet: View {
                     }
 
                     notesBlock(plan.notes)
+
+                    guardrailsBlock(for: plan)
 
                     VStack(spacing: 0) {
                         Toggle("Make this my active programme", isOn: $makeActive)

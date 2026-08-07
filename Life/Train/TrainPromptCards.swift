@@ -57,6 +57,73 @@ struct MissedSessionCard: View {
     }
 }
 
+// MARK: - Drift Card
+
+/// The programme and the training have parted company.
+///
+/// Shown at most once a fortnight, and only when the evidence thresholds in
+/// `DriftEngine` are met — three occurrences across three separate weeks. An app
+/// that offers to redesign your programme every time you skip a Tuesday is not
+/// observant, it is nagging, and the dismissal date is what keeps it from
+/// becoming that.
+struct DriftCard: View {
+
+    @Environment(AppState.self) private var appState
+
+    var onReview: ([DriftEngine.Signal]) -> Void
+
+    @AppStorage("train_drift_dismissed_at") private var dismissedAt: Double = 0
+
+    /// A fortnight. Long enough that the second showing means something changed,
+    /// short enough to catch a programme that has genuinely been outgrown.
+    private static let quietDays: TimeInterval = 14 * 24 * 60 * 60
+
+    private var signals: [DriftEngine.Signal] {
+        guard Date().timeIntervalSince1970 - dismissedAt > Self.quietDays else { return [] }
+        return DriftEngine.signals(appState: appState)
+    }
+
+    var body: some View {
+        let found = signals
+        if !found.isEmpty {
+            Button {
+                dismissedAt = Date().timeIntervalSince1970
+                onReview(found)
+            } label: {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "arrow.triangle.branch")
+                        .font(.title3)
+                        .foregroundColor(AppTheme.trainAccent)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Your programme doesn't match your training")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundColor(.primary)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text(found[0].headline + (found.count > 1 ? ", and \(found.count - 1) other thing\(found.count == 2 ? "" : "s")." : "."))
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundColor(Color(.tertiaryLabel))
+                        .accessibilityHidden(true)
+                }
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(AppTheme.cardBg)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Shows the evidence. Nothing changes unless you rebuild and confirm.")
+        }
+    }
+}
+
 // MARK: - Weekly Review Card
 
 /// "Your week is ready."
