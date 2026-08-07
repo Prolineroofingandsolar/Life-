@@ -316,7 +316,10 @@ enum ProgressionEngine {
                     comparableSessions: comparableSessionCount(
                         exerciseId: exercise.exerciseId, appState: appState
                     ),
-                    loadIncrement: increment(for: library)
+                    // The increment this person actually succeeds with, where
+                    // there is enough history to know it. `increment(for:)` is
+                    // the shipped guess and stays as the fallback.
+                    loadIncrement: TrainingMemory.increment(for: library, appState: appState)
                 )
             )
 

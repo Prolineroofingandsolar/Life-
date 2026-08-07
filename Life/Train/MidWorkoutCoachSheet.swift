@@ -284,7 +284,12 @@ struct MidWorkoutCoachSheet: View {
         guard let remaining = remainingExercises(), !remaining.isEmpty else {
             return .unavailable("You're already done.")
         }
-        let current = WorkoutAdjuster.estimatedMinutes(remaining)
+        // Their own pace, where the app has learned it — the standard estimate
+        // is three seconds a rep for everybody, and "I've got fifteen minutes"
+        // deserves an answer computed from how long their sessions actually
+        // take.
+        let pace = TrainingMemory.pace(appState: appState)
+        let current = Int(Double(WorkoutAdjuster.estimatedMinutes(remaining)) * pace.factor)
         guard current > minutes else {
             return .text("What's left is about \(current) minutes. You'll make it.")
         }
@@ -405,6 +410,12 @@ struct MidWorkoutCoachSheet: View {
                 .firstIndex(where: { $0.exerciseId == from.id }) else { return }
 
         appState.sessions[index].exercises[exerciseIndex].exerciseId = to.id
+
+        // Swapping mid-session is the clearest preference signal the app ever
+        // gets: one exercise refused with another in front of you, and one
+        // chosen over five alternatives.
+        appState.recordFeedback(.dismissed, source: .substitution, exerciseId: from.id)
+        appState.recordFeedback(.accepted, source: .substitution, exerciseId: to.id)
         // The load was for the old movement. Carrying it over would put one
         // exercise's numbers on another's bar.
         for setIndex in appState.sessions[index].exercises[exerciseIndex].sets.indices

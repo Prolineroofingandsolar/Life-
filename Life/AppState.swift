@@ -104,6 +104,9 @@ struct StateSnapshot: Codable {
     /// Manually entered Google Health scores paired with our estimates.
     var sleepComparisons: [String: SleepScoreComparison]? = nil
     var coachSettings: CoachSettings? = nil
+    /// What the app has learned about this person — see `TrainingMemory`.
+    /// Optional for the same reason as everything above it.
+    var coachFeedback: [CoachFeedbackEntry]? = nil
 }
 
 // MARK: - Snapshot Merging
@@ -150,6 +153,9 @@ extension StateSnapshot {
         out.programs = union(winner.programs, loser.programs)
         out.visitedLocations = union(winner.visitedLocations, loser.visitedLocations)
         out.plannedSessions = union(winner.plannedSessions, loser.plannedSessions)
+        // Unioned like everything else: feedback given on one device is still
+        // true on the other, and losing it would quietly un-learn a preference.
+        out.coachFeedback = union(winner.coachFeedback ?? [], loser.coachFeedback ?? [])
         out.supplements = union(winner.supplements, loser.supplements)
 
         out.careDays = merge(winner.careDays, loser.careDays) { win, lose in
@@ -255,6 +261,14 @@ final class AppState {
     var sleepNights: [String: SleepNight] = [:]
     var sleepComparisons: [String: SleepScoreComparison] = [:]
     var coachSettings: CoachSettings = CoachSettings()
+
+    /// Every proposal accepted, edited or dismissed.
+    ///
+    /// The app's only memory of its own suggestions. `TrainingMemory` turns this
+    /// into score adjustments, so declining the same exercise three times
+    /// actually stops it being offered — which is the difference between an app
+    /// that reacts and one that learns.
+    var coachFeedback: [CoachFeedbackEntry] = []
 
     // MARK: Computed Properties
 
@@ -529,7 +543,8 @@ final class AppState {
             healthSettings: healthSettings,
             sleepNights: sleepNights,
             sleepComparisons: sleepComparisons,
-            coachSettings: coachSettings
+            coachSettings: coachSettings,
+            coachFeedback: coachFeedback
         )
     }
 
@@ -561,6 +576,7 @@ final class AppState {
         sleepNights = snapshot.sleepNights ?? [:]
         sleepComparisons = snapshot.sleepComparisons ?? [:]
         coachSettings = snapshot.coachSettings ?? CoachSettings()
+        coachFeedback = snapshot.coachFeedback ?? []
     }
 
     // MARK: Cloud Sync
@@ -718,6 +734,7 @@ final class AppState {
     private func resetCoachForUITestsIfNeeded() {
         guard ProcessInfo.processInfo.arguments.contains("-CoachUITest") else { return }
         coachSettings = CoachSettings()
+        coachFeedback = []
         CoachCache.resetForTesting()
     }
 
@@ -1854,6 +1871,29 @@ final class AppState {
 
     func setCoachSettings(_ transform: (inout CoachSettings) -> Void) {
         transform(&coachSettings)
+        save()
+    }
+
+    /// Records what someone did with a suggestion.
+    ///
+    /// The only writer of `coachFeedback`, and it is called from the same taps
+    /// that accept or dismiss a proposal — never inferred, never written on the
+    /// app's own initiative. `TrainingMemory` reads it back as score
+    /// adjustments, so this is the mechanism by which saying no three times
+    /// actually means something.
+    func recordFeedback(
+        _ outcome: CoachFeedbackEntry.Outcome,
+        source: CoachFeedbackEntry.Source,
+        exerciseId: String? = nil
+    ) {
+        coachFeedback.append(
+            CoachFeedbackEntry(source: source, outcome: outcome, exerciseId: exerciseId)
+        )
+        // Bounded. This is a preference signal, not an audit log, and
+        // `TrainingMemory` ignores anything older than four months anyway.
+        if coachFeedback.count > 500 {
+            coachFeedback.removeFirst(coachFeedback.count - 500)
+        }
         save()
     }
 

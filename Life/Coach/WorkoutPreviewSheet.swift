@@ -91,12 +91,36 @@ struct WorkoutPreviewSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") { cancel() }
                 }
             }
         }
         .onAppear {
             kind = initialKind
+        }
+    }
+
+    /// Saving is an endorsement of every exercise in it; walking away from a
+    /// finished preview is a rejection of them.
+    ///
+    /// Only from a *previewed* workout — cancelling during the conversation
+    /// means nothing was proposed yet, and recording a rejection for a workout
+    /// that was never shown would teach the app something the user never said.
+    private func cancel() {
+        switch stage {
+        case .workout(let workout, _):
+            record(.dismissed, exerciseIds: workout.items.map(\.exercise.id))
+        case .plan(let plan, _):
+            record(.dismissed, exerciseIds: plan.sessions.flatMap { $0.workout.items.map(\.exercise.id) })
+        case .brief, .building, .failed:
+            break
+        }
+        dismiss()
+    }
+
+    private func record(_ outcome: CoachFeedbackEntry.Outcome, exerciseIds: [String]) {
+        for id in Set(exerciseIds) {
+            appState.recordFeedback(outcome, source: .builder, exerciseId: id)
         }
     }
 
@@ -476,6 +500,7 @@ struct WorkoutPreviewSheet: View {
                     : "There aren't enough exercises in your library for this."
             ) {
                 confirmation = WorkoutBuilderActions.commit(workout, appState: appState)
+                record(.accepted, exerciseIds: workout.items.map(\.exercise.id))
                 finish()
             }
         }
@@ -575,6 +600,10 @@ struct WorkoutPreviewSheet: View {
                     appState: appState,
                     options: .init(makeActive: makeActive, scheduleSessions: scheduleSessions)
                 )
+                record(
+                    .accepted,
+                    exerciseIds: plan.sessions.flatMap { $0.workout.items.map(\.exercise.id) }
+                )
                 finish()
             }
         }
@@ -669,6 +698,11 @@ struct WorkoutPreviewSheet: View {
         // Attached at the last moment rather than during the interview, so the
         // answer to "start fresh" is honoured by simply never populating it.
         brief.historyText = brief.useHistory ? TrainingHistoryDigest.promptText(digest) : nil
+        // What the app has learned about this person, as one sentence. Counts
+        // and multipliers only — no exercise name ever reaches the model.
+        if brief.useHistory, let learned = TrainingMemory.promptText(appState: appState) {
+            brief.historyText = [brief.historyText, learned].compactMap { $0 }.joined(separator: " ")
+        }
 
         let context = CoachContextBuilder.build(
             appState: appState,
@@ -734,7 +768,12 @@ struct WorkoutPreviewSheet: View {
             favouriteIds: Set(appState.exercises.filter(\.isFavorite).map(\.id)),
             idsInExistingRoutines: Set(appState.routines.flatMap { $0.exercises.map(\.exerciseId) }),
             excludedMuscles: brief.avoidMuscles,
-            availableEquipment: brief.availableEquipment
+            availableEquipment: brief.availableEquipment,
+            // What the app has learned from what you've accepted and turned
+            // down. This is the difference between the same programme every
+            // time and one that stops offering what you keep refusing.
+            preferences: TrainingMemory.preferences(appState: appState),
+            refusedIds: TrainingMemory.refused(appState: appState)
         )
     }
 

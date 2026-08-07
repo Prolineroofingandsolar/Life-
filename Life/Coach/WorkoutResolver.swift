@@ -40,6 +40,14 @@ enum WorkoutResolver {
         var excludedMuscles: Set<BlueprintMuscle> = []
         /// Equipment the user has. Empty means no restriction.
         var availableEquipment: Set<ExerciseEquipment> = []
+        /// Score adjustments learned from what the user has accepted and
+        /// dismissed — see `TrainingMemory.preferences`. Empty means the app has
+        /// no opinion yet, which is where everyone starts.
+        var preferences: [String: Int] = [:]
+        /// Exercises declined often enough to stop offering. A hard filter
+        /// rather than a penalty: three refusals is a clear enough answer that
+        /// continuing to suggest it is the app not listening.
+        var refusedIds: Set<String> = []
 
         init(
             library: [Exercise],
@@ -47,7 +55,9 @@ enum WorkoutResolver {
             favouriteIds: Set<String> = [],
             idsInExistingRoutines: Set<String> = [],
             excludedMuscles: Set<BlueprintMuscle> = [],
-            availableEquipment: Set<ExerciseEquipment> = []
+            availableEquipment: Set<ExerciseEquipment> = [],
+            preferences: [String: Int] = [:],
+            refusedIds: Set<String> = []
         ) {
             self.library = library
             self.history = history
@@ -55,6 +65,8 @@ enum WorkoutResolver {
             self.idsInExistingRoutines = idsInExistingRoutines
             self.excludedMuscles = excludedMuscles
             self.availableEquipment = availableEquipment
+            self.preferences = preferences
+            self.refusedIds = refusedIds
         }
     }
 
@@ -451,6 +463,8 @@ enum WorkoutResolver {
     private static func candidates(for muscle: BlueprintMuscle, in inputs: Inputs) -> [Exercise] {
         inputs.library.filter { exercise in
             guard BlueprintMuscle(appMuscle: exercise.muscle) == muscle else { return false }
+            // Declined three times. Offering it a fourth is not persistence.
+            guard !inputs.refusedIds.contains(exercise.id) else { return false }
             // Equipment the user doesn't have is a hard filter, unlike the
             // slot's *preferred* equipment, which is only a score. Prescribing a
             // cable row to someone training in a garage is not a near miss.
@@ -475,6 +489,12 @@ enum WorkoutResolver {
         // need a spotter. Difficulty runs 1–3 in the seed.
         let targetDifficulty = (slot.movementType ?? .compound) == .isolation ? 1 : 2
         score -= 6 * abs(exercise.difficulty - targetDifficulty)
+
+        // What the person has actually said about this exercise, by accepting
+        // or dismissing it. Capped at ±36 by `TrainingMemory`, so it can
+        // outweigh any single reason to pick something but never becomes the
+        // only reason.
+        score += inputs.preferences[exercise.id] ?? 0
 
         return score
     }

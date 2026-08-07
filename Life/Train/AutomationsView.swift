@@ -16,7 +16,7 @@ struct AutomationsView: View {
 
     @State private var outcomes: [AutomationOutcome] = []
     @State private var dismissed: Set<String> = []
-    @State private var openOutcome: AutomationOutcome?
+    @State private var showMemory = false
 
     /// Handed back to Train, which owns the sheets these open.
     var onOpen: (AutomationOutcome.Destination) -> Void
@@ -30,6 +30,7 @@ struct AutomationsView: View {
                     intro
                     findings
                     switches
+                    memoryLink
                 }
                 .padding(20)
             }
@@ -185,6 +186,44 @@ struct AutomationsView: View {
                 .foregroundColor(Color(.tertiaryLabel))
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    /// The learning layer is a different thing from the automations, and it
+    /// lives one tap away rather than on this screen: one is what the app
+    /// watches for, the other is what it has concluded about you.
+    private var memoryLink: some View {
+        Button {
+            showMemory = true
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "brain")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(AppTheme.trainAccent)
+                    .frame(width: 22)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("What Life has learned about you")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundColor(.primary)
+                    Text("Exercises you keep turning down, your own pace and load jumps.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundColor(Color(.tertiaryLabel))
+                    .accessibilityHidden(true)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(AppTheme.cardBg)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .sheet(isPresented: $showMemory) { TrainingMemoryView() }
     }
 
     private func binding(for kind: AutomationKind) -> Binding<Bool> {

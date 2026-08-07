@@ -234,6 +234,14 @@ struct AdjustWorkoutSheet: View {
     private func applyBar(_ adjustment: WorkoutAdjuster.Adjustment) -> some View {
         Button {
             HapticManager.success()
+            // Removals here are a preference, not just an edit: these are the
+            // exercises someone dropped when the session had to give something
+            // up, and the builder should hear about it.
+            let kept = Set(adjustment.exercises.map(\.exerciseId))
+            for item in exercises where !kept.contains(item.exerciseId) {
+                appState.recordFeedback(.dismissed, source: .adjustment, exerciseId: item.exerciseId)
+            }
+
             onApply(adjustment.exercises)
             dismiss()
         } label: {

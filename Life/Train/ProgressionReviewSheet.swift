@@ -53,7 +53,7 @@ struct ProgressionReviewSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Dismiss") { dismiss() }
+                    Button("Dismiss") { dismissAll() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Accept all") { acceptAll() }
@@ -157,7 +157,29 @@ struct ProgressionReviewSheet: View {
             reps: reps
         )
         accepted.insert(proposal.exerciseId)
+
+        // Recorded so the app learns from it. An accepted-as-proposed number is
+        // an endorsement; an edited one says the proposal was in the right
+        // direction and the wrong size, and `TrainingMemory` weighs the two
+        // differently.
+        let wasEdited = weight != proposal.proposedWeight || reps != proposal.proposedReps
+        appState.recordFeedback(
+            wasEdited ? .edited : .accepted,
+            source: .progression,
+            exerciseId: proposal.exerciseId
+        )
+
         HapticManager.success()
+    }
+
+    /// Dismissing is an answer too, and the app should hear it.
+    private func dismissAll() {
+        for proposal in proposals where !accepted.contains(proposal.exerciseId) {
+            appState.recordFeedback(
+                .dismissed, source: .progression, exerciseId: proposal.exerciseId
+            )
+        }
+        dismiss()
     }
 
     private func acceptAll() {
