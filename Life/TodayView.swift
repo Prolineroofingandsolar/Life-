@@ -256,7 +256,10 @@ struct TodayView: View {
         // Today's step count comes straight from HealthKit on the Apple Health
         // path so the ring stays live between the coarser daily merges.
         if HealthSync.source(for: appState.healthSettings) == .appleHealth {
-            appState.syncSteps(await hkManager.fetchStepsForToday())
+            appState.syncSteps(
+                await hkManager.fetchStepsForToday(),
+                source: HealthSync.Source.appleHealth.rawValue
+            )
             appState.invalidateHealthSnapshot()
         }
     }

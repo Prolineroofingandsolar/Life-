@@ -624,21 +624,48 @@ struct CareDay: Codable {
     var lastBreakAt: Date? = nil
     var breaksTaken: Int = 0
     var steps: Int = 0
+    /// Which tracker this day's step count came from — `HealthSync.Source`'s
+    /// raw value.
+    ///
+    /// Without it, `mergeSteps` kept the higher of the stored and incoming
+    /// figures for today, and "higher" was evaluated across *sources*: an
+    /// iPhone-only count of 6,000 written this morning beat the wrist tracker's
+    /// 4,500 this afternoon, so today's total was the highest figure either
+    /// device had ever reported. That is exactly "it's taking steps from both".
+    ///
+    /// Optional, so a saved day written before this existed decodes as nil
+    /// rather than throwing — synthesised `Codable` calls `decodeIfPresent` for
+    /// optionals and `decode` for everything else, and a throw here is read as
+    /// first launch and seeds defaults over the user's data.
+    var stepsSource: String? = nil
 
     /// Combines two devices' record of the same day.
     ///
     /// Counters take the larger of the two rather than the preferred side's.
     /// These only ever go up during a day, so a phone that hasn't synced since
     /// this morning holding four glasses of water doesn't mean the day's count
-    /// dropped to four — it means that device stopped counting at four. The
-    /// same reasoning covers steps, which is why a sync catching a source
-    /// mid-import can't push the figure backwards.
+    /// dropped to four — it means that device stopped counting at four.
+    ///
+    /// Steps are the exception, and deliberately: two devices holding different
+    /// step counts for one day are usually two *sources*, not one source seen at
+    /// two moments, and taking the larger silently prefers whichever tracker
+    /// happened to be more generous. Same source, take the larger; different
+    /// source, take the incoming one, because the sync that just ran knows which
+    /// tracker is currently authoritative and this merge does not.
     static func merging(_ incoming: CareDay, onto existing: CareDay) -> CareDay {
         var out = incoming
         out.dayKey = incoming.dayKey.isEmpty ? existing.dayKey : incoming.dayKey
         out.waterGlasses = max(incoming.waterGlasses, existing.waterGlasses)
         out.breaksTaken = max(incoming.breaksTaken, existing.breaksTaken)
-        out.steps = max(incoming.steps, existing.steps)
+
+        let sameSource = incoming.stepsSource == existing.stepsSource
+        if sameSource {
+            out.steps = max(incoming.steps, existing.steps)
+        } else if incoming.stepsSource == nil {
+            // Nothing claiming a source loses to something that does.
+            out.steps = existing.steps
+            out.stepsSource = existing.stepsSource
+        }
         // Whichever device logged more meals has the fuller list; meals aren't
         // individually identified, so they can't be unioned safely.
         out.meals = incoming.meals.count >= existing.meals.count ? incoming.meals : existing.meals

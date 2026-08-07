@@ -1713,9 +1713,10 @@ final class AppState {
         save()
     }
 
-    func syncSteps(_ steps: Int) {
+    func syncSteps(_ steps: Int, source: String? = nil) {
         var day = careDays[todayKey] ?? CareDay(dayKey: todayKey)
         day.steps = max(0, steps)
+        day.stepsSource = source
         careDays[todayKey] = day
         // Written by a tracker, not by the person. A fresh install that reads a
         // step count before sign-in finishes must not be credited with holding
@@ -1723,24 +1724,65 @@ final class AppState {
         save(markingUserData: false)
     }
 
-    /// Backfills step counts for past days without touching anything else on
-    /// those records.
-    func mergeSteps(_ stepsByDay: [String: Int]) {
+    /// Backfills step counts without touching anything else on those records.
+    ///
+    /// `source` is the tracker the figures came from, and it is the fix for
+    /// step counts that looked like both devices added together.
+    ///
+    /// Today's count keeps the higher of the stored and incoming figures,
+    /// because a sync that catches a source mid-import returns less than it did
+    /// a minute ago and the number would visibly go backwards during the day.
+    /// That rule was applied blind to *which* tracker wrote the stored figure —
+    /// so an iPhone-only 6,000 from this morning beat the wrist tracker's 4,500
+    /// this afternoon, and today's total became the highest number either device
+    /// had ever reported. Now the comparison only happens within one source; a
+    /// different source overwrites outright, because `HealthSync` has already
+    /// decided which tracker is authoritative and this is where that decision
+    /// gets honoured.
+    func mergeSteps(_ stepsByDay: [String: Int], source: String? = nil) {
         guard !stepsByDay.isEmpty else { return }
         for (key, steps) in stepsByDay {
             var day = careDays[key] ?? CareDay(dayKey: key)
-            // Today is still being counted, and a sync that catches the source
-            // mid-import can return less than it did a minute ago — which made
-            // the step count visibly go *down* during the day. Keep the higher
-            // figure for today only.
-            //
-            // Past days stay a straight overwrite: there the source is
-            // authoritative and a correction should be allowed to reduce the
-            // number, which a max() would silently block forever.
-            day.steps = key == todayKey ? max(day.steps, max(0, steps)) : max(0, steps)
+            let incoming = max(0, steps)
+            // A stored figure with no source recorded predates this field. It
+            // is treated as belonging to whoever is writing now rather than as a
+            // rival source, so the first sync after upgrading corrects the day
+            // instead of being blocked by it.
+            let sameSource = day.stepsSource == nil || day.stepsSource == source
+
+            if key == todayKey && sameSource {
+                day.steps = max(day.steps, incoming)
+            } else {
+                // Past days are a straight overwrite either way: the source is
+                // authoritative there and a correction should be able to reduce
+                // the number, which a max() would silently block forever.
+                day.steps = incoming
+            }
+            day.stepsSource = source
             careDays[key] = day
         }
         save(markingUserData: false)
+    }
+
+    /// Clears step counts written by a tracker that is no longer the one in
+    /// charge.
+    ///
+    /// Called when the source changes. Without it, days the new tracker doesn't
+    /// return — because it wasn't worn, or its history doesn't go back that far
+    /// — keep showing the old device's figures indefinitely, and there is no
+    /// indication on screen that two different trackers are being read from at
+    /// once.
+    func clearSteps(notFrom source: String) {
+        var changed = false
+        for (key, day) in careDays {
+            guard let existing = day.stepsSource, existing != source else { continue }
+            var updated = day
+            updated.steps = 0
+            updated.stepsSource = nil
+            careDays[key] = updated
+            changed = true
+        }
+        if changed { save(markingUserData: false) }
     }
 
     // MARK: - Health Mutations

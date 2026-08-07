@@ -94,8 +94,19 @@ enum HealthSync {
         appState.isSyncingHealth = true
         defer { appState.isSyncingHealth = false }
 
+        let active = source(for: appState.healthSettings)
+
+        // A source change is the moment to drop the other tracker's step
+        // counts. Days the new one doesn't return — it wasn't worn, or its
+        // history doesn't reach back that far — would otherwise keep showing
+        // the old device's figures with nothing on screen saying so, which is
+        // how the app ends up appearing to read from both at once.
+        if active != .none {
+            appState.clearSteps(notFrom: active.rawValue)
+        }
+
         let outcome: Outcome
-        switch source(for: appState.healthSettings) {
+        switch active {
         case .fitbit:
             outcome = await syncFitbit(appState: appState, daysBack: daysBack)
         case .appleHealth:
@@ -162,7 +173,9 @@ enum HealthSync {
             )
             appState.mergeHealthDays(result.days)
             appState.mergeSleepNights(result.nights)
-            appState.mergeSteps(result.steps)
+            // Stamped with the tracker that produced them, so today's figure is
+            // never compared against a count the other device wrote.
+            appState.mergeSteps(result.steps, source: Source.fitbit.rawValue)
 
             let retryAt = result.rateLimitedRetryAfter.map { retryAfter in
                 Date().addingTimeInterval(TimeInterval(retryAfter ?? 3600))
@@ -261,7 +274,7 @@ enum HealthSync {
         let steps = await healthKit.fetchDailySteps(daysBack: daysBack)
 
         appState.mergeHealthDays(Array(days.values))
-        appState.mergeSteps(steps)
+        appState.mergeSteps(steps, source: Source.appleHealth.rawValue)
         appState.setHealthSettings {
             $0.hasBackfilled = true
             $0.lastSyncedAt = Date()
