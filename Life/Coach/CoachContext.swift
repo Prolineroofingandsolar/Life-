@@ -43,6 +43,24 @@ struct CoachContext: Codable, Equatable, Sendable {
 
     var goals: [Goal]
     var sleep: Sleep?
+    /// Weight and body composition, as movement rather than as a number.
+    ///
+    /// A coach that can't see whether someone is gaining or losing is missing
+    /// the one figure most people are actually tracking.
+    var body: Body?
+    /// Water, against their own usual.
+    var hydration: Hydration?
+    /// Where the figures have been going over weeks, not since yesterday.
+    ///
+    /// The single biggest gap in this payload before now. Everything else here
+    /// is today plus a one-day delta, which is enough to *report* a number and
+    /// nothing like enough to say what is happening to someone.
+    var trends: Trends?
+    /// Connections between one part of their life and another, found by the app.
+    ///
+    /// The material a coach reasons with. Each carries a sample count, and the
+    /// model is instructed to treat a thin one as thin — see `CoachPatterns`.
+    var patterns: [CoachPatterns.Pattern] = []
     var recovery: Recovery?
     var activity: Activity?
     var training: Training?
@@ -186,6 +204,61 @@ struct CoachContext: Codable, Equatable, Sendable {
         var restingHeartRateVsYesterday: Double?
         var workoutsThisWeek: Int?
         var workoutsLastWeek: Int?
+    }
+
+    /// Weight over time. No single reading without the direction beside it —
+    /// one weigh-in says almost nothing and inviting comment on it is how an
+    /// app starts making someone anxious about water retention.
+    struct Body: Codable, Equatable, Sendable {
+        var weightKg: Double?
+        var changeOver30DaysKg: Double?
+        var changeOver90DaysKg: Double?
+        /// Their own stated target, if they set one.
+        var targetKg: Double?
+        var bodyFatPercent: Double?
+        /// How many weigh-ins are behind this. Two readings is not a trend.
+        var readings: Int
+        var state: MetricState = .ready
+    }
+
+    struct Hydration: Codable, Equatable, Sendable {
+        var glassesToday: Int
+        /// Their own recent average, so "four glasses" can be read as low or
+        /// normal *for them* rather than against a number off a poster.
+        var typicalGlasses: Int?
+        var state: MetricState = .ready
+    }
+
+    /// Multi-week direction for the figures that have one.
+    ///
+    /// Averages and directions, never the underlying days — the point is to let
+    /// the model say "your sleep has been drifting later for three weeks", which
+    /// it cannot do from a snapshot, without sending three weeks of records.
+    struct Trends: Codable, Equatable, Sendable {
+        var sleepMinutes7Day: Int?
+        var sleepMinutes28Day: Int?
+        var stepsDaily7Day: Int?
+        var stepsDaily28Day: Int?
+        var restingHeartRate7Day: Double?
+        var restingHeartRate28Day: Double?
+        var sessionsPerWeek4Week: Int?
+        /// Typical bedtime and wake time over the recent window, as minutes
+        /// past midnight. Consistency is most of sleep quality, and this is the
+        /// only way the model can see it.
+        var typicalBedtimeMinutes: Int?
+        var bedtimeVariationMinutes: Int?
+        /// Days behind these figures.
+        var daysRecorded: Int
+
+        /// Direction words rather than raw deltas, so the model doesn't have to
+        /// subtract — and can't subtract wrongly.
+        var sleepDirection: Direction?
+        var stepsDirection: Direction?
+        var restingHeartRateDirection: Direction?
+
+        enum Direction: String, Codable, Sendable {
+            case rising, steady, falling
+        }
     }
 
     struct Activity: Codable, Equatable, Sendable {
@@ -344,6 +417,11 @@ struct CoachContext: Codable, Equatable, Sendable {
         var remaining: Int
         var completedToday: Int
         var atRisk: [Candidate]
+        /// Kept over the last month, as a percentage. The difference between
+        /// "you missed today" and "you've kept this four times in thirty days",
+        /// which are the same fact and completely different advice.
+        var thirtyDayCompletionPercent: Int?
+        var longestCurrentStreak: Int?
 
         struct Candidate: Codable, Equatable, Sendable {
             var id: String

@@ -150,7 +150,196 @@ enum CoachContextBuilder {
             health, appState: appState, permissions: permissions, now: now, calendar: calendar
         )
 
+        // The parts that make this a coach rather than a readout: where the
+        // figures have been going over weeks, what the body has been doing, and
+        // which parts of their life move together. All gated by the same health
+        // permission as the figures they are derived from.
+        if permissions.health {
+            context.body = bodySection(appState: appState, now: now, calendar: calendar)
+            context.trends = trendsSection(appState: appState, now: now, calendar: calendar)
+            context.patterns = CoachPatterns.patterns(appState: appState, now: now, calendar: calendar)
+        }
+        if permissions.activity {
+            context.hydration = hydrationSection(appState: appState, now: now, calendar: calendar)
+        }
+
         return context
+    }
+
+    // MARK: Body
+
+    /// Weight as movement, never as a bare number.
+    ///
+    /// One weigh-in invites comment on a figure that swings two kilos with a
+    /// salty dinner. The direction over a month is the part worth coaching, and
+    /// `readings` is sent so a two-entry "trend" reads as what it is.
+    private static func bodySection(
+        appState: AppState,
+        now: Date,
+        calendar: Calendar
+    ) -> CoachContext.Body? {
+        let entries = appState.weightEntries.sorted { $0.date < $1.date }
+        guard let latest = entries.last else { return nil }
+
+        func weight(daysAgo days: Int) -> Double? {
+            guard let cutoff = calendar.date(byAdding: .day, value: -days, to: now) else { return nil }
+            // The last reading at or before the cutoff, so the comparison is
+            // against a real weigh-in rather than an interpolation.
+            return entries.last { $0.date <= cutoff }?.valueKg
+        }
+
+        let bodyFat = appState.bodyCompEntries
+            .sorted { $0.date < $1.date }
+            .last?.bodyFatPct
+
+        return CoachContext.Body(
+            weightKg: latest.valueKg,
+            changeOver30DaysKg: weight(daysAgo: 30).map { latest.valueKg - $0 },
+            changeOver90DaysKg: weight(daysAgo: 90).map { latest.valueKg - $0 },
+            targetKg: appState.workoutSettings.goalWeightKg,
+            bodyFatPercent: bodyFat,
+            readings: entries.count,
+            // Two readings is a pair of numbers, not a trend, and the model is
+            // told which it has.
+            state: entries.count >= 3 ? .ready : .insufficientHistory
+        )
+    }
+
+    // MARK: Hydration
+
+    private static func hydrationSection(
+        appState: AppState,
+        now: Date,
+        calendar: Calendar
+    ) -> CoachContext.Hydration? {
+        let todayKey = DayKey.string(for: now, calendar: calendar)
+        let today = appState.careDays[todayKey]?.waterGlasses ?? 0
+
+        var recent: [Int] = []
+        for offset in 1...14 {
+            guard let day = calendar.date(byAdding: .day, value: -offset, to: now) else { continue }
+            let key = DayKey.string(for: day, calendar: calendar)
+            guard let glasses = appState.careDays[key]?.waterGlasses, glasses > 0 else { continue }
+            recent.append(glasses)
+        }
+
+        guard today > 0 || !recent.isEmpty else { return nil }
+
+        return CoachContext.Hydration(
+            glassesToday: today,
+            // Their own usual, not a number off a poster — "four glasses" means
+            // nothing until you know whether they normally drink three or ten.
+            typicalGlasses: recent.isEmpty ? nil : recent.reduce(0, +) / recent.count,
+            state: recent.count >= 5 ? .ready : .insufficientHistory
+        )
+    }
+
+    // MARK: Trends
+
+    /// Seven days against twenty-eight, with the direction named.
+    ///
+    /// Directions rather than raw deltas: the model doesn't have to subtract,
+    /// and therefore can't subtract wrongly. "Your sleep has been drifting down
+    /// for a few weeks" is a sentence it simply could not produce before,
+    /// because it was only ever shown today and yesterday.
+    private static func trendsSection(
+        appState: AppState,
+        now: Date,
+        calendar: Calendar
+    ) -> CoachContext.Trends? {
+        func average(_ values: [Int]) -> Int? {
+            values.isEmpty ? nil : values.reduce(0, +) / values.count
+        }
+        func averageDouble(_ values: [Double]) -> Double? {
+            values.isEmpty ? nil : (values.reduce(0, +) / Double(values.count) * 10).rounded() / 10
+        }
+
+        var sleep7: [Int] = [], sleep28: [Int] = []
+        var steps7: [Int] = [], steps28: [Int] = []
+        var rhr7: [Double] = [], rhr28: [Double] = []
+        var bedtimes: [Int] = []
+        var days = 0
+
+        for offset in 1...28 {
+            guard let day = calendar.date(byAdding: .day, value: -offset, to: now) else { continue }
+            let key = DayKey.string(for: day, calendar: calendar)
+            let health = appState.healthDays[key]
+            let care = appState.careDays[key]
+
+            if health?.sleepMin != nil || care?.steps ?? 0 > 0 { days += 1 }
+
+            if let minutes = health?.sleepMin, minutes > 0 {
+                sleep28.append(minutes)
+                if offset <= 7 { sleep7.append(minutes) }
+            }
+            if let steps = care?.steps, steps > 0 {
+                steps28.append(steps)
+                if offset <= 7 { steps7.append(steps) }
+            }
+            if let rate = health?.restingHr, rate > 0 {
+                rhr28.append(rate)
+                if offset <= 7 { rhr7.append(rate) }
+            }
+            if let bedtime = health?.bedtime {
+                let components = calendar.dateComponents([.hour, .minute], from: bedtime)
+                let raw = (components.hour ?? 0) * 60 + (components.minute ?? 0)
+                // Midnight-crossing: 23:40 and 00:20 are forty minutes apart,
+                // not twenty-three hours, and averaging them naively puts
+                // someone's typical bedtime at lunchtime.
+                bedtimes.append(raw < 12 * 60 ? raw + 24 * 60 : raw)
+            }
+        }
+
+        guard days >= 3 else { return nil }
+
+        let weekStart = WeeklyReview.startOfWeek(containing: now, calendar: calendar)
+        let fourWeeksAgo = calendar.date(byAdding: .day, value: -28, to: weekStart) ?? weekStart
+        let recentSessions = appState.completedWorkouts.filter {
+            ($0.finishedAt ?? .distantPast) >= fourWeeksAgo
+        }
+
+        return CoachContext.Trends(
+            sleepMinutes7Day: average(sleep7),
+            sleepMinutes28Day: average(sleep28),
+            stepsDaily7Day: average(steps7),
+            stepsDaily28Day: average(steps28),
+            restingHeartRate7Day: averageDouble(rhr7),
+            restingHeartRate28Day: averageDouble(rhr28),
+            sessionsPerWeek4Week: recentSessions.isEmpty ? nil : recentSessions.count / 4,
+            typicalBedtimeMinutes: average(bedtimes).map { $0 % (24 * 60) },
+            bedtimeVariationMinutes: spread(bedtimes),
+            daysRecorded: days,
+            sleepDirection: direction(recent: average(sleep7), baseline: average(sleep28), tolerance: 0.05),
+            stepsDirection: direction(recent: average(steps7), baseline: average(steps28), tolerance: 0.08),
+            restingHeartRateDirection: direction(
+                recent: averageDouble(rhr7).map { Int($0) },
+                baseline: averageDouble(rhr28).map { Int($0) },
+                tolerance: 0.03
+            )
+        )
+    }
+
+    /// How much a set of figures moves about — consistency, which is most of
+    /// sleep quality and is invisible in an average.
+    private static func spread(_ values: [Int]) -> Int? {
+        guard values.count >= 3 else { return nil }
+        let mean = Double(values.reduce(0, +)) / Double(values.count)
+        let variance = values.reduce(0.0) { $0 + pow(Double($1) - mean, 2) } / Double(values.count)
+        return Int(variance.squareRoot().rounded())
+    }
+
+    /// Rising, steady or falling — with a tolerance, so ordinary week-to-week
+    /// noise isn't reported as a direction.
+    private static func direction(
+        recent: Int?,
+        baseline: Int?,
+        tolerance: Double
+    ) -> CoachContext.Trends.Direction? {
+        guard let recent, let baseline, baseline > 0 else { return nil }
+        let change = Double(recent - baseline) / Double(baseline)
+        if change > tolerance { return .rising }
+        if change < -tolerance { return .falling }
+        return .steady
     }
 
     // MARK: Comparisons
@@ -716,8 +905,50 @@ enum CoachContextBuilder {
         return CoachContext.Habits(
             remaining: outstanding.count,
             completedToday: active.count - outstanding.count,
-            atRisk: Array(atRisk)
+            atRisk: Array(atRisk),
+            // "You missed today" and "you've kept this four times in thirty
+            // days" are the same fact about today and completely different
+            // advice. Only the second is coaching.
+            thirtyDayCompletionPercent: completionRate(active, days: 30),
+            longestCurrentStreak: active.map { appState.streakFor($0) }.max()
         )
+    }
+}
+
+// MARK: - Habit arithmetic
+
+extension CoachContextBuilder {
+
+    /// How much of the last month's habit work actually happened.
+    ///
+    /// Counted against each habit's own cadence rather than against every
+    /// calendar day, so a twice-a-week habit isn't reported as 29% kept.
+    static func completionRate(_ habits: [Habit], days: Int, now: Date = Date()) -> Int? {
+        guard !habits.isEmpty else { return nil }
+        let calendar = Calendar.current
+
+        var expected = 0
+        var kept = 0
+
+        for offset in 0..<days {
+            guard let day = calendar.date(byAdding: .day, value: -offset, to: now) else { continue }
+            let key = DayKey.string(for: day, calendar: calendar)
+            let weekday = calendar.component(.weekday, from: day)
+
+            for habit in habits {
+                // A habit scheduled for particular weekdays is only owed on
+                // those days.
+                if !habit.weekdays.isEmpty, !habit.weekdays.contains(weekday) { continue }
+                expected += 1
+                let done = habit.logs.contains {
+                    $0.dayKey == key && !$0.slipped && $0.count >= habit.targetCount
+                }
+                if done { kept += 1 }
+            }
+        }
+
+        guard expected > 0 else { return nil }
+        return Int((Double(kept) / Double(expected) * 100).rounded())
     }
 }
 
