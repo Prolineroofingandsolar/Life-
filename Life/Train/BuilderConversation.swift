@@ -51,6 +51,7 @@ enum BuilderConversation {
         case energy
         case equipment
         case avoid
+        case history
         case anythingElse
     }
 
@@ -65,13 +66,14 @@ enum BuilderConversation {
 
     /// A single session: five questions, none of them about scheduling.
     static let workoutScript: [Kind] = [
-        .goal, .duration, .energy, .equipment, .avoid, .anythingElse,
+        .goal, .duration, .energy, .equipment, .avoid, .history, .anythingElse,
     ]
 
     /// A programme: the same, plus how the week is shaped, and no energy —
     /// how you feel today says nothing about week three.
     static let planScript: [Kind] = [
-        .goal, .experience, .daysPerWeek, .weeks, .duration, .equipment, .avoid, .anythingElse,
+        .goal, .experience, .daysPerWeek, .weeks, .duration, .equipment, .avoid, .history,
+        .anythingElse,
     ]
 
     static func script(for kind: BuilderKind) -> [Kind] {
@@ -149,7 +151,7 @@ enum BuilderConversation {
                 question: "What have you got to work with?",
                 chips: ExerciseEquipment.allCases.map { Chip(value: $0.rawValue, label: $0.label) },
                 allowsMultipleChips: true,
-                hint: "Skip this if you're somewhere well equipped.",
+                hint: "Skip this if you're somewhere well equipped."
             )
 
         case .avoid:
@@ -159,6 +161,18 @@ enum BuilderConversation {
                 chips: BlueprintMuscle.allCases.map { Chip(value: $0.rawValue, label: $0.rawValue) },
                 allowsMultipleChips: true,
                 hint: "Anything you pick here is never programmed, whatever the coach suggests."
+            )
+
+        case .history:
+            return Step(
+                kind: .history,
+                question: "Should I build this around how you've been training?",
+                chips: [
+                    Chip(value: "yes", label: "Yes, use my history"),
+                    Chip(value: "no", label: "Start fresh"),
+                ],
+                allowsFreeText: false,
+                hint: "Your usual days, session length and the movements you actually do. Aggregates only — no session log is sent."
             )
 
         case .anythingElse:
@@ -243,6 +257,9 @@ enum BuilderConversation {
             if !picked.isEmpty { brief.avoidMuscles = Set(picked) }
             if !text.isEmpty { appendNote(text, to: &brief) }
 
+        case .history:
+            if let choice = chips.first { brief.useHistory = choice == "yes" }
+
         case .anythingElse:
             if !text.isEmpty { appendNote(text, to: &brief) }
         }
@@ -271,6 +288,10 @@ enum BuilderConversation {
             guard !brief.avoidMuscles.isEmpty else { return nil }
             let names = brief.avoidMuscles.map(\.rawValue).sorted().joined(separator: ", ")
             return "I'll leave out \(names.lowercased())."
+        case .history:
+            return brief.useHistory
+                ? "I'll take your recent training into account."
+                : "Starting fresh, then — I'll ignore what you've done before."
         case .experience, .energy, .anythingElse:
             return nil
         }

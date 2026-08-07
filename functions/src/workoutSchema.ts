@@ -403,3 +403,159 @@ export function validateMachineIdentification(value: unknown): ValidationResult 
 
   return urlCheck(value);
 }
+
+/**
+ * The weekly review.
+ *
+ * Every figure in the review is computed by the app before the call is made.
+ * The model's job here is to say which two or three of them matter and what to
+ * do about it — not to produce statistics, which it would have no way to check
+ * and every incentive to round.
+ *
+ * `actions` is a closed set for the same reason `PROPOSAL_TYPES` is: each one
+ * maps to a flow the app already has, and each one still ends in a preview the
+ * user confirms. There is no action here that writes anything by itself.
+ */
+export const REVIEW_ACTIONS = [
+  /** Change nothing. A real answer, and often the right one. */
+  "keepUnchanged",
+  /** Fewer, fuller sessions. Opens the programme builder. */
+  "condenseSessions",
+  /** Same sessions, different days. Opens the schedule. */
+  "moveTrainingDay",
+  /** More or less work for a muscle group. Opens the programme. */
+  "adjustVolume",
+  /** Something prescribed and repeatedly not done. Opens the routine. */
+  "reviewSkippedExercise",
+] as const;
+
+export const MAX_REVIEW_ACTIONS = 3;
+export const MAX_REVIEW_SUMMARY_CHARS = 700;
+
+export const WEEKLY_REVIEW_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    /** One sentence. What the week was. */
+    headline: { type: "STRING" },
+    /** Two or three short paragraphs at most. */
+    summary: { type: "STRING" },
+    actions: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          type: { type: "STRING", enum: [...REVIEW_ACTIONS] },
+          /** What the button says. Imperative. */
+          label: { type: "STRING" },
+          /** Why, in one sentence, citing a figure you were given. */
+          rationale: { type: "STRING" },
+          /** For adjustVolume and reviewSkippedExercise, when it applies. */
+          muscle: { type: "STRING", enum: [...MUSCLES], nullable: true },
+        },
+        required: ["type", "label", "rationale"],
+      },
+    },
+  },
+  required: ["headline", "summary", "actions"],
+} as const;
+
+export function validateWeeklyReview(value: unknown): ValidationResult {
+  if (!isRecord(value)) return fail("not an object");
+
+  const headlineError = checkText(value.headline, "headline", MAX_NAME_CHARS, true);
+  if (headlineError) return headlineError;
+
+  const summaryError = checkText(value.summary, "summary", MAX_REVIEW_SUMMARY_CHARS, true);
+  if (summaryError) return summaryError;
+
+  const actions = value.actions ?? [];
+  if (!Array.isArray(actions)) return fail("actions must be an array");
+  if (actions.length > MAX_REVIEW_ACTIONS) {
+    return fail(`more than ${MAX_REVIEW_ACTIONS} actions`);
+  }
+
+  for (const raw of actions) {
+    if (!isRecord(raw)) return fail("action is not an object");
+    if (!REVIEW_ACTIONS.includes(raw.type as (typeof REVIEW_ACTIONS)[number])) {
+      return fail(`unsupported action: ${String(raw.type)}`);
+    }
+    const labelError = checkText(raw.label, "action label", MAX_NAME_CHARS, true);
+    if (labelError) return labelError;
+    const rationaleError = checkText(raw.rationale, "action rationale", 200, true);
+    if (rationaleError) return rationaleError;
+    if (raw.muscle !== undefined && raw.muscle !== null &&
+        !MUSCLES.includes(raw.muscle as (typeof MUSCLES)[number])) {
+      return fail(`unknown muscle: ${String(raw.muscle)}`);
+    }
+  }
+
+  return urlCheck(value);
+}
+
+/**
+ * Turning "make this a bit shorter, my shoulder hurts" into one adjustment the
+ * app knows how to perform.
+ *
+ * This is the narrowest job given to the model anywhere in the app, and
+ * deliberately so: it classifies a sentence into one of four cases the adjuster
+ * already implements. It cannot describe an edit of its own — the worst a
+ * misreading produces is the wrong valid adjustment, which the user then sees
+ * as a diff and declines.
+ */
+export const ADJUSTMENT_KINDS = ["shorten", "equipmentOnly", "lighter", "avoid"] as const;
+
+export const ADJUSTMENT_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    kind: { type: "STRING", enum: [...ADJUSTMENT_KINDS] },
+    /** For shorten: how many minutes to remove. */
+    minutes: { type: "INTEGER", nullable: true },
+    /** For equipmentOnly. */
+    equipment: {
+      type: "ARRAY",
+      nullable: true,
+      items: { type: "STRING", enum: [...EQUIPMENT] },
+    },
+    /** For avoid. */
+    muscle: { type: "STRING", enum: [...MUSCLES], nullable: true },
+    /** One sentence back to the user, in their terms. */
+    explanation: { type: "STRING" },
+  },
+  required: ["kind", "explanation"],
+} as const;
+
+export function validateAdjustment(value: unknown): ValidationResult {
+  if (!isRecord(value)) return fail("not an object");
+
+  if (!ADJUSTMENT_KINDS.includes(value.kind as (typeof ADJUSTMENT_KINDS)[number])) {
+    return fail(`unsupported adjustment: ${String(value.kind)}`);
+  }
+
+  const explanationError = checkText(value.explanation, "explanation", 200, true);
+  if (explanationError) return explanationError;
+
+  if (value.kind === "shorten") {
+    // Five minutes to three hours. A "shorten by 0" is not an adjustment, and a
+    // "shorten by 500" is a misparse that would empty the session.
+    const minutesError = checkInt(value.minutes, "minutes", 5, 180);
+    if (minutesError) return minutesError;
+  }
+
+  if (value.kind === "avoid" &&
+      !MUSCLES.includes(value.muscle as (typeof MUSCLES)[number])) {
+    return fail("avoid needs a muscle");
+  }
+
+  if (value.kind === "equipmentOnly") {
+    if (!Array.isArray(value.equipment) || value.equipment.length === 0) {
+      return fail("equipmentOnly needs equipment");
+    }
+    for (const item of value.equipment) {
+      if (!EQUIPMENT.includes(item as (typeof EQUIPMENT)[number])) {
+        return fail(`unknown equipment: ${String(item)}`);
+      }
+    }
+  }
+
+  return urlCheck(value);
+}

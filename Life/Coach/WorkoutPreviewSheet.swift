@@ -47,6 +47,9 @@ struct WorkoutPreviewSheet: View {
     @State private var stepIndex = 0
     @State private var selectedChips: Set<String> = []
     @State private var draft = ""
+    /// Built once when the sheet opens, not per render — it walks every
+    /// finished session, and the conversation asks for it on each keystroke.
+    @State private var digest = TrainingHistoryDigest.Digest.empty
 
     /// One line of the transcript.
     struct Turn: Identifiable, Equatable {
@@ -143,8 +146,19 @@ struct WorkoutPreviewSheet: View {
         .onAppear { startConversationIfNeeded() }
     }
 
+    /// The questions worth asking, for this person.
+    ///
+    /// The history question is dropped when there is no usable history — asking
+    /// someone on their first week whether to build around their training is a
+    /// question with one true answer, and asking it anyway makes the app look
+    /// like it isn't paying attention.
+    private var script: [BuilderConversation.Kind] {
+        let full = BuilderConversation.script(for: kind == .workout ? .workout : .plan)
+        guard !digest.isUsable else { return full }
+        return full.filter { $0 != .history }
+    }
+
     private var currentStep: BuilderConversation.Step? {
-        let script = BuilderConversation.script(for: kind == .workout ? .workout : .plan)
         guard stepIndex < script.count else { return nil }
         return BuilderConversation.step(script[stepIndex], for: kind == .workout ? .workout : .plan)
     }
@@ -236,6 +250,7 @@ struct WorkoutPreviewSheet: View {
 
     private func startConversationIfNeeded() {
         guard turns.isEmpty else { return }
+        digest = TrainingHistoryDigest.build(appState: appState)
         brief = initialBrief
         stepIndex = 0
         selectedChips = []
@@ -577,6 +592,10 @@ struct WorkoutPreviewSheet: View {
 
     private func build() async {
         stage = .building
+
+        // Attached at the last moment rather than during the interview, so the
+        // answer to "start fresh" is honoured by simply never populating it.
+        brief.historyText = brief.useHistory ? TrainingHistoryDigest.promptText(digest) : nil
 
         let context = CoachContextBuilder.build(
             appState: appState,

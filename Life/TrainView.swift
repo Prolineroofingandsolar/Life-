@@ -24,10 +24,16 @@ struct TrainView: View {
     /// The AI builder. Nil when closed; the value carries what kind of thing to
     /// build, so the sheet opens straight into the right form.
     @State private var builderKind: WorkoutPreviewSheet.Kind?
+    /// Carried into the builder when it is opened from the weekly review, so
+    /// the conversation starts from what the review was about.
+    @State private var pendingBrief = WorkoutBrief()
     /// Progression proposals awaiting review. Non-empty presents the sheet.
     @State private var reviewingProposals: [ProgressionEngine.Proposal] = []
     @State private var showSettings = false
     @State private var showScanner = false
+    @State private var showWeeklyReview = false
+    /// The missed session being rescheduled, if any. Nil dismisses the sheet.
+    @State private var reschedulingSession: PlannedSession?
 
     private var finishedSessions: [WorkoutSession] {
         appState.sessions
@@ -177,6 +183,17 @@ struct TrainView: View {
                     }
                     .padding(.horizontal, 16)
 
+                    // Both of these hide themselves when there is nothing to
+                    // say. A prompt that is permanently present and usually
+                    // empty teaches people to stop reading it.
+                    MissedSessionCard { session in
+                        reschedulingSession = session
+                    }
+                    .padding(.horizontal, 16)
+
+                    WeeklyReviewCard { showWeeklyReview = true }
+                        .padding(.horizontal, 16)
+
                     section("Train your way") {
                         TrainYourWayGrid(
                             onBuildProgramme: { builderKind = .plan },
@@ -251,8 +268,8 @@ struct TrainView: View {
             .sheet(isPresented: $showExerciseLibrary) { ExerciseLibraryView() }
             .sheet(isPresented: $showAddRoutine) { AddRoutineSheet() }
             .sheet(isPresented: $showImportRoutine) { ImportRoutineSheet() }
-            .sheet(item: $builderKind) { kind in
-                WorkoutPreviewSheet(initialKind: kind)
+            .sheet(item: $builderKind, onDismiss: { pendingBrief = WorkoutBrief() }) { kind in
+                WorkoutPreviewSheet(initialBrief: pendingBrief, initialKind: kind)
             }
             .sheet(
                 isPresented: Binding(
@@ -272,6 +289,20 @@ struct TrainView: View {
             .sheet(isPresented: $showBrowsePrograms) { BrowseProgramsSheet() }
             .sheet(isPresented: $showSettings) { SettingsView() }
             .sheet(isPresented: $showScanner) { MachineScanSheet() }
+            .sheet(isPresented: $showWeeklyReview) {
+                WeeklyReviewSheet(
+                    onOpenBuilder: { brief in
+                        // The review opens the builder; the builder still asks
+                        // its own questions and still needs confirming.
+                        pendingBrief = brief
+                        builderKind = .plan
+                    },
+                    onOpenSchedule: { showPrograms = true }
+                )
+            }
+            .sheet(item: $reschedulingSession) { session in
+                RescheduleSheet(missed: session)
+            }
             .sheet(isPresented: $showPrograms) { ProgramsView() }
             .sheet(item: $hubTab) { tab in
                 TrainProgressHubView(initialTab: tab)
@@ -1142,6 +1173,7 @@ private struct RoutineDetailSheet: View {
     let onStart: () -> Void
 
     @State private var showEdit = false
+    @State private var showAdjust = false
 
     private var muscleGroups: [String] {
         Array(Set(routine.exercises.compactMap { re in
@@ -1220,23 +1252,48 @@ private struct RoutineDetailSheet: View {
                     .padding(.bottom, 16)
                 }
 
-                // Start button
-                Button {
-                    HapticManager.impact(.medium)
-                    onStart()
-                } label: {
-                    HStack {
-                        Image(systemName: "play.fill")
-                        Text("Start Workout")
+                // Start, and the one thing worth doing before starting.
+                //
+                // "Adjust" sits beside it rather than behind the Edit button
+                // because they are different intents: Edit changes the routine
+                // for good, Adjust changes it for the shape of today. The
+                // adjuster shows a diff and writes nothing until it is applied.
+                VStack(spacing: 10) {
+                    Button {
+                        HapticManager.impact(.medium)
+                        onStart()
+                    } label: {
+                        HStack {
+                            Image(systemName: "play.fill")
+                            Text("Start Workout")
+                        }
+                        .font(.headline)
+                        .foregroundColor(.black)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .background(AppTheme.trainAccent)
+                        .cornerRadius(AppTheme.buttonRadius)
                     }
-                    .font(.headline)
-                    .foregroundColor(.black)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
-                    .background(AppTheme.trainAccent)
-                    .cornerRadius(AppTheme.buttonRadius)
+                    .buttonStyle(PressableButtonStyle())
+
+                    Button {
+                        showAdjust = true
+                    } label: {
+                        HStack {
+                            Image(systemName: "slider.horizontal.3")
+                            Text("Adjust for today")
+                        }
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(AppTheme.trainAccent)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(AppTheme.trainAccent.opacity(0.12))
+                        .cornerRadius(AppTheme.buttonRadius)
+                    }
+                    .buttonStyle(PressableButtonStyle())
+                    .disabled(routine.exercises.isEmpty)
+                    .accessibilityHint("Shorter, lighter, or with different equipment. Shows what changes before anything is saved.")
                 }
-                .buttonStyle(PressableButtonStyle())
                 .padding(16)
             }
             .background(AppTheme.trainBg)
@@ -1251,6 +1308,13 @@ private struct RoutineDetailSheet: View {
                 }
             }
             .sheet(isPresented: $showEdit) { EditRoutineSheet(routine: routine) }
+            .sheet(isPresented: $showAdjust) {
+                AdjustWorkoutSheet(exercises: routine.exercises) { adjusted in
+                    // The one write. `updateRoutine` already saves, and the
+                    // sheet has shown every change that produced this list.
+                    appState.updateRoutine(id: routine.id, exercises: adjusted)
+                }
+            }
         }
     }
 }

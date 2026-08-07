@@ -17,6 +17,10 @@ import {
   validateWorkoutBlueprint,
   validatePlanBlueprint,
   validateMachineIdentification,
+  WEEKLY_REVIEW_SCHEMA,
+  validateWeeklyReview,
+  ADJUSTMENT_SCHEMA,
+  validateAdjustment,
 } from "./workoutSchema";
 import { reserveCall, recordUsage, readUsage, LimitExceeded } from "./limits";
 
@@ -60,7 +64,9 @@ type Mode =
   | "ask"
   | "buildWorkout"
   | "buildPlan"
-  | "identifyExercise";
+  | "identifyExercise"
+  | "weeklyReview"
+  | "adjustWorkout";
 
 /**
  * Output budget, per mode.
@@ -81,11 +87,16 @@ const MAX_OUTPUT_TOKENS: Record<Mode, number> = {
   // One small object. A generous ceiling here would only pay for prose nobody
   // reads.
   identifyExercise: 200,
+  // Prose, but bounded prose: a headline, two paragraphs and at most three
+  // actions.
+  weeklyReview: 800,
+  // One classification and a sentence.
+  adjustWorkout: 200,
 };
 
 /** Modes that carry a free-text brief or question in `question`. */
 const MODES_REQUIRING_QUESTION: ReadonlySet<Mode> = new Set<Mode>([
-  "ask", "buildWorkout", "buildPlan",
+  "ask", "buildWorkout", "buildPlan", "adjustWorkout",
 ]);
 
 /**
@@ -339,6 +350,42 @@ Your job: describe the SHAPE of one training session. You do not name exercises.
   own figure.
 `.trim(),
 
+  weeklyReview: `
+Your job: say what this training week was, and what — if anything — to change.
+
+Every figure below was calculated by the app. Do not recalculate, do not round
+into a different number, and do not contradict one.
+
+- Lead with what matters. Do not narrate the statistics in order; two figures
+  that carry the point beat eight that don't.
+- At most three actions, often fewer, and "keepUnchanged" is a real answer. A
+  good week needs no changes and saying so is more useful than finding
+  something.
+- Every action's rationale must cite a figure you were given.
+- adherencePercent may be absent. That means nothing was planned, NOT that
+  nothing was done — never describe it as poor adherence.
+- A week with one or two sessions is a small sample. Say so rather than drawing
+  a trend from it.
+- No medical claims. Tiredness, soreness and pain are not yours to explain.
+`.trim(),
+
+  adjustWorkout: `
+Your job: turn one sentence into one adjustment, and nothing else.
+
+- Pick exactly one kind: shorten, equipmentOnly, lighter, or avoid.
+- "I've only got half an hour" with a 50-minute session is shorten, minutes 20.
+- "Only dumbbells today" is equipmentOnly.
+- "I'm shattered", "go easy" is lighter.
+- "My shoulder hurts", "nothing overhead" is avoid, with the muscle group.
+- If pain or injury is mentioned, choose avoid for the affected group and say in
+  the explanation that this only removes exercises — it is not medical advice
+  and persistent pain is worth a professional's opinion. Do not name a
+  condition, and do not suggest a treatment.
+- If the request fits none of these, choose lighter and say in the explanation
+  that you weren't sure, so the person can see what you did and undo it.
+- The explanation is one sentence, in their words, about what will change.
+`.trim(),
+
   buildPlan: `
 Your job: describe the SHAPE of a training week, to be repeated.
 
@@ -365,6 +412,8 @@ const RESPONSE_SCHEMAS: Record<Mode, unknown> = {
   buildWorkout: WORKOUT_BLUEPRINT_SCHEMA,
   buildPlan: PLAN_BLUEPRINT_SCHEMA,
   identifyExercise: MACHINE_SCHEMA,
+  weeklyReview: WEEKLY_REVIEW_SCHEMA,
+  adjustWorkout: ADJUSTMENT_SCHEMA,
 };
 
 /**
@@ -380,6 +429,8 @@ const VALIDATORS: Partial<Record<Mode, (value: unknown) => ValidationResult>> = 
   buildWorkout: validateWorkoutBlueprint,
   buildPlan: validatePlanBlueprint,
   identifyExercise: validateMachineIdentification,
+  weeklyReview: validateWeeklyReview,
+  adjustWorkout: validateAdjustment,
 };
 
 /** The one-line reminder that leads the user content. */
@@ -391,6 +442,8 @@ const MODE_INSTRUCTIONS: Record<Mode, string> = {
   buildWorkout: "Describe the shape of one session matching the brief below.",
   buildPlan: "Describe the shape of a training week matching the brief below.",
   identifyExercise: "Identify the gym machine or equipment in this photograph.",
+  weeklyReview: "Review the training week described in the data below.",
+  adjustWorkout: "Turn the request below into one adjustment.",
 };
 
 function systemInstruction(mode: Mode): string {

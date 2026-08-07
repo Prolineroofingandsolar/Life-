@@ -99,6 +99,134 @@ final class WorkoutBuilderService {
         )
     }
 
+    // MARK: Weekly review
+
+    /// A review of a week the app has already counted.
+    ///
+    /// The metrics go over as a sentence rather than as a document: they are all
+    /// small integers, and prose is what the model reads best. Nothing here is a
+    /// figure the app didn't calculate, so a review that contradicts one is
+    /// simply wrong.
+    ///
+    /// Falls back to `LocalWeeklyReview` rather than throwing, because a review
+    /// nobody can read is worse than a plainer one honestly labelled.
+    func weeklyReview(
+        metrics: WeeklyReview.Metrics,
+        context: CoachContext,
+        settings: CoachSettings
+    ) async -> WeeklyReviewOutcome {
+        guard settings.mayUseCloud else {
+            return local(metrics: metrics, origin: .onDevice, note: nil)
+        }
+
+        do {
+            let response: WeeklyReviewResponse = try await generate(
+                mode: "weeklyReview",
+                question: Self.promptText(for: metrics),
+                context: context,
+                settings: settings
+            )
+            return WeeklyReviewOutcome(
+                headline: response.headline,
+                summary: response.summary,
+                actions: response.actions,
+                provenance: .cloud(at: Date(), dataUpdatedAt: context.dataUpdatedAt),
+                metrics: metrics
+            )
+        } catch {
+            let coachError = error as? CoachError
+            return local(
+                metrics: metrics,
+                origin: Self.isUsageLimit(coachError) ? .usageLimited : .offlineFallback,
+                note: coachError?.errorDescription
+            )
+        }
+    }
+
+    private func local(
+        metrics: WeeklyReview.Metrics,
+        origin: CoachProvenance.Origin,
+        note: String?
+    ) -> WeeklyReviewOutcome {
+        let response = LocalWeeklyReview.review(for: metrics)
+        return WeeklyReviewOutcome(
+            headline: response.headline,
+            summary: response.summary,
+            actions: response.actions,
+            provenance: CoachProvenance(
+                origin: origin,
+                generatedAt: Date(),
+                failureNote: note
+            ),
+            metrics: metrics
+        )
+    }
+
+    /// A spend ceiling is a different sentence from a network failure, and the
+    /// label under the review says which.
+    nonisolated static func isUsageLimit(_ error: CoachError?) -> Bool {
+        if case .limitReached = error { return true }
+        return false
+    }
+
+    /// The week as one paragraph of already-computed figures.
+    ///
+    /// No dates, no session names, no exercise names — a muscle, a count and a
+    /// percentage each. What the model needs to write a review, and nothing
+    /// that would identify a day.
+    nonisolated static func promptText(for metrics: WeeklyReview.Metrics) -> String {
+        var parts: [String] = []
+        parts.append("Sessions completed: \(metrics.completedSessions) (last week: \(metrics.sessionsLastWeek)).")
+        parts.append("Sessions planned: \(metrics.plannedSessions).")
+
+        if let adherence = metrics.adherencePercent {
+            parts.append("Adherence: \(adherence)%.")
+        } else {
+            parts.append("Adherence: not applicable — nothing was planned.")
+        }
+        if let duration = metrics.averageDurationMinutes {
+            parts.append("Average session: \(duration) minutes.")
+        }
+        if !metrics.setsByMuscle.isEmpty {
+            let sets = metrics.setsByMuscle
+                .sorted { $0.key < $1.key }
+                .map { "\($0.key) \($0.value)" }
+                .joined(separator: ", ")
+            parts.append("Working sets by muscle: \(sets).")
+        }
+        if !metrics.underTargetMuscles.isEmpty {
+            parts.append("Well under weekly target: \(metrics.underTargetMuscles.joined(separator: ", ")).")
+        }
+        parts.append("Personal bests: \(metrics.personalRecords).")
+        parts.append("Sessions started and not finished: \(metrics.incompleteSessions).")
+        parts.append("Exercises repeatedly prescribed and skipped: \(metrics.repeatedlySkippedExerciseIds.count).")
+        if !metrics.isReviewable {
+            parts.append("This is a small sample — say so rather than reading a trend into it.")
+        }
+        return parts.joined(separator: " ")
+    }
+
+    // MARK: Adjustment
+
+    /// Reads one sentence and returns one adjustment.
+    ///
+    /// Throws rather than falling back: there is no sensible local reading of
+    /// "make today a bit easier on my shoulder", and guessing at one would be
+    /// the app performing an edit nobody asked for. The caller offers the four
+    /// preset buttons instead, which need no interpretation at all.
+    func interpretAdjustment(
+        request text: String,
+        context: CoachContext,
+        settings: CoachSettings
+    ) async throws -> WorkoutAdjustmentSuggestion {
+        try await generate(
+            mode: "adjustWorkout",
+            question: String(text.prefix(300)),
+            context: context,
+            settings: settings
+        )
+    }
+
     // MARK: Transport
 
     /// One call, one repair attempt, then give up.

@@ -255,6 +255,17 @@ struct WorkoutBrief: Equatable, Sendable, Identifiable {
     var focusMuscles: Set<BlueprintMuscle> = []
     var avoidMuscles: Set<BlueprintMuscle> = []
 
+    /// Whether the user's own training history may shape the result.
+    ///
+    /// On by default and switchable off, because history is evidence rather
+    /// than instruction: someone coming back from injury has six weeks of
+    /// sessions that describe a person they are deliberately no longer training
+    /// like. `historyText` is populated only when this is true.
+    var useHistory: Bool = true
+    /// The digest, as one sentence. Aggregates only — see
+    /// `TrainingHistoryDigest.promptText`.
+    var historyText: String?
+
     // Plan-only.
     var daysPerWeek: Int = 3
     /// 1 = Monday. Empty means the builder chooses.
@@ -285,6 +296,10 @@ struct WorkoutBrief: Equatable, Sendable, Identifiable {
         }
         if !avoidMuscles.isEmpty {
             parts.append("Avoid entirely: \(avoidMuscles.map(\.rawValue).sorted().joined(separator: ", ")).")
+        }
+
+        if useHistory, let historyText, !historyText.isEmpty {
+            parts.append("What their training actually looks like: \(historyText)")
         }
 
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
