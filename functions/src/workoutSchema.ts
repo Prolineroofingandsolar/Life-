@@ -559,3 +559,77 @@ export function validateAdjustment(value: unknown): ValidationResult {
 
   return urlCheck(value);
 }
+
+/**
+ * What may be said about a plateau.
+ *
+ * A closed remedy list and one explanation. The model is given four numbers and
+ * an exercise name — no dates, no session log, nothing about health — so it has
+ * no material with which to speculate about a cause, which is deliberate. A
+ * plateau has a hundred possible causes and the app knows none of them.
+ */
+export const PLATEAU_REMEDIES = [
+  "smallerIncrements",
+  "repRangeChange",
+  "orderChange",
+  "volumeAdjust",
+  "substitute",
+  "lighterWeek",
+] as const;
+
+export const MAX_PLATEAU_REMEDIES = 3;
+
+export const PLATEAU_SCHEMA = {
+  type: "OBJECT",
+  properties: {
+    remedies: {
+      type: "ARRAY",
+      items: { type: "STRING", enum: [...PLATEAU_REMEDIES] },
+    },
+    /** One or two sentences about the options. Never about the cause. */
+    explanation: { type: "STRING" },
+  },
+  required: ["remedies", "explanation"],
+} as const;
+
+export function validatePlateauAdvice(value: unknown): ValidationResult {
+  if (!isRecord(value)) return fail("not an object");
+
+  const explanationError = checkText(value.explanation, "explanation", 400, true);
+  if (explanationError) return explanationError;
+
+  if (!Array.isArray(value.remedies) || value.remedies.length === 0) {
+    return fail("no remedies");
+  }
+  if (value.remedies.length > MAX_PLATEAU_REMEDIES) {
+    return fail(`more than ${MAX_PLATEAU_REMEDIES} remedies`);
+  }
+  for (const remedy of value.remedies) {
+    if (!PLATEAU_REMEDIES.includes(remedy as (typeof PLATEAU_REMEDIES)[number])) {
+      return fail(`unsupported remedy: ${String(remedy)}`);
+    }
+  }
+
+  /**
+   * The one content check in this file.
+   *
+   * A model asked why a lift stalled will reach for a cause, and the causes it
+   * reaches for are medical ("you may be overtrained", "this can indicate
+   * under-recovery"). The app cannot know any of that and must not appear to.
+   * Rejected rather than trimmed: a response that went there has misunderstood
+   * the task and its other sentences are suspect too.
+   */
+  const forbidden = [
+    "overtrain", "overtraining", "under-recover", "underrecover",
+    "deficien", "hormon", "cortisol", "testosterone", "injur", "diagnos",
+    "adrenal", "syndrome", "disorder",
+  ];
+  const explanation = String(value.explanation).toLowerCase();
+  for (const word of forbidden) {
+    if (explanation.includes(word)) {
+      return fail(`explanation makes a physiological claim: ${word}`);
+    }
+  }
+
+  return urlCheck(value);
+}

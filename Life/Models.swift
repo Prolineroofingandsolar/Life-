@@ -1091,6 +1091,24 @@ struct CoachSettings: Codable, Equatable {
     /// never attached to a synced document.
     var allowMachineScanning: Bool = false
 
+    /// Automations the user has switched off, by raw value.
+    ///
+    /// Stored as *disabled* rather than enabled so a new automation in a future
+    /// version arrives switched on without a migration, and so an empty array —
+    /// the value every existing install decodes to — means "all six", which is
+    /// the default. Strings rather than the enum, so a raw value this version
+    /// doesn't recognise is carried through untouched instead of being dropped
+    /// when an older build writes the snapshot back.
+    var disabledAutomations: [String] = []
+
+    func isAutomationEnabled(_ kind: AutomationKind) -> Bool {
+        !disabledAutomations.contains(kind.rawValue)
+    }
+
+    var enabledAutomations: Set<AutomationKind> {
+        Set(AutomationKind.allCases.filter { isAutomationEnabled($0) })
+    }
+
     /// Every permission that changes what the coach is told, as one short
     /// string.
     ///
@@ -1135,6 +1153,12 @@ struct CoachSettings: Codable, Equatable {
         case morningBriefingEnabled, eveningReviewEnabled, style
         case allowHealth, allowActivity, allowTraining, allowTasks, allowHabits
         case shareTitles, mutedCategories
+        // Both of these were missing from this list, which meant the synthesised
+        // encoder never wrote `allowMachineScanning` and the camera consent
+        // silently reset on every launch. Adding a property to this struct means
+        // adding it here too — the custom `init(from:)` above makes that easy to
+        // forget, because decoding a missing key succeeds.
+        case allowMachineScanning, disabledAutomations
     }
 
     init() {}
@@ -1156,6 +1180,9 @@ struct CoachSettings: Codable, Equatable {
         allowHabits = try c.decodeIfPresent(Bool.self, forKey: .allowHabits) ?? true
         shareTitles = try c.decodeIfPresent(Bool.self, forKey: .shareTitles) ?? false
         mutedCategories = try c.decodeIfPresent([String].self, forKey: .mutedCategories) ?? []
+        allowMachineScanning = try c.decodeIfPresent(Bool.self, forKey: .allowMachineScanning) ?? false
+        // Absent means none disabled, which means all six on — see the property.
+        disabledAutomations = try c.decodeIfPresent([String].self, forKey: .disabledAutomations) ?? []
     }
 
     /// May the coach make a network call right now?

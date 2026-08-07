@@ -34,6 +34,10 @@ struct TrainView: View {
     @State private var showWeeklyReview = false
     /// Drift signals being reviewed. Empty dismisses the sheet.
     @State private var driftSignals: [DriftEngine.Signal] = []
+    @State private var showAutomations = false
+    @State private var deloadProposal: DeloadEngine.Proposal?
+    @State private var plateauFinding: PlateauEngine.Finding?
+    @State private var adjustingRoutineId: String?
     /// The missed session being rescheduled, if any. Nil dismisses the sheet.
     @State private var reschedulingSession: PlannedSession?
 
@@ -58,6 +62,37 @@ struct TrainView: View {
             return appState.routines.first { $0.id == id }
         }
         return appState.todaysSuggestedRoutine()
+    }
+
+    /// Routes an automation's finding to the screen that can act on it.
+    ///
+    /// Every branch presents something with its own confirm button. The
+    /// automation found the thing; the sheet is where anything happens, and
+    /// there is no case here that writes.
+    private func open(_ destination: AutomationOutcome.Destination) {
+        switch destination {
+        case .weeklyReview:
+            showWeeklyReview = true
+        case .reschedule(let session):
+            reschedulingSession = session
+        case .progression:
+            // The most recent finished session — the one the automation fired
+            // about.
+            let latest = appState.completedWorkouts
+                .sorted { ($0.finishedAt ?? .distantPast) > ($1.finishedAt ?? .distantPast) }
+                .first
+            if let latest {
+                reviewingProposals = ProgressionEngine.proposals(
+                    forSessionId: latest.id, appState: appState
+                )
+            }
+        case .plateau(let finding):
+            plateauFinding = finding
+        case .adjustRoutine(let routineId):
+            adjustingRoutineId = routineId
+        case .drift(let signals):
+            driftSignals = signals
+        }
     }
 
     private func startTodaysWorkout() {
@@ -201,6 +236,11 @@ struct TrainView: View {
                     }
                     .padding(.horizontal, 16)
 
+                    DeloadCard { proposal in
+                        deloadProposal = proposal
+                    }
+                    .padding(.horizontal, 16)
+
                     section("Train your way") {
                         TrainYourWayGrid(
                             onBuildProgramme: { builderKind = .plan },
@@ -242,6 +282,9 @@ struct TrainView: View {
                     // takes its place because Train had no way into them at all.
                     circularToolbarButton("chart.bar.fill", label: "Training progress") {
                         hubTab = .activity
+                    }
+                    circularToolbarButton("wand.and.stars", label: "Automations") {
+                        showAutomations = true
                     }
                     circularToolbarButton("gearshape.fill", label: "Settings") {
                         showSettings = true
@@ -319,6 +362,37 @@ struct TrainView: View {
                 DriftReviewSheet(signals: driftSignals) { brief in
                     pendingBrief = brief
                     builderKind = .plan
+                }
+            }
+            .sheet(isPresented: $showAutomations) {
+                AutomationsView { destination in
+                    open(destination)
+                }
+            }
+            .sheet(item: $plateauFinding) { finding in
+                PlateauSheet(finding: finding)
+            }
+            .sheet(
+                isPresented: Binding(
+                    get: { deloadProposal != nil },
+                    set: { if !$0 { deloadProposal = nil } }
+                )
+            ) {
+                if let deloadProposal {
+                    DeloadSheet(proposal: deloadProposal)
+                }
+            }
+            .sheet(
+                isPresented: Binding(
+                    get: { adjustingRoutineId != nil },
+                    set: { if !$0 { adjustingRoutineId = nil } }
+                )
+            ) {
+                if let id = adjustingRoutineId,
+                   let routine = appState.routines.first(where: { $0.id == id }) {
+                    AdjustWorkoutSheet(exercises: routine.exercises) { adjusted in
+                        appState.updateRoutine(id: id, exercises: adjusted)
+                    }
                 }
             }
             .sheet(isPresented: $showPrograms) { ProgramsView() }

@@ -124,6 +124,66 @@ struct DriftCard: View {
     }
 }
 
+// MARK: - Deload Card
+
+/// An easier week, offered rarely and reluctantly.
+///
+/// `DeloadEngine` needs six weeks of history and two independent signals before
+/// this can appear at all, and the dismissal is remembered for a month. A
+/// deload suggested often is a deload nobody takes seriously.
+struct DeloadCard: View {
+
+    @Environment(AppState.self) private var appState
+
+    var onReview: (DeloadEngine.Proposal) -> Void
+
+    @AppStorage("train_deload_dismissed_at") private var dismissedAt: Double = 0
+
+    private static let quietDays: TimeInterval = 30 * 24 * 60 * 60
+
+    private var proposal: DeloadEngine.Proposal? {
+        guard Date().timeIntervalSince1970 - dismissedAt > Self.quietDays else { return nil }
+        return DeloadEngine.proposal(appState: appState)
+    }
+
+    var body: some View {
+        if let proposal {
+            Button {
+                dismissedAt = Date().timeIntervalSince1970
+                onReview(proposal)
+            } label: {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "arrow.down.right.circle")
+                        .font(.title3)
+                        .foregroundColor(.orange)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Worth an easier week?")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundColor(.primary)
+                        Text(proposal.evidence.first ?? "A few things point that way.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundColor(Color(.tertiaryLabel))
+                        .accessibilityHidden(true)
+                }
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(AppTheme.cardBg)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Shows the exact reductions before anything changes.")
+        }
+    }
+}
+
 // MARK: - Weekly Review Card
 
 /// "Your week is ready."

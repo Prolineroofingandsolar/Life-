@@ -15,7 +15,10 @@ private enum PersistenceKey {
 
 // MARK: - Planned Session
 
-struct PlannedSession: Identifiable, Codable {
+// `Equatable` and `Sendable` are additive: every stored property already
+// conforms, nothing about decoding or syncing changes, and `AutomationOutcome`
+// needs both to carry one.
+struct PlannedSession: Identifiable, Codable, Equatable, Sendable {
     var id: String = UUID().uuidString
     var date: Date
     var routineId: String?

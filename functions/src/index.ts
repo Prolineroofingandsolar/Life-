@@ -21,6 +21,8 @@ import {
   validateWeeklyReview,
   ADJUSTMENT_SCHEMA,
   validateAdjustment,
+  PLATEAU_SCHEMA,
+  validatePlateauAdvice,
 } from "./workoutSchema";
 import { reserveCall, recordUsage, readUsage, LimitExceeded } from "./limits";
 
@@ -66,7 +68,8 @@ type Mode =
   | "buildPlan"
   | "identifyExercise"
   | "weeklyReview"
-  | "adjustWorkout";
+  | "adjustWorkout"
+  | "plateauAdvice";
 
 /**
  * Output budget, per mode.
@@ -92,11 +95,13 @@ const MAX_OUTPUT_TOKENS: Record<Mode, number> = {
   weeklyReview: 800,
   // One classification and a sentence.
   adjustWorkout: 200,
+  // Three remedies and two sentences.
+  plateauAdvice: 300,
 };
 
 /** Modes that carry a free-text brief or question in `question`. */
 const MODES_REQUIRING_QUESTION: ReadonlySet<Mode> = new Set<Mode>([
-  "ask", "buildWorkout", "buildPlan", "adjustWorkout",
+  "ask", "buildWorkout", "buildPlan", "adjustWorkout", "plateauAdvice",
 ]);
 
 /**
@@ -386,6 +391,21 @@ Your job: turn one sentence into one adjustment, and nothing else.
 - The explanation is one sentence, in their words, about what will change.
 `.trim(),
 
+  plateauAdvice: `
+Your job: suggest what to try about a lift that has stopped progressing.
+
+- Pick at most three remedies from the list you are given. Fewer is better.
+- NEVER say why it stalled. You do not know, and neither does the app. No
+  physiological explanation, no mention of overtraining, recovery, hormones,
+  sleep or injury — not even to rule one out. A response that reaches for a
+  cause will be rejected outright.
+- Describe what each remedy would mean in practice, in one sentence total.
+- If the numbers show the lift going down rather than sideways, say that plainly
+  and prefer the lighter-week remedy.
+- Do not be encouraging about it. A plateau is ordinary; treating it as a crisis
+  or as a triumph both misread it.
+`.trim(),
+
   buildPlan: `
 Your job: describe the SHAPE of a training week, to be repeated.
 
@@ -414,6 +434,7 @@ const RESPONSE_SCHEMAS: Record<Mode, unknown> = {
   identifyExercise: MACHINE_SCHEMA,
   weeklyReview: WEEKLY_REVIEW_SCHEMA,
   adjustWorkout: ADJUSTMENT_SCHEMA,
+  plateauAdvice: PLATEAU_SCHEMA,
 };
 
 /**
@@ -431,6 +452,7 @@ const VALIDATORS: Partial<Record<Mode, (value: unknown) => ValidationResult>> = 
   identifyExercise: validateMachineIdentification,
   weeklyReview: validateWeeklyReview,
   adjustWorkout: validateAdjustment,
+  plateauAdvice: validatePlateauAdvice,
 };
 
 /** The one-line reminder that leads the user content. */
@@ -444,6 +466,7 @@ const MODE_INSTRUCTIONS: Record<Mode, string> = {
   identifyExercise: "Identify the gym machine or equipment in this photograph.",
   weeklyReview: "Review the training week described in the data below.",
   adjustWorkout: "Turn the request below into one adjustment.",
+  plateauAdvice: "Suggest what to try about the stalled lift described below.",
 };
 
 function systemInstruction(mode: Mode): string {

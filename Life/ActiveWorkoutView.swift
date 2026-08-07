@@ -31,6 +31,7 @@ struct ActiveWorkoutView: View {
     @State private var sessionName: String = ""
     @State private var notesText: String = ""
     @State private var isReorderMode = false
+    @State private var showCoach = false
 
     private var session: WorkoutSession? {
         appState.sessions.first { $0.id == sessionId }
@@ -249,6 +250,19 @@ struct ActiveWorkoutView: View {
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundColor(isReorderMode ? AppTheme.primary : .secondary)
                 }
+                // Only while a session is live. Asking "should I go heavier?"
+                // about a workout finished last Tuesday is a different question,
+                // and the review after the session is where it belongs.
+                if mode != .editFinished {
+                    Button {
+                        showCoach = true
+                    } label: {
+                        Image(systemName: "bubble.left.and.text.bubble.right")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.secondary)
+                    }
+                    .accessibilityLabel("Quick question")
+                }
                 Menu {
                     if mode == .editFinished {
                         Button { showTimeEditor = true } label: {
@@ -292,6 +306,9 @@ struct ActiveWorkoutView: View {
                     }
                 }
             }
+        }
+        .sheet(isPresented: $showCoach) {
+            MidWorkoutCoachSheet(sessionId: sessionId)
         }
         .alert("Discard Workout?", isPresented: $showDiscardAlert) {
             Button("Discard", role: .destructive) {

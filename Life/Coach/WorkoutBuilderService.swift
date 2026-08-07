@@ -227,6 +227,52 @@ final class WorkoutBuilderService {
         )
     }
 
+    // MARK: Plateau
+
+    /// What to try about a lift that has stopped moving.
+    ///
+    /// Falls back to `LocalPlateauAdvice` rather than throwing. The remedies are
+    /// a closed list either way — the model chooses from it and phrases it, and
+    /// the rules choose from the same list when it can't. Neither is allowed to
+    /// say *why* the lift stalled, and the server rejects a response that tries.
+    func plateauAdvice(
+        for finding: PlateauEngine.Finding,
+        context: CoachContext,
+        settings: CoachSettings
+    ) async -> (advice: PlateauAdvice, provenance: CoachProvenance) {
+        guard settings.mayUseCloud else {
+            return (
+                LocalPlateauAdvice.advice(for: finding),
+                CoachProvenance(origin: .onDevice, generatedAt: Date())
+            )
+        }
+
+        do {
+            let advice: PlateauAdvice = try await generate(
+                mode: "plateauAdvice",
+                question: PlateauEngine.promptText(for: finding),
+                context: context,
+                settings: settings
+            )
+            // An empty remedy list means every one it named was unknown to this
+            // version. The explanation alone is not an answer.
+            guard !advice.remedies.isEmpty else {
+                throw CoachError.invalidResponse("no usable remedies")
+            }
+            return (advice, .cloud(at: Date(), dataUpdatedAt: context.dataUpdatedAt))
+        } catch {
+            let coachError = error as? CoachError
+            return (
+                LocalPlateauAdvice.advice(for: finding),
+                CoachProvenance(
+                    origin: Self.isUsageLimit(coachError) ? .usageLimited : .offlineFallback,
+                    generatedAt: Date(),
+                    failureNote: coachError?.errorDescription
+                )
+            )
+        }
+    }
+
     // MARK: Transport
 
     /// One call, one repair attempt, then give up.
