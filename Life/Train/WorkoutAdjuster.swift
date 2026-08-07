@@ -101,6 +101,15 @@ enum WorkoutAdjuster {
     /// honoured; it has been misunderstood. The adjuster stops here and reports
     /// the shortfall instead.
     static let minimumExercises = 3
+    /// Rest never goes below a minute, sets never below two, and rest comes off
+    /// in half-minute steps.
+    ///
+    /// Named rather than inline because the trim loops read them repeatedly and
+    /// a silent disagreement between the loop's floor and the note's floor would
+    /// produce a diff that doesn't match what was done.
+    static let minimumRestSeconds = 60
+    static let minimumSets = 2
+    static let restStepSeconds = 30
 
     // MARK: Estimating
 
@@ -159,34 +168,45 @@ enum WorkoutAdjuster {
         let target = max(1, original - max(1, minutes))
 
         // 1. Rest, down to 60 seconds.
-        for index in working.indices where estimatedMinutes(working) > target {
-            let current = working[index].restSeconds
-            guard current > 60 else { continue }
-            let reduced = max(60, current - 30)
-            working[index].restSeconds = reduced
-            changes.append(
-                .restShortened(
-                    exerciseId: working[index].exerciseId,
-                    name: name(of: working[index], in: library),
-                    from: current,
-                    to: reduced
-                )
-            )
+        //
+        // Repeated until it stops helping, not one pass. A single pass takes
+        // 30 seconds off each exercise and stops — so a session with 180-second
+        // rests would keep 150 of them, report that it couldn't reach the
+        // target, and start deleting exercises while two full minutes of
+        // standing about were still on the table. Each iteration must remove
+        // something or the loop ends, so it terminates.
+        var restStartedAt: [String: Int] = [:]
+        while estimatedMinutes(working) > target {
+            var reducedAnything = false
+            for index in working.indices where estimatedMinutes(working) > target {
+                let current = working[index].restSeconds
+                guard current > minimumRestSeconds else { continue }
+                if restStartedAt[working[index].exerciseId] == nil {
+                    restStartedAt[working[index].exerciseId] = current
+                }
+                working[index].restSeconds = max(minimumRestSeconds, current - restStepSeconds)
+                reducedAnything = true
+            }
+            if !reducedAnything { break }
         }
 
         // 2. Sets, from the back, never below two.
-        for index in working.indices.reversed() where estimatedMinutes(working) > target {
-            let current = working[index].defaultSets
-            guard current > 2 else { continue }
-            working[index].defaultSets = current - 1
-            changes.append(
-                .setsReduced(
-                    exerciseId: working[index].exerciseId,
-                    name: name(of: working[index], in: library),
-                    from: current,
-                    to: current - 1
-                )
-            )
+        //
+        // Also repeated: one pass removes a single set from each exercise, and a
+        // 60-minute session asked to lose 30 minutes needs more than that.
+        var setsStartedAt: [String: Int] = [:]
+        while estimatedMinutes(working) > target {
+            var reducedAnything = false
+            for index in working.indices.reversed() where estimatedMinutes(working) > target {
+                let current = working[index].defaultSets
+                guard current > minimumSets else { continue }
+                if setsStartedAt[working[index].exerciseId] == nil {
+                    setsStartedAt[working[index].exerciseId] = current
+                }
+                working[index].defaultSets = current - 1
+                reducedAnything = true
+            }
+            if !reducedAnything { break }
         }
 
         // 3. Whole exercises, last first.
@@ -199,6 +219,37 @@ enum WorkoutAdjuster {
                     reason: "the session had to lose something"
                 )
             )
+        }
+
+        // Notes last, and only for exercises still in the result.
+        //
+        // Emitting them as the trims happened listed "120s rest → 60s" for
+        // exercises that were then deleted a few lines later, so the diff
+        // described changes to a session that no longer contained them. One note
+        // per surviving exercise, showing the whole change rather than each
+        // 30-second step: "120s → 60s" is the fact, the four iterations that got
+        // there are implementation detail.
+        for item in working {
+            if let from = restStartedAt[item.exerciseId], from != item.restSeconds {
+                changes.append(
+                    .restShortened(
+                        exerciseId: item.exerciseId,
+                        name: name(of: item, in: library),
+                        from: from,
+                        to: item.restSeconds
+                    )
+                )
+            }
+            if let from = setsStartedAt[item.exerciseId], from != item.defaultSets {
+                changes.append(
+                    .setsReduced(
+                        exerciseId: item.exerciseId,
+                        name: name(of: item, in: library),
+                        from: from,
+                        to: item.defaultSets
+                    )
+                )
+            }
         }
 
         let adjusted = estimatedMinutes(working)

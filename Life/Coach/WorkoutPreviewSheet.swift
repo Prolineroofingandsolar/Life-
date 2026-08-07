@@ -50,6 +50,8 @@ struct WorkoutPreviewSheet: View {
     /// Built once when the sheet opens, not per render — it walks every
     /// finished session, and the conversation asks for it on each keystroke.
     @State private var digest = TrainingHistoryDigest.Digest.empty
+    /// The item whose replacement is being chosen. Nil dismisses the picker.
+    @State private var swapping: WorkoutResolver.ResolvedItem?
 
     /// One line of the transcript.
     struct Turn: Identifiable, Equatable {
@@ -479,11 +481,45 @@ struct WorkoutPreviewSheet: View {
                         ForEach(Array(workout.items.enumerated()), id: \.element.id) { index, item in
                             if index > 0 { Divider().padding(.leading, 16) }
                             PreviewExerciseRow(item: item)
+                                .contentShape(Rectangle())
+                                // Editing a draft before saving it is the whole
+                                // point of a preview. Without this the only
+                                // options were "accept all of it" and "throw it
+                                // away and ask again", which is a worse deal
+                                // than the routine editor already offers.
+                                .contextMenu {
+                                    Button {
+                                        swapping = item
+                                    } label: {
+                                        Label("Swap this exercise", systemImage: "arrow.left.arrow.right")
+                                    }
+                                    Button {
+                                        changeSets(of: item, by: 1, in: workout, provenance: provenance)
+                                    } label: {
+                                        Label("Add a set", systemImage: "plus")
+                                    }
+                                    Button {
+                                        changeSets(of: item, by: -1, in: workout, provenance: provenance)
+                                    } label: {
+                                        Label("Remove a set", systemImage: "minus")
+                                    }
+                                    Button(role: .destructive) {
+                                        remove(item, from: workout, provenance: provenance)
+                                    } label: {
+                                        Label("Remove exercise", systemImage: "trash")
+                                    }
+                                }
+                                .accessibilityHint("Double tap and hold to swap this exercise, change its sets, or remove it.")
                         }
                     }
                     .background(AppTheme.cardBg)
                     .clipShape(RoundedRectangle(cornerRadius: AppTheme.cardRadius, style: .continuous))
                     .padding(.horizontal, 16)
+
+                    Text("Press and hold any exercise to swap it, change its sets or take it out.")
+                        .font(.caption)
+                        .foregroundColor(Color(.tertiaryLabel))
+                        .padding(.horizontal, 16)
 
                     notesBlock(workout.notes)
                     CoachProvenanceLabel(provenance: provenance)
@@ -492,18 +528,124 @@ struct WorkoutPreviewSheet: View {
                 .padding(.vertical, 16)
             }
 
-            confirmBar(
-                title: "Save routine",
-                enabled: WorkoutBuilderActions.isCommittable(workout, appState: appState),
-                disabledReason: workout.isViable
-                    ? nil
-                    : "There aren't enough exercises in your library for this."
-            ) {
-                confirmation = WorkoutBuilderActions.commit(workout, appState: appState)
-                record(.accepted, exerciseIds: workout.items.map(\.exercise.id))
-                finish()
+            VStack(spacing: 0) {
+                confirmBar(
+                    title: "Save routine",
+                    enabled: WorkoutBuilderActions.isCommittable(workout, appState: appState),
+                    disabledReason: workout.isViable
+                        ? nil
+                        : "There aren't enough exercises in your library for this."
+                ) {
+                    confirmation = WorkoutBuilderActions.commit(workout, appState: appState)
+                    record(.accepted, exerciseIds: workout.items.map(\.exercise.id))
+                    finish()
+                }
+
+                // The obvious thing to want after being handed today's workout,
+                // and it was three screens away: save, close, find the routine,
+                // start it.
+                Button("Save and start it now") {
+                    startNow(workout)
+                }
+                .font(.subheadline.weight(.semibold))
+                .disabled(!WorkoutBuilderActions.isCommittable(workout, appState: appState))
+                .padding(.bottom, 12)
             }
         }
+        .sheet(item: $swapping) { item in
+            SwapExerciseSheet(
+                replacing: item.exercise,
+                idsInWorkout: Set(workout.items.map(\.exercise.id))
+            ) { chosen in
+                replaceExercise(item, for: chosen, in: workout, provenance: provenance)
+            }
+        }
+    }
+
+    // MARK: Editing the draft
+
+    /// Every edit rebuilds the stage from a modified copy.
+    ///
+    /// The draft still lives only in `stage` — nothing here writes to
+    /// `AppState`, so an edited preview is exactly as unsaved as an unedited
+    /// one, and Cancel still discards the lot.
+    private func replacing(
+        _ item: WorkoutResolver.ResolvedItem,
+        in workout: WorkoutResolver.ResolvedWorkout,
+        with replacement: WorkoutResolver.ResolvedItem?
+    ) -> WorkoutResolver.ResolvedWorkout {
+        var updated = workout
+        guard let index = updated.items.firstIndex(where: { $0.id == item.id }) else { return updated }
+        if let replacement {
+            updated.items[index] = replacement
+        } else {
+            updated.items.remove(at: index)
+        }
+        return updated
+    }
+
+    private func changeSets(
+        of item: WorkoutResolver.ResolvedItem,
+        by delta: Int,
+        in workout: WorkoutResolver.ResolvedWorkout,
+        provenance: CoachProvenance
+    ) {
+        var edited = item
+        // The same bounds the resolver clamps the model to, so a hand-edited
+        // draft can't hold a prescription the generator would have refused.
+        edited.prescription.defaultSets = min(max(item.prescription.defaultSets + delta, 1), 6)
+        guard edited.prescription.defaultSets != item.prescription.defaultSets else { return }
+        HapticManager.selection()
+        stage = .workout(replacing(item, in: workout, with: edited), provenance)
+    }
+
+    private func remove(
+        _ item: WorkoutResolver.ResolvedItem,
+        from workout: WorkoutResolver.ResolvedWorkout,
+        provenance: CoachProvenance
+    ) {
+        HapticManager.impact(.light)
+        // A removal is a preference, same as dismissing the whole draft.
+        appState.recordFeedback(.dismissed, source: .builder, exerciseId: item.exercise.id)
+        stage = .workout(replacing(item, in: workout, with: nil), provenance)
+    }
+
+    private func replaceExercise(
+        _ item: WorkoutResolver.ResolvedItem,
+        for exercise: Exercise,
+        in workout: WorkoutResolver.ResolvedWorkout,
+        provenance: CoachProvenance
+    ) {
+        var edited = item
+        edited.exercise = exercise
+        edited.prescription.exerciseId = exercise.id
+        // The starting load was for the old movement.
+        edited.prescription.defaultWeight = 0
+        // The swap answered whatever the equipment complaint was.
+        edited.substitutedEquipment = false
+
+        appState.recordFeedback(.dismissed, source: .substitution, exerciseId: item.exercise.id)
+        appState.recordFeedback(.accepted, source: .substitution, exerciseId: exercise.id)
+
+        HapticManager.success()
+        stage = .workout(replacing(item, in: workout, with: edited), provenance)
+    }
+
+    /// Saves the routine and starts a session from it, in one tap.
+    private func startNow(_ workout: WorkoutResolver.ResolvedWorkout) {
+        guard WorkoutBuilderActions.isCommittable(workout, appState: appState) else { return }
+        confirmation = WorkoutBuilderActions.commit(workout, appState: appState)
+        record(.accepted, exerciseIds: workout.items.map(\.exercise.id))
+
+        // `commit` appends one routine, so the last one is this one. Read back
+        // from the store rather than assumed: the id is the store's, not the
+        // draft's. Starting the session sets `AppState.activeSession`, which is
+        // what the Train tab's resume card and the workout banner both watch.
+        if let routine = appState.routines.last {
+            appState.startSession(name: routine.name, routineId: routine.id)
+        }
+        HapticManager.success()
+        dismiss()
     }
 
     // MARK: Plan preview

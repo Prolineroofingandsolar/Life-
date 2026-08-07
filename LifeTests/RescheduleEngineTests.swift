@@ -132,7 +132,8 @@ struct RescheduleEngineTests {
     }
 
     /// The specific guardrail the brief asks for: two sessions hitting the same
-    /// muscle group on consecutive days.
+    /// muscle group on consecutive days. Still offered — the user may know
+    /// something the app doesn't — but flagged.
     @Test("Moving next to the same muscle group warns rather than refusing")
     func consecutiveMusclesWarn() {
         let missed = Self.session(-1, name: "Legs A", routineId: "legs-a")
@@ -148,8 +149,6 @@ struct RescheduleEngineTests {
             )
         )
 
-        // Today is adjacent to tomorrow's leg session, so it carries a warning —
-        // but it is still offered. The user may know something the app doesn't.
         let todayOption = options.first { option in
             if case .moveTo(let date, _, _) = option {
                 return Self.calendar.isDate(date, inSameDayAs: Self.now)
@@ -162,6 +161,8 @@ struct RescheduleEngineTests {
         }
         #expect(warning != nil)
         #expect(warning?.lowercased().contains("legs") == true)
+        // Named for the session it actually clashes with, not for itself.
+        #expect(warning?.contains("Legs B") == true)
     }
 
     @Test("A day with nothing adjacent carries no warning")
@@ -172,6 +173,84 @@ struct RescheduleEngineTests {
             context: .init(
                 planned: [missed],
                 musclesByRoutine: ["legs": [.legs]],
+                now: Self.now,
+                calendar: Self.calendar
+            )
+        )
+
+        let warnings = options.compactMap { option -> String? in
+            if case .moveTo(_, _, let warning) = option { return warning }
+            return nil
+        }
+        #expect(warnings.isEmpty)
+    }
+
+    /// The session being moved sits on its original date until the move is
+    /// confirmed, so without excluding it every nearby day warned that the
+    /// session clashed with *itself* — which meant every option carried a
+    /// warning, which meant none of them said anything.
+    @Test("A session is never warned about clashing with itself")
+    func aSessionIsNotItsOwnNeighbour() {
+        let missed = Self.session(-1, name: "Legs", routineId: "legs")
+
+        let options = RescheduleEngine.options(
+            for: missed,
+            context: .init(
+                planned: [missed],
+                musclesByRoutine: ["legs": [.legs, .glutes]],
+                now: Self.now,
+                calendar: Self.calendar
+            )
+        )
+
+        let warnings = options.compactMap { option -> String? in
+            if case .moveTo(_, _, let warning) = option { return warning }
+            return nil
+        }
+        #expect(warnings.isEmpty)
+    }
+
+    /// A different session on an adjacent day still warns — the fix must not
+    /// have switched the guardrail off.
+    @Test("A genuine clash with another session still warns")
+    func realClashesStillWarn() {
+        let missed = Self.session(-1, name: "Legs A", routineId: "legs-a")
+        let tomorrow = Self.session(1, name: "Legs B", routineId: "legs-b")
+
+        let options = RescheduleEngine.options(
+            for: missed,
+            context: .init(
+                planned: [missed, tomorrow],
+                musclesByRoutine: ["legs-a": [.legs], "legs-b": [.legs]],
+                now: Self.now,
+                calendar: Self.calendar
+            )
+        )
+
+        let today = options.first { option in
+            if case .moveTo(let date, _, _) = option {
+                return Self.calendar.isDate(date, inSameDayAs: Self.now)
+            }
+            return false
+        }
+        guard case .moveTo(_, _, let warning)? = today else {
+            Issue.record("expected today to be offered")
+            return
+        }
+        #expect(warning?.lowercased().contains("legs") == true)
+    }
+
+    /// A session already done is not a clash — it happened, it's over.
+    @Test("A completed neighbour doesn't produce a warning")
+    func completedNeighboursDontWarn() {
+        let missed = Self.session(-1, name: "Legs A", routineId: "legs-a")
+        let done = Self.session(1, name: "Legs B", routineId: "legs-b", completed: true)
+
+        let options = RescheduleEngine.options(
+            for: missed,
+            context: .init(
+                planned: [missed, done],
+                musclesByRoutine: ["legs-a": [.legs], "legs-b": [.legs]],
                 now: Self.now,
                 calendar: Self.calendar
             )

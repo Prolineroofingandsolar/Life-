@@ -530,3 +530,97 @@ struct WorkoutBuilderActionTests {
         #expect(writtenRoutineIds == programmeRoutineIds)
     }
 }
+
+// MARK: - Editing a draft before saving
+
+/// The preview gained swap, set-editing, remove and start-now. The view isn't
+/// unit-testable, but the invariants those edits must not break are.
+@MainActor
+struct PreviewEditingTests {
+
+    static func state() -> AppState {
+        let state = AppState()
+        state.sessions = []
+        state.routines = []
+        state.programs = []
+        state.plannedSessions = []
+        state.exercises = WorkoutResolverTests.library
+        state.coachFeedback = []
+        return state
+    }
+
+    static func workout() -> WorkoutResolver.ResolvedWorkout {
+        let blueprint = WorkoutBlueprint(
+            name: "Upper",
+            focus: "Chest and back",
+            slots: [
+                WorkoutSlot(muscle: .chest, sets: 3, repMin: 8, repMax: 12, restSeconds: 90),
+                WorkoutSlot(muscle: .back, sets: 3, repMin: 8, repMax: 12, restSeconds: 90),
+                WorkoutSlot(muscle: .shoulders, sets: 3, repMin: 8, repMax: 12, restSeconds: 90),
+            ],
+            notes: nil
+        )
+        return WorkoutResolver.resolve(
+            blueprint,
+            inputs: WorkoutResolver.Inputs(library: WorkoutResolverTests.library)
+        )
+    }
+
+    /// Starting a generated session used to mean save, close, find the routine,
+    /// start it. The one-tap path has to leave the store in exactly the state
+    /// those four steps would have.
+    @Test("Saving a draft creates one routine whose exercises match the preview")
+    func commitMatchesThePreview() {
+        let state = Self.state()
+        let workout = Self.workout()
+
+        let message = WorkoutBuilderActions.commit(workout, appState: state)
+
+        #expect(message != nil)
+        #expect(state.routines.count == 1)
+        #expect(state.routines.first?.exercises.map(\.exerciseId) == workout.items.map(\.exercise.id))
+        // A draft is not a session until one is started.
+        #expect(state.activeSession == nil)
+    }
+
+    /// The state "start it now" lands in: one routine, one live session on it.
+    @Test("Starting from a saved draft produces a live session on that routine")
+    func startingAfterCommit() {
+        let state = Self.state()
+        _ = WorkoutBuilderActions.commit(Self.workout(), appState: state)
+
+        let routine = state.routines.last
+        state.startSession(name: routine?.name ?? "", routineId: routine?.id)
+
+        #expect(state.activeSession != nil)
+        #expect(state.activeSession?.routineId == routine?.id)
+    }
+
+    /// Editing the draft must not reach the store. Everything the preview's
+    /// edits touch is a local copy until the confirm button.
+    @Test("A resolved workout is a value — editing a copy leaves the original alone")
+    func editingIsLocal() {
+        let original = Self.workout()
+        var edited = original
+        edited.items.removeLast()
+        edited.items[0].prescription.defaultSets = 5
+
+        #expect(original.items.count == 3)
+        #expect(original.items[0].prescription.defaultSets == 3)
+        #expect(edited.items.count == 2)
+    }
+
+    /// Removing exercises in the preview can take a draft below the floor, and
+    /// the save button reads that same check.
+    @Test("A draft edited below three exercises can't be saved")
+    func tooFewExercisesBlocksTheSave() {
+        let state = Self.state()
+        var workout = Self.workout()
+        workout.items.removeLast()
+
+        #expect(workout.isViable == false)
+        #expect(WorkoutBuilderActions.isCommittable(workout, appState: state) == false)
+        #expect(WorkoutBuilderActions.commit(workout, appState: state) == nil)
+        #expect(state.routines.isEmpty)
+    }
+}

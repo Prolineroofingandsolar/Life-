@@ -20,6 +20,7 @@ struct MachineScanSheet: View {
     @State private var draftName = ""
     @State private var draftMuscle: BlueprintMuscle = .chest
     @State private var draftEquipment: ExerciseEquipment = .machine
+    @State private var showConsent = false
 
     private var settings: CoachSettings { appState.coachSettings }
     private var service: MachineScanService { MachineScanService() }
@@ -56,6 +57,9 @@ struct MachineScanSheet: View {
                     }
                 }
             }
+            .sheet(isPresented: $showConsent) {
+                CoachConsentView()
+            }
         }
     }
 
@@ -85,7 +89,25 @@ struct MachineScanSheet: View {
                 }
 
                 if !settings.mayUseCloud {
-                    warning("AI coaching is switched off, so this can't run. You can turn it on in Settings.")
+                    // Was a dead end: it named Settings and offered no way to
+                    // get there, so the only route out of this screen was to
+                    // close it, find the right settings section and come back.
+                    // The consent screen is the same one Settings presents.
+                    VStack(alignment: .leading, spacing: 12) {
+                        warning("Recognising a machine needs AI coaching, which is switched off.")
+                        Button {
+                            showConsent = true
+                        } label: {
+                            Text("Turn on AI coaching")
+                                .font(.headline)
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                                .background(AppTheme.brandGradient)
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(PressableButtonStyle())
+                    }
                 } else if !settings.allowMachineScanning {
                     Button {
                         appState.setCoachSettings { $0.allowMachineScanning = true }

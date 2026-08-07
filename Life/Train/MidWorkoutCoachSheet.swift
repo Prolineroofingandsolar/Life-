@@ -176,7 +176,7 @@ struct MidWorkoutCoachSheet: View {
                         .font(.subheadline.weight(.semibold))
                     ForEach(candidates.prefix(3)) { candidate in
                         Button {
-                            swap(replacing, for: candidate.exercise)
+                            replaceExercise(replacing, for: candidate.exercise)
                         } label: {
                             HStack {
                                 VStack(alignment: .leading, spacing: 2) {
@@ -403,7 +403,7 @@ struct MidWorkoutCoachSheet: View {
         dismiss()
     }
 
-    private func swap(_ from: Exercise, for to: Exercise) {
+    private func replaceExercise(_ from: Exercise, for to: Exercise) {
         guard let session,
               let index = appState.sessions.firstIndex(where: { $0.id == session.id }),
               let exerciseIndex = appState.sessions[index].exercises

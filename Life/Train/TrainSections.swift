@@ -376,6 +376,7 @@ struct ProgrammeProgressCard: View {
                 Image(systemName: "calendar")
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundColor(AppTheme.trainAccent)
+                    .accessibilityHidden(true)
             }
 
             VStack(alignment: .leading, spacing: 6) {
@@ -414,10 +415,20 @@ struct ProgrammeProgressCard: View {
             Image(systemName: "chevron.right")
                 .font(.caption.weight(.semibold))
                 .foregroundColor(Color(.tertiaryLabel))
+                .accessibilityHidden(true)
         }
         .padding(14)
         .background(AppTheme.cardBg)
         .clipShape(RoundedRectangle(cornerRadius: AppTheme.cardRadius, style: .continuous))
+        // One sentence rather than five fragments. The progress segments have
+        // no text of their own, so without this the count is announced as a
+        // row of unlabelled shapes — or not at all.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            "\(progress.name). \(progress.completedThisWeek) of \(progress.plannedThisWeek) sessions done this week."
+                + (progress.upcoming.isEmpty ? "" : " Coming up: \(progress.upcoming.joined(separator: ", ")).")
+        )
+        .accessibilityAddTraits(.isButton)
         .contentShape(Rectangle())
     }
 }
@@ -465,11 +476,13 @@ struct TrainingProgressCard: View {
                     Image(systemName: "chevron.right")
                         .font(.caption.weight(.semibold))
                         .foregroundColor(Color(.tertiaryLabel))
+                        .accessibilityHidden(true)
                 }
                 .padding(14)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityHint("Opens your training progress.")
         }
         .background(AppTheme.cardBg)
         .clipShape(RoundedRectangle(cornerRadius: AppTheme.cardRadius, style: .continuous))

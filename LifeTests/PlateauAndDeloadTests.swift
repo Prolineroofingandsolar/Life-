@@ -150,8 +150,12 @@ struct PlateauEngineTests {
     /// so there is no material with which to speculate about a cause.
     @Test("The prompt carries figures and nothing else")
     func promptIsBare() {
+        // A distinctive id, because the old assertion looked for "x" — which
+        // appears in the word "Exercise:" and so could never pass. The point is
+        // that the *identifier* doesn't travel, and it needs an identifier that
+        // can't occur by accident to show that.
         let finding = PlateauEngine.Finding(
-            exerciseId: "x",
+            exerciseId: "ex-7f3a-bench",
             exerciseName: "Bench press",
             sessions: 5,
             weeks: 4,
@@ -165,7 +169,7 @@ struct PlateauEngineTests {
         #expect(text.contains("Bench press"))
         #expect(text.contains("5 comparable sessions"))
         #expect(!text.lowercased().contains("sleep"))
-        #expect(!text.contains("x"))
+        #expect(!text.contains("ex-7f3a-bench"))
     }
 
     // MARK: Advice

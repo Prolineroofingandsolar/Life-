@@ -200,15 +200,67 @@ struct WorkoutAdjusterTests {
 
     // MARK: Determinism
 
+    /// One workout, adjusted twice.
+    ///
+    /// `Self.workout` is a computed property, so each access mints fresh
+    /// `RoutineExercise` ids — comparing two separate accesses tested UUID
+    /// generation, not the adjuster, and failed every time. The input has to be
+    /// bound once for the comparison to mean anything.
     @Test("The same request twice produces the same adjustment")
     func adjustmentIsDeterministic() {
+        let workout = Self.workout
+
         let first = WorkoutAdjuster.adjust(
-            exercises: Self.workout, library: Self.library, request: .equipmentOnly([.dumbbell])
+            exercises: workout, library: Self.library, request: .equipmentOnly([.dumbbell])
         )
         let second = WorkoutAdjuster.adjust(
-            exercises: Self.workout, library: Self.library, request: .equipmentOnly([.dumbbell])
+            exercises: workout, library: Self.library, request: .equipmentOnly([.dumbbell])
         )
         #expect(first == second)
+    }
+
+    /// The regression this was written for: the trim loops ran once each, so a
+    /// large request stopped early, reported a shortfall, and started deleting
+    /// exercises while minutes of rest were still available to cut.
+    @Test("A large shortening request actually reaches its target")
+    func shorteningReachesItsTarget() {
+        // Five exercises, 3 sets, 120s rest ≈ 45 minutes.
+        let workout = Self.workout
+        let original = WorkoutAdjuster.estimatedMinutes(workout)
+        #expect(original >= 40)
+
+        let adjusted = WorkoutAdjuster.adjust(
+            exercises: workout, library: Self.library, request: .shorten(byMinutes: 20)
+        )
+
+        #expect(adjusted.adjustedMinutes <= original - 20)
+        // And it got there without gutting the session.
+        #expect(adjusted.exercises.count == workout.count)
+        #expect(!adjusted.changes.contains { if case .shortfall = $0 { return true } else { return false } })
+    }
+
+    /// Rest is trimmed all the way to the floor before sets are touched, not
+    /// 30 seconds and then give up.
+    @Test("Rest is cut to the floor in one adjustment, and reported once")
+    func restIsFullyTrimmedAndReportedOnce() {
+        let workout = Self.workout
+        let adjusted = WorkoutAdjuster.adjust(
+            exercises: workout, library: Self.library, request: .shorten(byMinutes: 500)
+        )
+
+        #expect(adjusted.exercises.allSatisfy { $0.restSeconds == WorkoutAdjuster.minimumRestSeconds })
+
+        // One note per exercise showing the whole change — "120s → 60s", not
+        // two separate 30-second steps.
+        let restNotes = adjusted.changes.filter {
+            if case .restShortened = $0 { return true } else { return false }
+        }
+        #expect(restNotes.count <= workout.count)
+        for note in restNotes {
+            guard case .restShortened(_, _, let from, let to) = note else { continue }
+            #expect(from == 120)
+            #expect(to == 60)
+        }
     }
 
     // MARK: Interpretation

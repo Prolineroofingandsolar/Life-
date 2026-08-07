@@ -120,19 +120,31 @@ enum LocalProgrammeTemplates {
         var muscles: [BlueprintMuscle]
     }
 
+    /// The day's muscles, in priority order and **with the primary muscle
+    /// repeated**.
+    ///
+    /// This is the fix for a leg day that gave legs four sets a week against a
+    /// target of twelve. The lists used to name each muscle once — legs, glutes,
+    /// calves, core — so a leg day was one leg exercise and three accessories,
+    /// and since legs are trained once in a push/pull/legs week that was the
+    /// whole weekly volume. A real leg session is three or four *leg* movements.
+    ///
+    /// Order matters as much as content: `slots(for:brief:)` truncates to fit
+    /// the time available, so the primary muscle has to come first or a
+    /// 30-minute session drops the squats and keeps the calf raises.
     private static func split(forDays days: Int, brief: WorkoutBrief) -> [Split] {
-        let push: [BlueprintMuscle] = [.chest, .shoulders, .triceps, .chest]
-        let pull: [BlueprintMuscle] = [.back, .biceps, .back, .core]
-        let legs: [BlueprintMuscle] = [.legs, .glutes, .calves, .core]
-        let upper: [BlueprintMuscle] = [.chest, .back, .shoulders, .biceps, .triceps]
-        let lower: [BlueprintMuscle] = [.legs, .glutes, .calves, .core]
-        let full: [BlueprintMuscle] = [.legs, .chest, .back, .shoulders, .core]
+        let push: [BlueprintMuscle] = [.chest, .chest, .shoulders, .triceps, .shoulders, .triceps]
+        let pull: [BlueprintMuscle] = [.back, .back, .biceps, .back, .biceps, .core]
+        let legs: [BlueprintMuscle] = [.legs, .legs, .glutes, .legs, .calves, .core]
+        let upper: [BlueprintMuscle] = [.chest, .back, .shoulders, .chest, .back, .biceps, .triceps]
+        let lower: [BlueprintMuscle] = [.legs, .legs, .glutes, .legs, .calves, .core]
+        let full: [BlueprintMuscle] = [.legs, .chest, .back, .legs, .shoulders, .core]
 
         switch days {
         case 2:
             return [
                 Split(key: "full-a", name: "Full Body A", muscles: full),
-                Split(key: "full-b", name: "Full Body B", muscles: [.glutes, .back, .chest, .biceps, .core]),
+                Split(key: "full-b", name: "Full Body B", muscles: [.legs, .back, .chest, .glutes, .biceps, .core]),
             ]
         case 3:
             return [
@@ -144,8 +156,8 @@ enum LocalProgrammeTemplates {
             return [
                 Split(key: "upper-a", name: "Upper A", muscles: upper),
                 Split(key: "lower-a", name: "Lower A", muscles: lower),
-                Split(key: "upper-b", name: "Upper B", muscles: [.back, .chest, .shoulders, .triceps, .biceps]),
-                Split(key: "lower-b", name: "Lower B", muscles: [.glutes, .legs, .core, .calves]),
+                Split(key: "upper-b", name: "Upper B", muscles: [.back, .back, .chest, .shoulders, .triceps, .biceps]),
+                Split(key: "lower-b", name: "Lower B", muscles: [.legs, .glutes, .legs, .glutes, .calves, .core]),
             ]
         default:
             return [
@@ -154,13 +166,17 @@ enum LocalProgrammeTemplates {
                 Split(key: "legs", name: "Legs", muscles: legs),
                 Split(key: "upper", name: "Upper", muscles: upper),
                 Split(key: "lower", name: "Lower", muscles: lower),
-                Split(key: "arms", name: "Arms & Core", muscles: [.biceps, .triceps, .shoulders, .core]),
+                Split(key: "arms", name: "Arms & Core", muscles: [.biceps, .triceps, .biceps, .triceps, .shoulders, .core]),
             ].prefix(days).map { $0 }
         }
     }
 
     private static func slots(for muscles: [BlueprintMuscle], brief: WorkoutBrief) -> [WorkoutSlot] {
-        let limit = max(3, min(muscles.count, brief.availableMinutes / 8))
+        // Four is the floor rather than three. Three slots across a day whose
+        // list leads with two of the same muscle is a session; three slots
+        // spread over three different muscles is a warm-up, and it was how a
+        // leg day ended up with one leg movement in it.
+        let limit = max(4, min(muscles.count, brief.availableMinutes / 8))
         let (sets, repMin, repMax, rest) = prescription(for: brief)
 
         return muscles.prefix(limit).enumerated().map { index, muscle in

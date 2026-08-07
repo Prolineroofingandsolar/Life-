@@ -125,6 +125,7 @@ enum RescheduleEngine {
             let warning = clashWarning(
                 on: day,
                 muscles: missedMuscles,
+                ignoring: missed.id,
                 context: context
             )
 
@@ -148,9 +149,17 @@ enum RescheduleEngine {
     // MARK: Guardrails
 
     /// Whether moving here would put the same muscles on back-to-back days.
+    ///
+    /// `ignoring` is the session being moved, and leaving it out is not a
+    /// detail. It still sits on its original date until the move is confirmed,
+    /// so without this it appears as its own neighbour: proposing Wednesday for
+    /// a session missed on Tuesday warned that it "trains legs the day after
+    /// Legs A" — where Legs A *was* the session being moved. Every nearby day
+    /// carried a warning, which meant none of them did.
     private nonisolated static func clashWarning(
         on day: Date,
         muscles: Set<BlueprintMuscle>,
+        ignoring movedSessionId: String,
         context: Context
     ) -> String? {
         guard !muscles.isEmpty else { return nil }
@@ -159,7 +168,10 @@ enum RescheduleEngine {
         for direction in [-1, 1] {
             guard let neighbour = calendar.date(byAdding: .day, value: direction, to: day) else { continue }
             let sessions = context.planned.filter {
-                !$0.isRestDay && calendar.isDate($0.date, inSameDayAs: neighbour)
+                $0.id != movedSessionId
+                    && !$0.isRestDay
+                    && !$0.completed
+                    && calendar.isDate($0.date, inSameDayAs: neighbour)
             }
             for session in sessions {
                 guard let routineId = session.routineId,

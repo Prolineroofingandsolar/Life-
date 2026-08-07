@@ -420,6 +420,13 @@ Everything in the buildWorkout instructions applies to each session here.
   because it would be better; the days they gave you are the days they have.
 - Leave at least one rest day between sessions that work the same large muscle
   group.
+- Think in WEEKLY volume, not per-session variety. A muscle trained once a week
+  needs three or four slots on that day, not one. A "legs" day made of one leg
+  slot plus glutes, calves and core gives legs three or four sets for the whole
+  week, which is a third of what it needs — name the primary muscle repeatedly
+  in the same session instead.
+- Put the primary muscle's slots first in the session. Sessions get truncated to
+  fit the time budget, and the accessories are what should be lost.
 `.trim(),
 };
 
