@@ -143,24 +143,27 @@ struct TaskDetailView: View {
                             }
                             Button("Today") {
                                 dueDate = .today
-                                useCustomDate = false
-                                appState.updateTask(id: taskId, dueDate: .some(.today), dueDateOverride: .some(nil))
+                                customDate = DueDate.today.fixedDate()
+                                useCustomDate = true
+                                appState.scheduleTask(id: taskId, on: customDate)
                             }
                             Button("Tomorrow") {
                                 dueDate = .tomorrow
-                                useCustomDate = false
-                                appState.updateTask(id: taskId, dueDate: .some(.tomorrow), dueDateOverride: .some(nil))
+                                customDate = DueDate.tomorrow.fixedDate()
+                                useCustomDate = true
+                                appState.scheduleTask(id: taskId, on: customDate)
                             }
                             Button("This Week") {
                                 dueDate = .thisWeek
-                                useCustomDate = false
-                                appState.updateTask(id: taskId, dueDate: .some(.thisWeek), dueDateOverride: .some(nil))
+                                customDate = DueDate.thisWeek.fixedDate()
+                                useCustomDate = true
+                                appState.scheduleTask(id: taskId, on: customDate)
                             }
                             Divider()
                             Button("Pick a Date…") {
                                 useCustomDate = true
                                 dueDate = nil
-                                appState.updateTask(id: taskId, dueDate: .some(nil), dueDateOverride: .some(customDate))
+                                appState.scheduleTask(id: taskId, on: customDate)
                             }
                         } label: {
                             Text(useCustomDate
@@ -177,7 +180,7 @@ struct TaskDetailView: View {
                             .datePickerStyle(.graphical)
                             .padding(.horizontal, 16)
                             .onChange(of: customDate) { _, v in
-                                appState.updateTask(id: taskId, dueDateOverride: .some(v))
+                                appState.scheduleTask(id: taskId, on: v)
                             }
                     }
 

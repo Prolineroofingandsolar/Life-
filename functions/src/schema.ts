@@ -19,6 +19,7 @@ export const ACTION_TYPES = [
   "rest",
   "logMissingData",
   "reviewGoal",
+  "custom",
   "none",
 ] as const;
 

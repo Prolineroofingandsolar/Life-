@@ -72,14 +72,16 @@ enum DueDate: String, Codable, CaseIterable, Identifiable {
         }
     }
 
-    var date: Date {
-        let cal = Calendar.current
+    func fixedDate(from now: Date = Date(), calendar cal: Calendar = .current) -> Date {
+        let start = cal.startOfDay(for: now)
         switch self {
-        case .today:    return cal.startOfDay(for: Date())
-        case .tomorrow: return cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: Date())) ?? Date()
-        case .thisWeek: return cal.date(byAdding: .day, value: 7, to: cal.startOfDay(for: Date())) ?? Date()
+        case .today:    return start
+        case .tomorrow: return cal.date(byAdding: .day, value: 1, to: start) ?? start
+        case .thisWeek: return cal.date(byAdding: .day, value: 7, to: start) ?? start
         }
     }
+
+    var date: Date { fixedDate() }
 }
 
 struct AppTask: Codable, Identifiable {
@@ -101,6 +103,10 @@ struct AppTask: Codable, Identifiable {
     var sortOrder: Int = 0
     var createdAt: Date = Date()
     var completedAt: Date? = nil
+    /// Last user-visible change, used to resolve the same task edited on two
+    /// devices. Optional so snapshots written by older app versions still
+    /// decode without a migration.
+    var modifiedAt: Date? = nil
 
     var resolvedDate: Date? {
         if let override = dueDateOverride { return override }

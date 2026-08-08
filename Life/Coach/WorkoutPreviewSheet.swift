@@ -41,6 +41,7 @@ struct WorkoutPreviewSheet: View {
     @State private var makeActive = false
     @State private var scheduleSessions = true
     @State private var confirmation: String?
+    @State private var showActiveWorkoutWarning = false
 
     // The conversation.
     @State private var turns: [Turn] = []
@@ -560,6 +561,11 @@ struct WorkoutPreviewSheet: View {
                 replaceExercise(item, for: chosen, in: workout, provenance: provenance)
             }
         }
+        .alert("Workout already in progress", isPresented: $showActiveWorkoutWarning) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Finish or discard “\(appState.activeSession?.name ?? "your current workout")” before starting another workout. Your new routine has not been saved.")
+        }
     }
 
     // MARK: Editing the draft
@@ -634,6 +640,10 @@ struct WorkoutPreviewSheet: View {
     /// Saves the routine and starts a session from it, in one tap.
     private func startNow(_ workout: WorkoutResolver.ResolvedWorkout) {
         guard WorkoutBuilderActions.isCommittable(workout, appState: appState) else { return }
+        guard appState.activeSession == nil else {
+            showActiveWorkoutWarning = true
+            return
+        }
         confirmation = WorkoutBuilderActions.commit(workout, appState: appState)
         record(.accepted, exerciseIds: workout.items.map(\.exercise.id))
 

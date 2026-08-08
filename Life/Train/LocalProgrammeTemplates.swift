@@ -144,7 +144,7 @@ enum LocalProgrammeTemplates {
         case 2:
             return [
                 Split(key: "full-a", name: "Full Body A", muscles: full),
-                Split(key: "full-b", name: "Full Body B", muscles: [.legs, .back, .chest, .glutes, .biceps, .core]),
+                Split(key: "full-b", name: "Full Body B", muscles: [.legs, .legs, .back, .chest, .glutes, .biceps, .core]),
             ]
         case 3:
             return [

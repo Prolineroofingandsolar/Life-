@@ -138,7 +138,8 @@ struct TodayView: View {
                         )
                     }
 
-                    // The one thing on the page meant to be acted on.
+                    // The AI makes the primary recommendation; Autopilot turns
+                    // the trusted data into one clear next action.
                     CoachCard()
 
                     todaySection

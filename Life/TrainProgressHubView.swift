@@ -324,6 +324,9 @@ private struct ProgressTab: View {
     @State private var selectedExerciseId: String? = nil
 
     private var topLifts: [Exercise] { appState.topExercises(limit: 6) }
+    private var personalRecords: [Exercise] {
+        topLifts.filter { appState.computePRs(for: $0.id).bestWeight > 0 }
+    }
     private var currentExercise: Exercise? {
         if let id = selectedExerciseId { return topLifts.first { $0.id == id } }
         return topLifts.first
@@ -355,14 +358,14 @@ private struct ProgressTab: View {
 
             VStack(spacing: 12) {
                 SectionHeader(title: "Personal Records")
-                if topLifts.isEmpty {
+                if personalRecords.isEmpty {
                     EmptyHint(text: "No personal records yet")
                 } else {
                     CardContainer {
                         VStack(spacing: 0) {
-                            ForEach(Array(topLifts.prefix(5).enumerated()), id: \.element.id) { idx, ex in
+                            ForEach(Array(personalRecords.prefix(5).enumerated()), id: \.element.id) { idx, ex in
                                 PRRow(exercise: ex)
-                                if idx < min(topLifts.count, 5) - 1 { Divider().opacity(0.4) }
+                                if idx < min(personalRecords.count, 5) - 1 { Divider().opacity(0.4) }
                             }
                         }
                     }

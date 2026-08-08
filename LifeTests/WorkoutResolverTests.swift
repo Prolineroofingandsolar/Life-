@@ -34,7 +34,7 @@ struct WorkoutResolverTests {
 
     /// Twelve exercises, chosen so every branch below has something to bite on:
     /// two chest movements with different equipment, a muscle with exactly one
-    /// exercise, and a muscle with none at all (Calves).
+    /// exercise, and a muscle with none at all (Cardio).
     static let library: [Exercise] = [
         exercise("ex-bench", "Barbell Bench Press", "Chest", equipment: .barbell, difficulty: 2),
         exercise("ex-db-press", "Dumbbell Bench Press", "Chest", equipment: .dumbbell, difficulty: 1),
@@ -111,9 +111,9 @@ struct WorkoutResolverTests {
 
     @Test("A muscle with no exercises drops the slot and leaves the library alone")
     func noExerciseForMuscleDropsTheSlot() {
-        // Calves is deliberately absent from the fixture library.
+        // Cardio is deliberately absent and has no related-muscle fallback.
         let plan = Self.blueprint([
-            Self.slot(.chest), Self.slot(.back), Self.slot(.calves), Self.slot(.core),
+            Self.slot(.chest), Self.slot(.back), Self.slot(.cardio), Self.slot(.core),
         ])
         let inputs = Self.inputs()
         let libraryBefore = inputs.library
@@ -121,8 +121,8 @@ struct WorkoutResolverTests {
         let workout = WorkoutResolver.resolve(plan, inputs: inputs)
 
         #expect(workout.items.count == 3)
-        #expect(!workout.items.contains { $0.slotMuscle == .calves })
-        #expect(workout.notes.contains(.noExerciseForMuscle(.calves)))
+        #expect(!workout.items.contains { $0.slotMuscle == .cardio })
+        #expect(workout.notes.contains(.noExerciseForMuscle(.cardio)))
 
         // The assertion this whole file exists for. `importFromText` appends a
         // custom Exercise on a name miss; nothing on the model path may.
@@ -451,7 +451,7 @@ struct WorkoutResolverTests {
 
     @Test("The same missing muscle across four sessions is reported once")
     func planNotesAreDeduplicated() {
-        let session = Self.blueprint([Self.slot(.calves), Self.slot(.chest), Self.slot(.back)])
+        let session = Self.blueprint([Self.slot(.cardio), Self.slot(.chest), Self.slot(.back)])
         let plan = PlanBlueprint(
             name: "Repeats",
             weeks: 1,
@@ -461,10 +461,10 @@ struct WorkoutResolverTests {
         )
 
         let resolved = WorkoutResolver.resolve(plan, inputs: Self.inputs())
-        let calfNotes = resolved.notes.filter { $0 == .noExerciseForMuscle(.calves) }
+        let missingNotes = resolved.notes.filter { $0 == .noExerciseForMuscle(.cardio) }
 
         // A fact repeated is still one fact.
-        #expect(calfNotes.count == 1)
+        #expect(missingNotes.count == 1)
     }
 
     @Test("Weeks are clamped to something schedulable")

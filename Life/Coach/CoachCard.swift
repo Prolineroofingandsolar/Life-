@@ -224,6 +224,16 @@ struct CoachCard: View {
     private func content(for outcome: CoachService.Outcome) -> some View {
         let recommendation = outcome.recommendation
 
+        if !isCurrent(recommendation) {
+            HStack(spacing: 10) {
+                ProgressView().controlSize(.small)
+                Text("Updating your next action…")
+                    .font(.subheadline)
+                    .foregroundColor(.primary.opacity(0.72))
+            }
+            .task { await load(force: true) }
+        } else {
+
         Text(recommendation.headline)
             .font(.system(size: 20, weight: .bold))
             .fixedSize(horizontal: false, vertical: true)
@@ -265,6 +275,29 @@ struct CoachCard: View {
             Button("Turn on AI coaching") { showConsent = true }
                 .font(.caption2.weight(.medium))
                 .foregroundColor(AppTheme.primary)
+        }
+        }
+    }
+
+    /// State can change on another device while Gemini is answering. Never
+    /// display an action whose target has already been completed or removed.
+    private func isCurrent(_ recommendation: CoachRecommendation) -> Bool {
+        switch recommendation.actionType {
+        case .completeTask, .scheduleTask, .rescheduleTask:
+            guard let id = recommendation.relatedItemId else { return false }
+            return appState.tasks.contains { $0.id == id && !$0.done }
+        case .completeHabit:
+            guard let id = recommendation.relatedItemId,
+                  let habit = appState.habits.first(where: { $0.id == id && !$0.isArchived }) else { return false }
+            let log = habit.logs.first { $0.dayKey == appState.todayKey }
+            if habit.kind == .break { return log?.slipped == true }
+            return (log?.count ?? 0) < habit.targetCount
+        case .doPlannedWorkout, .reduceWorkoutIntensity:
+            return appState.activeSession != nil || appState.plannedSessions.contains {
+                !$0.completed && !$0.isRestDay && $0.date.dayKey == appState.todayKey
+            }
+        case .takeWalk, .rest, .logMissingData, .reviewGoal, .custom, .none:
+            return true
         }
     }
 
@@ -330,10 +363,10 @@ struct CoachCard: View {
 
             Spacer()
 
-            Button("Not today") { dismissToday() }
+            Button("Later today") { dismissToday() }
                 .font(.subheadline)
-                .foregroundColor(.secondary)
-                .accessibilityHint("Hides this suggestion until something changes")
+                .foregroundColor(.primary.opacity(0.68))
+                .accessibilityHint("Moves this suggestion out of the way for now")
         }
         .padding(.top, 2)
     }
@@ -352,6 +385,7 @@ struct CoachCard: View {
         case .scheduleTask, .rescheduleTask: return "Move to today"
         case .logMissingData:  return "Check data"
         case .reviewGoal:      return "Review"
+        case .custom:          return "I'll do this next"
         case .takeWalk, .rest, .reduceWorkoutIntensity, .none: return nil
         }
     }
@@ -361,6 +395,13 @@ struct CoachCard: View {
     /// The brief forbids the coach modifying anything on its own, so nothing
     /// here runs automatically. This is the explicit action.
     private func apply(_ recommendation: CoachRecommendation) {
+        if recommendation.actionType == .custom {
+            AutopilotQueue.pin(recommendation)
+            appliedMessage = "Pinned as your next action."
+            HapticManager.success()
+            return
+        }
+
         guard let id = recommendation.relatedItemId else {
             // Actions with no target just navigate; nothing to change.
             if recommendation.actionType == .logMissingData || recommendation.actionType == .reviewGoal {

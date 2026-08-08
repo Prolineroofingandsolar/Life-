@@ -384,8 +384,8 @@ final class CoachService {
     private func recordUsage(from result: [String: Any]) {
         guard let usageInfo = result["usage"] as? [String: Any] else { return }
         usage.record(
-            promptTokens: usageInfo["promptTokens"] as? Int ?? 0,
-            outputTokens: usageInfo["outputTokens"] as? Int ?? 0,
+            promptTokens: coachUsageInteger(usageInfo["promptTokens"]),
+            outputTokens: coachUsageInteger(usageInfo["outputTokens"]),
             cost: usageInfo["cost"] as? Double ?? 0
         )
     }

@@ -423,7 +423,7 @@ struct CoachResponseTests {
     /// looked like a good one until it was built.
     @Test("The training section reports what the library can build")
     func libraryCountsAreSent() {
-        let state = Self.emptyState()
+        let state = CoachContextTests.emptyState()
         state.exercises = [
             Exercise(name: "Bench press", muscle: "Chest", kind: .weight),
             Exercise(name: "Push-up", muscle: "chest", kind: .weight),
@@ -444,7 +444,7 @@ struct CoachResponseTests {
     /// the response schema only accepts the ten blueprint names.
     @Test("A muscle outside the blueprint vocabulary isn't offered as a key")
     func unknownMusclesAreNotKeys() {
-        let state = Self.emptyState()
+        let state = CoachContextTests.emptyState()
         state.exercises = [
             Exercise(name: "Odd lift", muscle: "Upper back", kind: .weight),
             Exercise(name: "Row", muscle: "Back", kind: .weight),
@@ -463,7 +463,7 @@ struct CoachResponseTests {
     /// context at all — at exactly the moment it mattered most.
     @Test("A user who has never trained still gets a training section")
     func brandNewUserHasTrainingContext() {
-        let state = Self.emptyState()
+        let state = CoachContextTests.emptyState()
         state.sessions = []
         state.plannedSessions = []
         state.routines = []
@@ -479,7 +479,7 @@ struct CoachResponseTests {
 
     @Test("With nothing at all, the training section is still omitted")
     func nothingMeansNoSection() {
-        let state = Self.emptyState()
+        let state = CoachContextTests.emptyState()
         state.sessions = []
         state.plannedSessions = []
         state.routines = []
@@ -492,7 +492,7 @@ struct CoachResponseTests {
 
     @Test("Recovery is reported in the blueprint's ten words, one entry each")
     func recoveryUsesBlueprintVocabulary() {
-        let state = Self.emptyState()
+        let state = CoachContextTests.emptyState()
         state.exercises = [Exercise(name: "Row", muscle: "Back", kind: .weight)]
 
         let recovery = CoachContextBuilder.build(appState: state).training?.recovery ?? []
@@ -501,7 +501,7 @@ struct CoachResponseTests {
         // Lats, traps and lower back are three regions of one Back. Sending
         // three "Back" entries would let the coach read three fatigued muscles
         // where there is one.
-        #expect(Set(recovery.map(\.muscle)).count == recovery.count)
+        #expect(Set(recovery.map { $0.muscle }).count == recovery.count)
         #expect(recovery.allSatisfy { BlueprintMuscle(rawValue: $0.muscle) != nil })
         // Nothing trained: flagged as having no history rather than as fresh.
         #expect(recovery.allSatisfy { !$0.hasHistory })
@@ -509,7 +509,7 @@ struct CoachResponseTests {
 
     @Test("Per-exercise progress ranks by how often something is trained, capped at six")
     func topExercisesAreCapped() {
-        let state = Self.emptyState()
+        let state = CoachContextTests.emptyState()
         var library: [Exercise] = []
         for index in 0..<8 {
             library.append(Exercise(name: "Lift \(index)", muscle: "Chest", kind: .weight))
@@ -539,14 +539,14 @@ struct CoachResponseTests {
         #expect(top.first?.exerciseId == library[0].id)
         #expect(top.first?.sessionsRecorded == 8)
         // Descending, so the coach reads the most-trained first.
-        #expect(top.map(\.sessionsRecorded) == [8, 7, 6, 5, 4, 3])
+        #expect(top.map { $0.sessionsRecorded } == [8, 7, 6, 5, 4, 3])
     }
 
     /// An exercise name can be user-written text, the same as a task title. It
     /// follows the same switch.
     @Test("Exercise names are withheld unless titles may be shared")
     func exerciseNamesFollowTitlePermission() {
-        let state = Self.emptyState()
+        let state = CoachContextTests.emptyState()
         let exercise = Exercise(name: "Hargreaves Special", muscle: "Chest", kind: .weight)
         state.exercises = [exercise]
 
@@ -573,7 +573,7 @@ struct CoachResponseTests {
     /// stronger" off a single reading is the failure this state exists to stop.
     @Test("Too few sessions is insufficientHistory, not a figure")
     func tooFewSessionsIsFlagged() {
-        let state = Self.emptyState()
+        let state = CoachContextTests.emptyState()
         let exercise = Exercise(name: "Press", muscle: "Shoulders", kind: .weight)
         state.exercises = [exercise]
 
@@ -597,7 +597,7 @@ struct CoachResponseTests {
     /// working weight down and make a good week look like a plateau.
     @Test("Warm-up sets don't count towards the working weight")
     func warmupsAreExcluded() {
-        let state = Self.emptyState()
+        let state = CoachContextTests.emptyState()
         let exercise = Exercise(name: "Squat", muscle: "Legs", kind: .weight)
         state.exercises = [exercise]
 

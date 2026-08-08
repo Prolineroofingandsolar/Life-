@@ -162,7 +162,10 @@ enum HealthSync {
             )
             appState.mergeHealthDays(result.days)
             appState.mergeSleepNights(result.nights)
-            appState.mergeSteps(result.steps)
+            // Fitbit is the authoritative step source on this path. Do not
+            // preserve a larger value previously imported from Apple Health:
+            // that would make the number a hidden mixture of both devices.
+            appState.mergeSteps(result.steps, keepHighestToday: false)
 
             let retryAt = result.rateLimitedRetryAfter.map { retryAfter in
                 Date().addingTimeInterval(TimeInterval(retryAfter ?? 3600))

@@ -81,12 +81,11 @@ enum TrainingStats {
 
         var bestByExercise: [String: Double] = [:]
         var recordsThisPeriod = 0
-        var hadPriorHistory = false
+        var hasWorkingSet = false
 
         for session in sessions {
             let finished = session.finishedAt ?? .distantPast
             let isInPeriod = finished >= start
-            if !isInPeriod { hadPriorHistory = true }
 
             for exercise in session.exercises {
                 let best = exercise.sets
@@ -94,6 +93,7 @@ enum TrainingStats {
                     .map { estimatedOneRepMax(weight: $0.weight, reps: $0.reps) }
                     .max()
                 guard let best else { continue }
+                hasWorkingSet = true
 
                 let previous = bestByExercise[exercise.exerciseId]
                 // The first time an exercise is ever performed sets a baseline,
@@ -108,7 +108,7 @@ enum TrainingStats {
             }
         }
 
-        guard hadPriorHistory || recordsThisPeriod > 0 else {
+        guard hasWorkingSet else {
             return Figure(
                 value: nil, label: "PRs",
                 absenceReason: "Nothing to compare against yet"

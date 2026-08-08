@@ -107,6 +107,44 @@ struct StateSnapshot: Codable {
     /// What the app has learned about this person — see `TrainingMemory`.
     /// Optional for the same reason as everything above it.
     var coachFeedback: [CoachFeedbackEntry]? = nil
+
+    init() {}
+
+    /// Decode every persisted collection leniently. Default property values are
+    /// not used by Swift's synthesised decoder when a key is absent, so adding a
+    /// non-optional field used to make an older save look corrupt and trigger a
+    /// first-launch reset.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        tasks = try c.decodeIfPresent([AppTask].self, forKey: .tasks) ?? []
+        taskLists = try c.decodeIfPresent([TaskList].self, forKey: .taskLists) ?? []
+        bills = try c.decodeIfPresent([Bill].self, forKey: .bills) ?? []
+        incomes = try c.decodeIfPresent([Income].self, forKey: .incomes) ?? []
+        oneOffExpenses = try c.decodeIfPresent([OneOffExpense].self, forKey: .oneOffExpenses) ?? []
+        moneySettings = try c.decodeIfPresent(MoneySettings.self, forKey: .moneySettings) ?? MoneySettings()
+        habits = try c.decodeIfPresent([Habit].self, forKey: .habits) ?? []
+        exercises = try c.decodeIfPresent([Exercise].self, forKey: .exercises) ?? []
+        routines = try c.decodeIfPresent([Routine].self, forKey: .routines) ?? []
+        sessions = try c.decodeIfPresent([WorkoutSession].self, forKey: .sessions) ?? []
+        weightEntries = try c.decodeIfPresent([WeightEntry].self, forKey: .weightEntries) ?? []
+        bodyCompEntries = try c.decodeIfPresent([BodyCompEntry].self, forKey: .bodyCompEntries) ?? []
+        bodyMeasurements = try c.decodeIfPresent([BodyMeasurement].self, forKey: .bodyMeasurements) ?? []
+        achievements = try c.decodeIfPresent([Achievement].self, forKey: .achievements) ?? []
+        programs = try c.decodeIfPresent([WorkoutProgram].self, forKey: .programs) ?? []
+        careDays = try c.decodeIfPresent([String: CareDay].self, forKey: .careDays) ?? [:]
+        careSettings = try c.decodeIfPresent(CareSettings.self, forKey: .careSettings) ?? CareSettings()
+        workoutSettings = try c.decodeIfPresent(WorkoutSettings.self, forKey: .workoutSettings) ?? WorkoutSettings()
+        userName = try c.decodeIfPresent(String.self, forKey: .userName) ?? ""
+        visitedLocations = try c.decodeIfPresent([VisitedLocation].self, forKey: .visitedLocations) ?? []
+        plannedSessions = try c.decodeIfPresent([PlannedSession].self, forKey: .plannedSessions) ?? []
+        supplements = try c.decodeIfPresent([Supplement].self, forKey: .supplements) ?? []
+        healthDays = try c.decodeIfPresent([String: HealthDay].self, forKey: .healthDays)
+        healthSettings = try c.decodeIfPresent(HealthSettings.self, forKey: .healthSettings)
+        sleepNights = try c.decodeIfPresent([String: SleepNight].self, forKey: .sleepNights)
+        sleepComparisons = try c.decodeIfPresent([String: SleepScoreComparison].self, forKey: .sleepComparisons)
+        coachSettings = try c.decodeIfPresent(CoachSettings.self, forKey: .coachSettings)
+        coachFeedback = try c.decodeIfPresent([CoachFeedbackEntry].self, forKey: .coachFeedback)
+    }
 }
 
 // MARK: - Snapshot Merging
@@ -134,7 +172,7 @@ extension StateSnapshot {
     static func merged(preferring winner: StateSnapshot, with loser: StateSnapshot) -> StateSnapshot {
         var out = winner
 
-        out.tasks = union(winner.tasks, loser.tasks)
+        out.tasks = mergeTasks(preferred: winner.tasks, other: loser.tasks)
         out.taskLists = union(winner.taskLists, loser.taskLists)
         out.bills = union(winner.bills, loser.bills)
         out.incomes = union(winner.incomes, loser.incomes)
@@ -200,6 +238,37 @@ extension StateSnapshot {
             out.append(item)
         }
         return out
+    }
+
+    /// Resolves the same task per record instead of letting the age of the
+    /// entire snapshot decide. A completion on one phone must beat an untouched
+    /// stale copy on another; a later explicit reopening must still be allowed.
+    private static func mergeTasks(preferred: [AppTask], other: [AppTask]) -> [AppTask] {
+        var byId = Dictionary(uniqueKeysWithValues: preferred.map { ($0.id, $0) })
+        var order = preferred.map(\.id)
+
+        for candidate in other {
+            guard let existing = byId[candidate.id] else {
+                byId[candidate.id] = candidate
+                order.append(candidate.id)
+                continue
+            }
+
+            switch (existing.modifiedAt, candidate.modifiedAt) {
+            case let (left?, right?) where right > left:
+                byId[candidate.id] = candidate
+            case (nil, .some):
+                byId[candidate.id] = candidate
+            case (nil, nil) where candidate.done && !existing.done:
+                // Compatibility for completions made before `modifiedAt`
+                // existed: completed wins over an otherwise indistinguishable
+                // unfinished copy.
+                byId[candidate.id] = candidate
+            default:
+                break
+            }
+        }
+        return order.compactMap { byId[$0] }
     }
 
     /// Union of two day-keyed maps, combining the entries present in both.
@@ -516,46 +585,54 @@ final class AppState {
     }
 
     func makeSnapshot() -> StateSnapshot {
-        StateSnapshot(
-            tasks: tasks,
-            taskLists: taskLists,
-            bills: bills,
-            incomes: incomes,
-            oneOffExpenses: oneOffExpenses,
-            moneySettings: moneySettings,
-            habits: habits,
-            exercises: exercises,
-            routines: routines,
-            sessions: sessions,
-            weightEntries: weightEntries,
-            bodyCompEntries: bodyCompEntries,
-            bodyMeasurements: bodyMeasurements,
-            achievements: achievements,
-            programs: programs,
-            careDays: careDays,
-            careSettings: careSettings,
-            workoutSettings: workoutSettings,
-            userName: userName,
-            visitedLocations: visitedLocations,
-            plannedSessions: plannedSessions,
-            supplements: supplements,
-            healthDays: healthDays,
-            healthSettings: healthSettings,
-            sleepNights: sleepNights,
-            sleepComparisons: sleepComparisons,
-            coachSettings: coachSettings,
-            coachFeedback: coachFeedback
-        )
+        var snapshot = StateSnapshot()
+        snapshot.tasks = tasks
+        snapshot.taskLists = taskLists
+        snapshot.bills = bills
+        snapshot.incomes = incomes
+        snapshot.oneOffExpenses = oneOffExpenses
+        snapshot.moneySettings = moneySettings
+        snapshot.habits = habits
+        snapshot.exercises = exercises
+        snapshot.routines = routines
+        snapshot.sessions = sessions
+        snapshot.weightEntries = weightEntries
+        snapshot.bodyCompEntries = bodyCompEntries
+        snapshot.bodyMeasurements = bodyMeasurements
+        snapshot.achievements = achievements
+        snapshot.programs = programs
+        snapshot.careDays = careDays
+        snapshot.careSettings = careSettings
+        snapshot.workoutSettings = workoutSettings
+        snapshot.userName = userName
+        snapshot.visitedLocations = visitedLocations
+        snapshot.plannedSessions = plannedSessions
+        snapshot.supplements = supplements
+        snapshot.healthDays = healthDays
+        snapshot.healthSettings = healthSettings
+        snapshot.sleepNights = sleepNights
+        snapshot.sleepComparisons = sleepComparisons
+        snapshot.coachSettings = coachSettings
+        snapshot.coachFeedback = coachFeedback
+        return snapshot
     }
 
     func apply(snapshot: StateSnapshot) {
-        tasks = snapshot.tasks
+        // Older versions stored relative labels such as `.tomorrow`. Freeze
+        // them to a real date on first load so they cannot roll forward forever.
+        tasks = snapshot.tasks.map { task in
+            guard task.dueDateOverride == nil, let preset = task.dueDate else { return task }
+            var migrated = task
+            migrated.dueDateOverride = preset.fixedDate()
+            migrated.dueDate = nil
+            return migrated
+        }
         taskLists = snapshot.taskLists.isEmpty ? Self.defaultTaskLists : snapshot.taskLists
         bills = snapshot.bills
         incomes = snapshot.incomes
         oneOffExpenses = snapshot.oneOffExpenses
         moneySettings = snapshot.moneySettings
-        habits = snapshot.habits
+        habits = Self.deduplicatedHabits(snapshot.habits)
         supplements = snapshot.supplements
         exercises = WorkoutSeed.mergeExercises(into: snapshot.exercises)
         routines = snapshot.routines.isEmpty ? WorkoutSeed.routines : snapshot.routines
@@ -577,6 +654,47 @@ final class AppState {
         sleepComparisons = snapshot.sleepComparisons ?? [:]
         coachSettings = snapshot.coachSettings ?? CoachSettings()
         coachFeedback = snapshot.coachFeedback ?? []
+    }
+
+    /// Collapses exact duplicate habit definitions created by older seed/merge
+    /// behaviour. Logs are combined by day without adding counts together, so
+    /// removing duplicates cannot manufacture extra progress.
+    private static func deduplicatedHabits(_ habits: [Habit]) -> [Habit] {
+        var result: [Habit] = []
+        var indexBySignature: [String: Int] = [:]
+
+        for habit in habits {
+            let signature = [
+                habit.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+                habit.kind.rawValue,
+                habit.cadence.rawValue,
+                habit.targetType.rawValue,
+                String(habit.targetCount),
+                habit.targetUnit.lowercased()
+            ].joined(separator: "|")
+
+            guard let existingIndex = indexBySignature[signature] else {
+                indexBySignature[signature] = result.count
+                result.append(habit)
+                continue
+            }
+
+            var existing = result[existingIndex]
+            for incoming in habit.logs {
+                if let logIndex = existing.logs.firstIndex(where: { $0.dayKey == incoming.dayKey }) {
+                    existing.logs[logIndex].count = max(existing.logs[logIndex].count, incoming.count)
+                    existing.logs[logIndex].slipped = existing.logs[logIndex].slipped || incoming.slipped
+                    if existing.logs[logIndex].note.isEmpty {
+                        existing.logs[logIndex].note = incoming.note
+                    }
+                } else {
+                    existing.logs.append(incoming)
+                }
+            }
+            existing.createdAt = min(existing.createdAt, habit.createdAt)
+            result[existingIndex] = existing
+        }
+        return result
     }
 
     // MARK: Cloud Sync
@@ -675,6 +793,27 @@ final class AppState {
                 syncState = .failed(error.localizedDescription)
             }
         }
+
+        if cloudUserId == userId {
+            FirestoreSync.shared.startListening(userId: userId) { [weak self] downloaded in
+                self?.applyRemoteUpdate(downloaded)
+            }
+        }
+    }
+
+    /// Applies a server-confirmed update without echoing it straight back to
+    /// Firestore. Record-level merge rules preserve newer local edits while a
+    /// completion made on another device becomes visible immediately.
+    private func applyRemoteUpdate(_ downloaded: FirestoreSync.DownloadedSnapshot) {
+        guard cloudUserId != nil, !isLoadingFromCloud else { return }
+        let merged = StateSnapshot.merged(
+            preferring: downloaded.snapshot,
+            with: makeSnapshot()
+        )
+        apply(snapshot: merged)
+        localLastModified = max(localLastModified, downloaded.updatedAt)
+        syncState = .synced(Date())
+        persistLocally()
     }
 
     /// Writes the current state to disk without touching the cloud or the
@@ -692,6 +831,7 @@ final class AppState {
         // Cancel any queued upload so a debounced write from the previous
         // session can't fire after sign-out and leak data into the cloud.
         FirestoreSync.shared.cancelPending()
+        FirestoreSync.shared.stopListening()
         cloudUserId = nil
         syncState = .idle
     }
@@ -802,12 +942,23 @@ final class AppState {
     // MARK: - Task Mutations
 
     func addTask(title: String, listId: String = "personal", dueDate: DueDate, priority: TaskPriority = .none, notes: String = "", dueDateOverride: Date? = nil) {
-        var task = AppTask(title: title, listId: listId, dueDate: dueDate)
+        var task = AppTask(title: title, listId: listId, dueDate: nil)
         task.priority = priority
         task.notes = notes
-        task.dueDateOverride = dueDateOverride
+        task.dueDateOverride = Calendar.current.startOfDay(for: dueDateOverride ?? dueDate.fixedDate())
+        task.modifiedAt = Date()
         tasks.append(task)
         save()
+    }
+
+    /// Stores an absolute day. Presets are resolved immediately and never move
+    /// when the app crosses midnight.
+    func scheduleTask(id: String, on date: Date?) {
+        updateTask(
+            id: id,
+            dueDate: .some(nil),
+            dueDateOverride: .some(date.map { Calendar.current.startOfDay(for: $0) })
+        )
     }
 
     func toggleTask(id: String) {
@@ -816,6 +967,7 @@ final class AppState {
         let recurrenceType = tasks[idx].recurrenceType
         tasks[idx].done.toggle()
         tasks[idx].completedAt = tasks[idx].done ? Date() : nil
+        tasks[idx].modifiedAt = Date()
         if tasks[idx].done { NotificationsManager.shared.cancelTaskReminder(taskId: id) }
 
         // Advance recurring task to next period when checked off
@@ -883,6 +1035,7 @@ final class AppState {
         if let em = estimatedMinutes { tasks[idx].estimatedMinutes = em; otherFieldsChanged = true }
         if let rec = isRecurring { tasks[idx].isRecurring = rec; otherFieldsChanged = true }
         if let rt = recurrenceType { tasks[idx].recurrenceType = rt; otherFieldsChanged = true }
+        tasks[idx].modifiedAt = Date()
         if isTextOnly && !otherFieldsChanged {
             saveDebounced()
         } else {
@@ -895,6 +1048,7 @@ final class AppState {
     func addSubtask(taskId: String, title: String) {
         guard let idx = tasks.firstIndex(where: { $0.id == taskId }) else { return }
         tasks[idx].subtasks.append(Subtask(title: title))
+        tasks[idx].modifiedAt = Date()
         save()
     }
 
@@ -902,12 +1056,14 @@ final class AppState {
         guard let tIdx = tasks.firstIndex(where: { $0.id == taskId }),
               let sIdx = tasks[tIdx].subtasks.firstIndex(where: { $0.id == subtaskId }) else { return }
         tasks[tIdx].subtasks[sIdx].done.toggle()
+        tasks[tIdx].modifiedAt = Date()
         save()
     }
 
     func deleteSubtask(taskId: String, subtaskId: String) {
         guard let idx = tasks.firstIndex(where: { $0.id == taskId }) else { return }
         tasks[idx].subtasks.removeAll { $0.id == subtaskId }
+        tasks[idx].modifiedAt = Date()
         save()
     }
 
@@ -1725,7 +1881,7 @@ final class AppState {
 
     /// Backfills step counts for past days without touching anything else on
     /// those records.
-    func mergeSteps(_ stepsByDay: [String: Int]) {
+    func mergeSteps(_ stepsByDay: [String: Int], keepHighestToday: Bool = true) {
         guard !stepsByDay.isEmpty else { return }
         for (key, steps) in stepsByDay {
             var day = careDays[key] ?? CareDay(dayKey: key)
@@ -1737,7 +1893,10 @@ final class AppState {
             // Past days stay a straight overwrite: there the source is
             // authoritative and a correction should be allowed to reduce the
             // number, which a max() would silently block forever.
-            day.steps = key == todayKey ? max(day.steps, max(0, steps)) : max(0, steps)
+            let incoming = max(0, steps)
+            day.steps = key == todayKey && keepHighestToday
+                ? max(day.steps, incoming)
+                : incoming
             careDays[key] = day
         }
         save(markingUserData: false)

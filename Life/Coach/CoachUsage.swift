@@ -1,5 +1,17 @@
 import Foundation
 
+/// JSON numbers can arrive as `Int`, `Double`, or `NSNumber` depending on
+/// whether the response came from a test double, `JSONSerialization`, or an
+/// Objective-C bridge. Usage accounting must accept all of them or a paid call
+/// is recorded with zero tokens.
+func coachUsageInteger(_ value: Any?) -> Int {
+    if let value = value as? Int { return value }
+    if let value = value as? NSNumber { return value.intValue }
+    if let value = value as? Double { return Int(value) }
+    if let value = value as? Int64 { return Int(value) }
+    return 0
+}
+
 // MARK: - Coach Usage
 
 /// What the coach has cost this month, recorded on the device.

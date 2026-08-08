@@ -54,6 +54,8 @@ final class FirestoreSync {
     /// (HealthKit completions, location updates) can't race the timer.
     private let queue = DispatchQueue(label: "uk.co.prolineroofingandsolar.life.FirestoreSync")
     private var debounceWork: DispatchWorkItem?
+    private var listener: ListenerRegistration?
+    private var listeningUserId: String?
 
     /// The most recent snapshot handed to `scheduleUpload`, kept so a debounced
     /// write can be forced out early and so a failed upload has something to
@@ -170,6 +172,48 @@ final class FirestoreSync {
         // to distantPast (never wins a "who's newer" comparison) if missing.
         let updatedAt = (doc.data()?["clientUpdatedAt"] as? Timestamp)?.dateValue() ?? .distantPast
         return DownloadedSnapshot(snapshot: snapshot, updatedAt: updatedAt)
+    }
+
+    /// Keeps an already signed-in device current when another device writes.
+    /// Pending local cache events are ignored; only a server-confirmed snapshot
+    /// is handed to AppState.
+    func startListening(
+        userId: String,
+        onChange: @escaping (DownloadedSnapshot) -> Void
+    ) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            if self.listeningUserId == userId, self.listener != nil { return }
+            self.listener?.remove()
+            self.listeningUserId = userId
+
+            let ref = self.db.collection("users").document(userId)
+                .collection("state").document("snapshot")
+            self.listener = ref.addSnapshotListener { document, error in
+                guard error == nil,
+                      let document,
+                      document.exists,
+                      !document.metadata.hasPendingWrites,
+                      let json = document.data()?["json"] as? String,
+                      let data = json.data(using: .utf8),
+                      let snapshot = try? Self.decoder.decode(StateSnapshot.self, from: data)
+                else { return }
+
+                let updatedAt = (document.data()?["clientUpdatedAt"] as? Timestamp)?.dateValue()
+                    ?? .distantPast
+                DispatchQueue.main.async {
+                    onChange(DownloadedSnapshot(snapshot: snapshot, updatedAt: updatedAt))
+                }
+            }
+        }
+    }
+
+    func stopListening() {
+        queue.async { [weak self] in
+            self?.listener?.remove()
+            self?.listener = nil
+            self?.listeningUserId = nil
+        }
     }
 
     // MARK: - Private

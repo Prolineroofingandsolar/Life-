@@ -39,6 +39,16 @@ struct DateHandlingTests {
 
     // MARK: Local midnight
 
+    @Test("Tomorrow resolves to a fixed calendar date")
+    func tomorrowBecomesFixedDate() {
+        let calendar = Self.calendar("Europe/London")
+        let chosenOn = Self.date(2026, 8, 7, 22, 30, zone: "Europe/London")
+        let fixed = DueDate.tomorrow.fixedDate(from: chosenOn, calendar: calendar)
+
+        #expect(DayKey.string(for: fixed, calendar: calendar) == "2026-08-08")
+        #expect(calendar.component(.hour, from: fixed) == 0)
+    }
+
     @Test("The day key flips at local midnight, not at any other hour")
     func dayKeyFlipsAtLocalMidnight() {
         let london = Self.calendar("Europe/London")

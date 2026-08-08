@@ -135,6 +135,34 @@ struct IntervalReductionTests {
     }
 }
 
+// MARK: - Authoritative step source
+
+@MainActor
+struct StepMergeTests {
+
+    @Test("Fitbit replaces an Apple Health value for today")
+    func fitbitIsAuthoritativeForToday() {
+        let state = AppState()
+        state.careDays = [:]
+        state.syncSteps(9_000)
+
+        state.mergeSteps([state.todayKey: 7_000], keepHighestToday: false)
+
+        #expect(state.careDays[state.todayKey]?.steps == 7_000)
+    }
+
+    @Test("Ordinary same-source refreshes still prevent a temporary drop")
+    func defaultMergeKeepsTodaysHigherReading() {
+        let state = AppState()
+        state.careDays = [:]
+        state.syncSteps(9_000)
+
+        state.mergeSteps([state.todayKey: 7_000])
+
+        #expect(state.careDays[state.todayKey]?.steps == 9_000)
+    }
+}
+
 // MARK: - Snapshot merging
 
 /// Sign-in must never be able to lose a workout. The merge is the last line of
@@ -147,6 +175,59 @@ struct SnapshotMergeTests {
         out.id = id
         out.finishedAt = Date()
         return out
+    }
+
+    @Test func newerTaskCompletionWinsAcrossDevices() {
+        let id = "shared-task"
+        var unfinished = AppTask(id: id, title: "Send quote", done: false)
+        unfinished.modifiedAt = Date(timeIntervalSince1970: 100)
+        var completed = unfinished
+        completed.done = true
+        completed.completedAt = Date(timeIntervalSince1970: 200)
+        completed.modifiedAt = Date(timeIntervalSince1970: 200)
+
+        var deviceA = StateSnapshot()
+        deviceA.tasks = [unfinished]
+        var deviceB = StateSnapshot()
+        deviceB.tasks = [completed]
+
+        let merged = StateSnapshot.merged(preferring: deviceA, with: deviceB)
+        #expect(merged.tasks.first?.done == true)
+    }
+
+    @Test func explicitNewerReopenWinsAcrossDevices() {
+        let id = "shared-task"
+        var completed = AppTask(id: id, title: "Send quote", done: true)
+        completed.completedAt = Date(timeIntervalSince1970: 100)
+        completed.modifiedAt = Date(timeIntervalSince1970: 100)
+        var reopened = completed
+        reopened.done = false
+        reopened.completedAt = nil
+        reopened.modifiedAt = Date(timeIntervalSince1970: 200)
+
+        var deviceA = StateSnapshot()
+        deviceA.tasks = [completed]
+        var deviceB = StateSnapshot()
+        deviceB.tasks = [reopened]
+
+        let merged = StateSnapshot.merged(preferring: deviceA, with: deviceB)
+        #expect(merged.tasks.first?.done == false)
+    }
+
+    @Test func legacyCompletionBeatsLegacyUnfinishedCopy() {
+        let id = "legacy-task"
+        let unfinished = AppTask(id: id, title: "Old task", done: false)
+        var completed = unfinished
+        completed.done = true
+        completed.completedAt = Date(timeIntervalSince1970: 100)
+
+        var deviceA = StateSnapshot()
+        deviceA.tasks = [unfinished]
+        var deviceB = StateSnapshot()
+        deviceB.tasks = [completed]
+
+        let merged = StateSnapshot.merged(preferring: deviceA, with: deviceB)
+        #expect(merged.tasks.first?.done == true)
     }
 
     @Test func mergeKeepsSessionsFromBothSides() {

@@ -23,6 +23,9 @@ enum CoachActionType: String, Codable, CaseIterable, Sendable {
     case rest
     case logMissingData
     case reviewGoal
+    /// A new, temporary action Gemini has composed from the person's context.
+    /// It can only be pinned into Autopilot; it has no mutation attached.
+    case custom
     /// Advice with nothing to press. Not a failure — sometimes the right
     /// suggestion is "you're on track, carry on".
     case none
@@ -35,7 +38,7 @@ enum CoachActionType: String, Codable, CaseIterable, Sendable {
         case .completeTask, .scheduleTask, .rescheduleTask, .completeHabit:
             return true
         case .doPlannedWorkout, .reduceWorkoutIntensity, .takeWalk, .rest,
-             .logMissingData, .reviewGoal, .none:
+             .logMissingData, .reviewGoal, .custom, .none:
             return false
         }
     }

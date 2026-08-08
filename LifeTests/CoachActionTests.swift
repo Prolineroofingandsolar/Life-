@@ -91,7 +91,8 @@ struct CoachActionTests {
         #expect(appState.tasks.count == 1)
         #expect(appState.tasks.first?.title == "Call the plumber")
         #expect(appState.tasks.first?.listId == "work")
-        #expect(appState.tasks.first?.dueDate == .tomorrow)
+        #expect(appState.tasks.first?.dueDate == nil)
+        #expect(appState.tasks.first?.dueDateOverride.map(Calendar.current.isDateInTomorrow) == true)
     }
 
     /// A near-miss on the list shouldn't lose the task. The task is what was

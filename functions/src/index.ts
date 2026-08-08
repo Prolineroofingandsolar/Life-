@@ -259,6 +259,11 @@ Your job: the single best next action for right now, and the insight behind it.
 - Reach for the pattern first. "You've trained on four of the last five days
   after a seven-hour night, and last night was six" is the kind of sentence this
   card exists for.
+- You may use actionType "custom" for a small, safe preparation, planning or
+  recovery action that is not already represented by another action type. It
+  must be achievable today, take 1–240 minutes, require no link or purchase,
+  and never prescribe medication, supplements or medical treatment. The app
+  will only offer to pin it as next; it will not execute it.
 - If the data is genuinely too thin, say so plainly and make the action the
   thing that fixes it. That is a real answer, not a failure.
 `.trim(),

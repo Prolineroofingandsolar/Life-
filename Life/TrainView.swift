@@ -35,6 +35,12 @@ struct TrainView: View {
     /// Drift signals being reviewed. Empty dismisses the sheet.
     @State private var driftSignals: [DriftEngine.Signal] = []
     @State private var showAutomations = false
+    /// A destination chosen inside the Automations sheet.
+    ///
+    /// Presenting another sheet while Automations is still dismissing loses
+    /// the second presentation on iOS. Keep the destination until the first
+    /// sheet has finished closing, then route it from `onDismiss`.
+    @State private var pendingAutomationDestination: AutomationOutcome.Destination?
     @State private var deloadProposal: DeloadEngine.Proposal?
     @State private var plateauFinding: PlateauEngine.Finding?
     @State private var adjustingRoutineId: String?
@@ -364,9 +370,13 @@ struct TrainView: View {
                     builderKind = .plan
                 }
             }
-            .sheet(isPresented: $showAutomations) {
+            .sheet(isPresented: $showAutomations, onDismiss: {
+                guard let destination = pendingAutomationDestination else { return }
+                pendingAutomationDestination = nil
+                open(destination)
+            }) {
                 AutomationsView { destination in
-                    open(destination)
+                    pendingAutomationDestination = destination
                 }
             }
             .sheet(item: $plateauFinding) { finding in

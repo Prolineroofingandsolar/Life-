@@ -249,9 +249,9 @@ private struct TaskRow: View {
                             Circle().fill(list?.color ?? .secondary).frame(width: 6, height: 6)
                             Text(list?.name ?? "").font(.caption).foregroundColor(.secondary)
                             Text("·").foregroundColor(.secondary).font(.caption)
-                            Text(task.dueDate?.label ?? "")
+                            Text(task.dueDateLabel)
                                 .font(.caption)
-                                .foregroundColor(task.dueDate == .today ? .orange : .secondary)
+                                .foregroundColor(task.resolvedDate.map(Calendar.current.isDateInToday) == true ? .orange : .secondary)
                             if !task.notes.isEmpty {
                                 Image(systemName: "note.text").font(.caption2).foregroundColor(.secondary)
                             }
@@ -333,20 +333,30 @@ private struct TaskRow: View {
                         Text("Due").font(.caption).foregroundColor(.secondary)
                         ForEach(DueDate.allCases) { d in
                             Button {
-                                appState.updateTask(id: task.id, dueDate: d)
+                                appState.scheduleTask(id: task.id, on: d.fixedDate())
                                 HapticManager.selection()
                             } label: {
                                 Text(d.label)
                                     .font(.caption)
                                     .padding(.horizontal, 8)
                                     .padding(.vertical, 4)
-                                    .background(task.dueDate == d ? AppTheme.primary : Color(.tertiarySystemFill))
-                                    .foregroundColor(task.dueDate == d ? .white : .secondary)
+                                    .background(isDue(task, on: d.fixedDate()) ? AppTheme.primary : Color(.tertiarySystemFill))
+                                    .foregroundColor(isDue(task, on: d.fixedDate()) ? .white : .secondary)
                                     .cornerRadius(6)
                             }
                             .buttonStyle(.plain)
                         }
                     }
+
+                    DatePicker(
+                        "Choose date",
+                        selection: Binding(
+                            get: { task.resolvedDate ?? Date() },
+                            set: { appState.scheduleTask(id: task.id, on: $0) }
+                        ),
+                        displayedComponents: .date
+                    )
+                    .font(.caption)
 
                     // Notes
                     TextField("Add a note...", text: $draftNotes, axis: .vertical)
@@ -417,6 +427,11 @@ private struct TaskRow: View {
                 Label("Delete", systemImage: "trash")
             }
         }
+    }
+
+    private func isDue(_ task: AppTask, on date: Date) -> Bool {
+        guard let due = task.resolvedDate else { return false }
+        return Calendar.current.isDate(due, inSameDayAs: date)
     }
 }
 
@@ -704,10 +719,15 @@ struct AddTaskSheet: View {
 
     @State private var title = ""
     @State private var listId: String = "personal"
-    @State private var dueDate: DueDate = .today
+    @State private var selectedDate: Date
     @State private var priority: TaskPriority = .none
     @State private var notes = ""
     @FocusState private var isTitleFocused: Bool
+
+    init(presetDate: Date? = nil) {
+        self.presetDate = presetDate
+        _selectedDate = State(initialValue: presetDate ?? Date())
+    }
 
     var body: some View {
         NavigationStack {
@@ -728,11 +748,17 @@ struct AddTaskSheet: View {
                         }
                     }
 
-                    Picker("Due Date", selection: $dueDate) {
-                        ForEach(DueDate.allCases) { d in
-                            Text(d.label).tag(d)
+                    HStack {
+                        ForEach(DueDate.allCases) { preset in
+                            Button(preset.label) {
+                                selectedDate = preset.fixedDate()
+                            }
+                            .buttonStyle(.bordered)
                         }
                     }
+
+                    DatePicker("Due Date", selection: $selectedDate, displayedComponents: .date)
+                        .datePickerStyle(.graphical)
 
                     Picker("Priority", selection: $priority) {
                         ForEach(TaskPriority.allCases) { p in
@@ -759,10 +785,10 @@ struct AddTaskSheet: View {
                         appState.addTask(
                             title: title.trimmingCharacters(in: .whitespaces),
                             listId: listId,
-                            dueDate: dueDate,
+                            dueDate: .today,
                             priority: priority,
                             notes: notes,
-                            dueDateOverride: presetDate
+                            dueDateOverride: selectedDate
                         )
                         dismiss()
                     }
