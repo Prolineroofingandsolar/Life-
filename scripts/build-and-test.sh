@@ -34,6 +34,33 @@ if ! command -v xcodebuild >/dev/null 2>&1; then
     exit 1
 fi
 
+# The Command Line Tools ship an xcodebuild stub, so the check above passes
+# even when no real Xcode is selected — and then the failure surfaces several
+# steps later as a confusing "unable to find utility simctl". Catch it here,
+# where the message can say what to actually do.
+DEVELOPER_DIR_PATH=$(xcode-select -p 2>/dev/null || true)
+if ! xcrun --find simctl >/dev/null 2>&1; then
+    echo "The active developer directory is:"
+    echo "    ${DEVELOPER_DIR_PATH:-<none>}"
+    echo
+    echo "That is the Command Line Tools, not a full Xcode, so there is no"
+    echo "iOS simulator and no iOS SDK. Building an iPhone app needs Xcode."
+    echo
+    FOUND_XCODE=$(ls -d /Applications/Xcode*.app 2>/dev/null | head -1)
+    if [ -n "$FOUND_XCODE" ]; then
+        echo "Xcode is installed at $FOUND_XCODE — point the tools at it with:"
+        echo
+        echo "    sudo xcode-select -s \"$FOUND_XCODE/Contents/Developer\""
+    else
+        echo "No Xcode found in /Applications. Install it from the App Store,"
+        echo "open it once to accept the licence and let it install components,"
+        echo "then run:"
+        echo
+        echo "    sudo xcode-select -s /Applications/Xcode.app/Contents/Developer"
+    fi
+    exit 1
+fi
+
 # Pick whatever iPhone simulator this Mac actually has, rather than pinning a
 # model that may not be installed.
 DEVICE=$(xcrun simctl list devices available \
