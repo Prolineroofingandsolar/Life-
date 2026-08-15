@@ -4,10 +4,14 @@
 <dict>
 	<key>com.apple.developer.healthkit</key>
 	<true/>
-	<key>com.apple.developer.healthkit.access</key>
-	<array>
-		<string>health-records</string>
-	</array>
+	<!-- No `com.apple.developer.healthkit.access` key, deliberately.
+	     `health-records` is clinical data — lab results, medications,
+	     immunisations from a healthcare provider — and Life reads none of it:
+	     HealthKitManager asks only for standard quantity and category types.
+	     It is a restricted capability that automatic signing cannot provision
+	     unless the App ID is specially approved, so requesting it produced
+	     repeated Signing & Capabilities failures on device builds. Plain
+	     HealthKit provisions cleanly. -->
 	<!-- Required for HKObserverQuery to wake the app in the background.
 	     Without it the observers only fire while Life is in the foreground,
 	     which is the feature not working rather than an error. -->
