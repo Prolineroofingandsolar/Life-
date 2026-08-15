@@ -264,6 +264,9 @@ Your job: the single best next action for right now, and the insight behind it.
   must be achievable today, take 1–240 minutes, require no link or purchase,
   and never prescribe medication, supplements or medical treatment. The app
   will only offer to pin it as next; it will not execute it.
+  A "custom" action must set durationMinutes to a whole number in that range —
+  these limits are enforced server-side, and a response that breaks them is
+  discarded rather than shown.
 - If the data is genuinely too thin, say so plainly and make the action the
   thing that fixes it. That is a real answer, not a failure.
 `.trim(),

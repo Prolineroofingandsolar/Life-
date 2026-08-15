@@ -212,6 +212,13 @@ export function validateAsk(value: unknown): ValidationResult {
     return { ok: false, reason: "response contained a URL" };
   }
 
+  // Ask returns the longest free prose the coach produces, so the medical and
+  // commercial floor matters here at least as much as on a recommendation card.
+  const content = checkForbiddenContent(v);
+  if (!content.ok) {
+    return content;
+  }
+
   return { ok: true };
 }
 
@@ -239,6 +246,54 @@ export const BRIEFING_SCHEMA = {
 export type ValidationResult =
   | { ok: true }
   | { ok: false; reason: string };
+
+/** A `custom` action must be doable today. Mirrors the wording in the prompt. */
+export const MIN_CUSTOM_DURATION_MINUTES = 1;
+export const MAX_CUSTOM_DURATION_MINUTES = 240;
+
+/**
+ * Medical and commercial language the coach must never produce.
+ *
+ * The system prompt already tells the model to "never prescribe medication,
+ * supplements or medical treatment" and to require "no link or purchase". That
+ * instruction is guidance, not a control: it lives in the same channel as the
+ * user's own text and is exactly what a prompt injection sets out to override.
+ * Every other risky mode in this file has a code-level gate behind its prompt,
+ * and this one did not.
+ *
+ * Applied to the whole response rather than only to `custom` actions, because
+ * the constraint is about what appears on screen and the headline and summary
+ * are shown whatever the action type is.
+ *
+ * Tuned to over-reject. A false positive costs one recommendation and falls
+ * back to Life's own rules, which is a supported state; a false negative is an
+ * app built for ADHD brains suggesting a dose of something.
+ */
+const FORBIDDEN_CONTENT: ReadonlyArray<readonly [RegExp, string]> = [
+  [/\b(medication|medicine|prescri\w+|dosage|antibiotic|steroid)\b/i, "medical language"],
+  [/\b\d+\s?(mg|mcg|ml|iu)\b/i, "a dose"],
+  [/\b(supplement|creatine|melatonin|ibuprofen|paracetamol|acetaminophen|caffeine pill)\w*\b/i, "a supplement"],
+  [/\b(pill|tablet|capsule|sachet)s?\b/i, "a medicinal form"],
+  [/\b(buy|purchase|checkout|subscribe|preorder|pre-order)\b/i, "a purchase"],
+  [/\badd to (cart|basket)\b/i, "a purchase"],
+  [/[£$€]\s?\d/, "a price"],
+];
+
+/**
+ * Rejects a response whose text strays into medical or commercial territory.
+ *
+ * Exported so the same floor applies wherever model prose reaches the user,
+ * and so the term list is testable in isolation.
+ */
+export function checkForbiddenContent(value: unknown): ValidationResult {
+  const text = JSON.stringify(value);
+  for (const [pattern, description] of FORBIDDEN_CONTENT) {
+    if (pattern.test(text)) {
+      return { ok: false, reason: `response mentioned ${description}` };
+    }
+  }
+  return { ok: true };
+}
 
 /**
  * Checks a parsed response before it is returned to the app.
@@ -292,6 +347,31 @@ export function validateRecommendation(value: unknown): ValidationResult {
   const text = JSON.stringify(v);
   if (/https?:\/\//i.test(text)) {
     return { ok: false, reason: "response contained a URL" };
+  }
+
+  // `custom` is the one open-ended action: every other type names something the
+  // app already knows how to do, so its meaning is fixed by the enum. `custom`
+  // is whatever the model wrote, and it arrived here constrained only by prompt
+  // text. These are the same limits that text states, enforced where they hold.
+  if (v.actionType === "custom") {
+    const duration = v.durationMinutes;
+    if (typeof duration !== "number" || !Number.isInteger(duration)) {
+      return { ok: false, reason: "custom action needs a whole number of minutes" };
+    }
+    if (
+      duration < MIN_CUSTOM_DURATION_MINUTES ||
+      duration > MAX_CUSTOM_DURATION_MINUTES
+    ) {
+      return {
+        ok: false,
+        reason: `custom action must take ${MIN_CUSTOM_DURATION_MINUTES}–${MAX_CUSTOM_DURATION_MINUTES} minutes`,
+      };
+    }
+  }
+
+  const content = checkForbiddenContent(v);
+  if (!content.ok) {
+    return content;
   }
 
   return { ok: true };
