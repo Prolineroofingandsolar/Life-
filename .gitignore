@@ -54,3 +54,5 @@ firebase-debug.*.log
 .firebase/
 firestore-debug.log
 ui-debug.log
+pglite-debug.log
+functions/firestore-debug.log

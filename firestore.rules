@@ -1,0 +1,75 @@
+rules_version = '2';
+
+// Security rules for the Life app.
+//
+// Two things write to this database, and nothing else should:
+//
+//   /users/{uid}/state/snapshot      the whole app state as one JSON string,
+//                                    written by Life/FirestoreSync.swift from
+//                                    the signed-in device
+//   /users/{uid}/coachUsage/{month}  request counts and estimated spend,
+//                                    written by functions/src/limits.ts
+//
+// A note on how these rules work, because it determines the shape of the file:
+// Firestore rules are additive and default-deny, and there is no way to write a
+// rule that *revokes* access. An `allow read, write: if false` catch-all does
+// nothing whatsoever except make the author feel safer. Security here therefore
+// comes from what is NOT granted, which means the dangerous edit is an
+// accidental addition, not a deletion. The rules tests assert the absence of
+// the grants that matter for exactly that reason — see functions/test/rules.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    match /users/{uid} {
+
+      // The parent document itself holds nothing and is never written. Not
+      // granting anything here is the whole point; do not add a rule.
+
+      // The app-state snapshot. One document, one owner, one shape.
+      //
+      // `json` carries the entire StateSnapshot — every task, workout, habit
+      // and health figure the user has. It is the most sensitive document in
+      // the system and is readable only by the account that wrote it.
+      match /state/{docId} {
+        allow read: if isOwner(uid);
+
+        // FirestoreSync writes { json, updatedAt, clientUpdatedAt,
+        // schemaVersion } with merge: true. Extra keys are tolerated so a
+        // future schema version can add fields without a rules deploy, but
+        // `json` must be a string and must stay under Firestore's 1 MiB
+        // document ceiling. The client already refuses to send more than
+        // 900,000 bytes (FirestoreSync.swift); this is the same guard on the
+        // side that a modified client cannot bypass.
+        allow write: if isOwner(uid)
+                     && docId == 'snapshot'
+                     && request.resource.data.json is string
+                     && request.resource.data.json.size() <= 1000000;
+      }
+
+      // Rate-limit and spend counters.
+      //
+      // NOTHING is granted here, deliberately. The Admin SDK used by
+      // functions/src/limits.ts bypasses rules entirely, so the server keeps
+      // working; the client has no grant at all and therefore cannot touch
+      // these documents.
+      //
+      // This is not tidiness. `reserveCall` enforces the hourly request limit
+      // and the monthly cost ceiling by reading and writing this document, and
+      // that ceiling is the only thing standing between a compromised account
+      // and an unbounded Gemini bill. A client write grant here — even
+      // owner-scoped — would let any user zero their own counter and spend
+      // without limit.
+      //
+      // The client never reads it either: Swift reaches usage figures through
+      // the `coachUsage` callable (functions/src/index.ts), not through
+      // Firestore. Verified — Life/FirestoreSync.swift holds the only Firestore
+      // path in the whole app.
+      //
+      //   match /coachUsage/{month} { }   <- intentionally absent
+    }
+  }
+}
