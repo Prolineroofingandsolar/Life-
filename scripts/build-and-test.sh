@@ -9,12 +9,30 @@
 #
 #   ./scripts/build-and-test.sh
 #
+# The complete, untruncated xcodebuild output is always written to
+# build-log.txt (gitignored) regardless of whether the build succeeds. If the
+# summary below isn't enough to work from, send that file — it holds the
+# `note:` lines, carets and overload candidates that decide whether a fix is
+# one line or twenty.
+#
+# Environment overrides:
+#   SCHEME=LifeTasksWidgetExtension   build the widget in isolation
+#   SKIP_TESTS=1                      build only, don't run the suite
+#
 set -uo pipefail
 
 cd "$(dirname "$0")/.."
 
 PROJECT="Life.xcodeproj"
 SCHEME="${SCHEME:-Life}"
+BUILD_LOG="build-log.txt"
+TEST_LOG="test-log.txt"
+
+if ! command -v xcodebuild >/dev/null 2>&1; then
+    echo "xcodebuild not found. This script must run on a Mac with Xcode"
+    echo "installed, and Xcode must have been opened once to accept its licence."
+    exit 1
+fi
 
 # Pick whatever iPhone simulator this Mac actually has, rather than pinning a
 # model that may not be installed.
@@ -29,33 +47,91 @@ if [ -z "$DEVICE" ]; then
 fi
 
 DESTINATION="platform=iOS Simulator,name=$DEVICE"
+
+echo "==> Xcode:       $(xcodebuild -version | head -1)"
 echo "==> Scheme:      $SCHEME"
 echo "==> Destination: $DESTINATION"
+echo "==> Full log:    $BUILD_LOG"
 echo
 
-echo "==> Building"
+# Summarises a log: every error with surrounding context, uncapped, then a
+# count. Context matters more than brevity here — a bare `error:` line rarely
+# says enough to fix anything.
+summarise() {
+    local log="$1"
+    local count
+    count=$(grep -c 'error:' "$log" 2>/dev/null || true)
+    count=${count:-0}
+
+    if [ "$count" -gt 0 ]; then
+        echo
+        echo "==> Errors, with context ($count total):"
+        echo
+        grep -n -B1 -A3 'error:' "$log"
+    fi
+
+    echo
+    echo "==> Unique error lines:"
+    grep -o 'error:.*' "$log" | sort | uniq -c | sort -rn
+
+    echo
+    echo "==> $count error line(s). Full log: $log"
+}
+
+echo "==> Building (first run also resolves the Firebase SPM package, which is slow)"
 xcodebuild build \
     -project "$PROJECT" \
     -scheme "$SCHEME" \
     -destination "$DESTINATION" \
-    -quiet 2>&1 | grep -E 'error:|warning:|BUILD' | head -80
-BUILD_STATUS=${PIPESTATUS[0]}
+    > "$BUILD_LOG" 2>&1
+BUILD_STATUS=$?
+
+grep -E '^\s*(BUILD|\*\* BUILD)' "$BUILD_LOG" || true
 
 if [ "$BUILD_STATUS" -ne 0 ]; then
     echo
-    echo "==> BUILD FAILED. Full errors:"
-    xcodebuild build \
-        -project "$PROJECT" \
-        -scheme "$SCHEME" \
-        -destination "$DESTINATION" 2>&1 | grep -E 'error:' | sort -u
+    echo "==> BUILD FAILED"
+
+    # Package resolution failing is a different animal from a compile error and
+    # should not be triaged as one.
+    if grep -qiE 'could not resolve package|failed to resolve dependencies|xcodebuild: error: Could not resolve' "$BUILD_LOG"; then
+        echo
+        echo "!!! This looks like a Swift Package resolution failure, not a compile"
+        echo "!!! error. Check network access to github.com and try again before"
+        echo "!!! reading anything below as a code problem."
+    fi
+
+    summarise "$BUILD_LOG"
     exit "$BUILD_STATUS"
 fi
 
+echo "==> BUILD SUCCEEDED"
+
+if [ "${SKIP_TESTS:-0}" = "1" ]; then
+    echo "==> SKIP_TESTS=1, stopping here."
+    exit 0
+fi
+
 echo
-echo "==> Running tests"
+echo "==> Running tests (full log: $TEST_LOG)"
 xcodebuild test \
     -project "$PROJECT" \
     -scheme "$SCHEME" \
-    -destination "$DESTINATION" 2>&1 \
-    | grep -E 'error:|Test Case|Test Suite|✔|✘|passed|failed|TEST'
-exit "${PIPESTATUS[0]}"
+    -destination "$DESTINATION" \
+    > "$TEST_LOG" 2>&1
+TEST_STATUS=$?
+
+grep -E 'Test Case|Test Suite|✔|✘|passed|failed|TEST (SUCCEEDED|FAILED)' "$TEST_LOG" \
+    | grep -vE "passed \(0\.0" \
+    || true
+
+if [ "$TEST_STATUS" -ne 0 ]; then
+    echo
+    echo "==> TESTS FAILED"
+    summarise "$TEST_LOG"
+    echo
+    echo "==> Failures:"
+    grep -E 'error:|✘|XCTAssert|Expectation failed' "$TEST_LOG" | sort -u
+fi
+
+exit "$TEST_STATUS"

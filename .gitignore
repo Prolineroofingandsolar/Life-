@@ -1,6 +1,12 @@
 # Logs
 logs
 *.log
+
+# Full xcodebuild output from scripts/build-and-test.sh. Large, machine-local,
+# and regenerated on every run — but worth attaching by hand when a build fails,
+# since the summary the script prints is deliberately lossy.
+build-log.txt
+test-log.txt
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
