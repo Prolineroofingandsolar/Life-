@@ -670,3 +670,11 @@ export const coachUsage = onCall(
     };
   }
 );
+
+/**
+ * Account deletion, required by App Review guideline 5.1.1(v).
+ *
+ * Lives in its own module because it is the only thing here that is not the
+ * coach, and because it deletes rather than reads.
+ */
+export { deleteAccount } from "./account";
