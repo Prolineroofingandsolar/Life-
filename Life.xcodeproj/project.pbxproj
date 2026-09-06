@@ -11,7 +11,7 @@
 		BE4A035A2FCF52D7002102BD /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = BE4A03592FCF52D7002102BD /* FirebaseFirestore */; };
 		BE4A03AD2FCF90B8002102BD /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = BE4A03AC2FCF90B8002102BD /* WidgetKit.framework */; };
 		BE4A03AF2FCF90B9002102BD /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = BE4A03AE2FCF90B8002102BD /* SwiftUI.framework */; };
-		BE4A03C02FCF90BC002102BD /* LifeTasksWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = BE4A03AA2FCF90B8002102BD /* LifeTasksWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		BE4A03C02FCF90BC002102BD /* LifeTasksWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = BE4A03AA2FCF90B8002102BD /* LifeTasksWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, CodeSignOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
