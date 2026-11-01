@@ -301,6 +301,16 @@ enum CoachProposalKind: String, Codable, CaseIterable, Sendable {
     /// anything existing in the app. `CoachActions.Effect.opensBuilder` is how
     /// that difference is stated in the type system rather than in a comment.
     case buildWorkout
+    /// Moves a task to today, tomorrow or this week.
+    case rescheduleTask
+    /// Starts a workout now from a routine. Refused if one is already running.
+    case startWorkout
+    /// Adds a meal to today's log.
+    case logMeal
+    /// Logs a body-weight reading, in kilograms.
+    case logWeight
+    /// Logs one dose of a supplement.
+    case logSupplement
 }
 
 struct CoachProposal: Codable, Equatable, Sendable, Identifiable {
@@ -326,9 +336,12 @@ struct CoachProposal: Codable, Equatable, Sendable, Identifiable {
     /// `buildWorkout`. Clamped by `CoachActions` in every case — a model figure
     /// is a suggestion, and 500 of anything is a bug reaching real data.
     let count: Int?
+    /// For `logWeight`. Checked against the app's own plausible range before
+    /// anything is written.
+    let weightKg: Double?
 
     enum CodingKeys: String, CodingKey {
-        case type, label, title, listId, due, targetId, count
+        case type, label, title, listId, due, targetId, count, weightKg
     }
 
     init(from decoder: Decoder) throws {
@@ -345,6 +358,7 @@ struct CoachProposal: Codable, Equatable, Sendable, Identifiable {
         self.due = try c.decodeIfPresent(String.self, forKey: .due)
         self.targetId = try c.decodeIfPresent(String.self, forKey: .targetId)
         self.count = try c.decodeIfPresent(Int.self, forKey: .count)
+        self.weightKg = try c.decodeIfPresent(Double.self, forKey: .weightKg)
     }
 
     init(
@@ -354,7 +368,8 @@ struct CoachProposal: Codable, Equatable, Sendable, Identifiable {
         listId: String? = nil,
         due: String? = nil,
         targetId: String? = nil,
-        count: Int? = nil
+        count: Int? = nil,
+        weightKg: Double? = nil
     ) {
         self.kind = kind
         self.label = label
@@ -363,6 +378,7 @@ struct CoachProposal: Codable, Equatable, Sendable, Identifiable {
         self.due = due
         self.targetId = targetId
         self.count = count
+        self.weightKg = weightKg
     }
 
     func encode(to encoder: Encoder) throws {
@@ -374,6 +390,7 @@ struct CoachProposal: Codable, Equatable, Sendable, Identifiable {
         try c.encodeIfPresent(due, forKey: .due)
         try c.encodeIfPresent(targetId, forKey: .targetId)
         try c.encodeIfPresent(count, forKey: .count)
+        try c.encodeIfPresent(weightKg, forKey: .weightKg)
     }
 }
 

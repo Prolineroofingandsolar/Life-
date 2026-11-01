@@ -1165,6 +1165,7 @@ struct CoachSettings: Codable, Equatable {
         // adding it here too — the custom `init(from:)` above makes that easy to
         // forget, because decoding a missing key succeeds.
         case allowMachineScanning, disabledAutomations
+        case coachActsDirectly
     }
 
     init() {}
@@ -1189,6 +1190,7 @@ struct CoachSettings: Codable, Equatable {
         allowMachineScanning = try c.decodeIfPresent(Bool.self, forKey: .allowMachineScanning) ?? false
         // Absent means none disabled, which means all six on — see the property.
         disabledAutomations = try c.decodeIfPresent([String].self, forKey: .disabledAutomations) ?? []
+        coachActsDirectly = try c.decodeIfPresent(Bool.self, forKey: .coachActsDirectly) ?? true
     }
 
     /// May the coach make a network call right now?
@@ -1197,6 +1199,13 @@ struct CoachSettings: Codable, Equatable {
     /// toggle — this is the single place that answers the question so no call
     /// site has to remember the combination.
     var mayUseCloud: Bool { enabled && cloudEnabled && hasConsented }
+
+    /// Whether Ask Coach carries out what the person asks for straight away
+    /// ("add milk to my list", "log two glasses of water"), rather than
+    /// offering a button for each. On by default: asking is the instruction.
+    /// Only ever applies to things the person asked for in the chat, and
+    /// never to anything that needs its own confirmation.
+    var coachActsDirectly: Bool = true
 }
 
 // MARK: - Workout Programs / Splits

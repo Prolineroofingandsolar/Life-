@@ -210,6 +210,91 @@ struct CoachActionTests {
         #expect(CoachActions.usable(proposals, appState: appState).isEmpty)
     }
 
+    // MARK: Acting for the person
+
+    @Test("Rescheduling moves a real task and refuses an unknown due date")
+    func rescheduleMovesTask() {
+        let appState = state()
+        let task = AppTask(title: "Call the plumber", listId: "work", dueDate: .today)
+        appState.tasks = [task]
+
+        let bad = CoachProposal(kind: .rescheduleTask, label: "Move", due: "someday", targetId: task.id)
+        #expect(CoachActions.usable([bad], appState: appState).isEmpty)
+
+        let effect = CoachActions.perform(
+            CoachProposal(kind: .rescheduleTask, label: "Move", due: "tomorrow", targetId: task.id),
+            appState: appState
+        )
+        guard case .changed = effect else {
+            Issue.record("Expected a change, got \(effect)")
+            return
+        }
+        let moved = appState.tasks.first { $0.id == task.id }?.resolvedDate
+        #expect(moved.map { Calendar.current.isDateInTomorrow($0) } == true)
+    }
+
+    @Test("Starting a workout starts the named routine, and never over one in progress")
+    func startWorkoutStartsRoutine() {
+        let appState = state()
+        appState.sessions = []
+        let routine = Routine(name: "Push day")
+        appState.routines = [routine]
+
+        let proposal = CoachProposal(kind: .startWorkout, label: "Start", targetId: routine.id)
+        CoachActions.perform(proposal, appState: appState)
+        #expect(appState.activeSession?.routineId == routine.id)
+
+        // A second start is not offered while the first is running.
+        #expect(CoachActions.usable([proposal], appState: appState).isEmpty)
+    }
+
+    @Test("A weight outside a plausible range is never logged")
+    func implausibleWeightIsDropped() {
+        let appState = state()
+        appState.weightEntries = []
+
+        let tooLight = CoachProposal(kind: .logWeight, label: "Log", weightKg: 12)
+        #expect(CoachActions.usable([tooLight], appState: appState).isEmpty)
+
+        CoachActions.perform(CoachProposal(kind: .logWeight, label: "Log", weightKg: 82.4), appState: appState)
+        #expect(appState.weightEntries.last?.valueKg == 82.4)
+    }
+
+    @Test("A supplement dose is logged only for a real supplement")
+    func supplementDoseIsLogged() {
+        let appState = state()
+        let supplement = Supplement(name: "Vitamin D")
+        appState.supplements = [supplement]
+
+        let invented = CoachProposal(kind: .logSupplement, label: "Log", targetId: "made-up")
+        #expect(CoachActions.usable([invented], appState: appState).isEmpty)
+
+        CoachActions.perform(
+            CoachProposal(kind: .logSupplement, label: "Log", targetId: supplement.id),
+            appState: appState
+        )
+        #expect(appState.dosesToday(for: appState.supplements[0]) == 1)
+    }
+
+    @Test("Opening the workout builder is never done without a tap")
+    func builderNeedsATap() {
+        #expect(!CoachActions.canActDirectly(CoachProposal(kind: .buildWorkout, label: "Build")))
+        #expect(CoachActions.canActDirectly(CoachProposal(kind: .logWater, label: "Log")))
+    }
+
+    @Test("Acting for the person is on unless they turned it off")
+    func actsDirectlyByDefault() throws {
+        #expect(CoachSettings().coachActsDirectly)
+        let old = try JSONDecoder().decode(CoachSettings.self, from: Data("{}".utf8))
+        #expect(old.coachActsDirectly)
+        var off = CoachSettings()
+        off.coachActsDirectly = false
+        let roundTripped = try JSONDecoder().decode(
+            CoachSettings.self, from: try JSONEncoder().encode(off)
+        )
+        #expect(!roundTripped.coachActsDirectly)
+    }
+
     // MARK: Decoding
 
     /// A kind this version doesn't implement must not survive decoding — it

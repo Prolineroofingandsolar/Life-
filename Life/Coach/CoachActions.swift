@@ -57,7 +57,41 @@ enum CoachActions {
             // library at the moment it runs. Offered only when there is a
             // library to resolve against at all.
             return !appState.exercises.isEmpty
+
+        case .rescheduleTask:
+            guard let id = proposal.targetId,
+                  DueDate(rawValue: proposal.due ?? "") != nil else { return false }
+            return appState.tasks.contains { $0.id == id && !$0.done }
+
+        case .startWorkout:
+            // Never over the top of a workout in progress: `startSession`
+            // refuses too, but an offer it would refuse shouldn't be shown.
+            guard let id = proposal.targetId, appState.activeSession == nil else { return false }
+            return appState.routines.contains { $0.id == id }
+
+        case .logMeal:
+            return true
+
+        case .logWeight:
+            // Tighter than the app's own 1–500 kg range: a model that misread
+            // "12 stone" as 12 kg should be stopped here, not charted.
+            guard let kg = proposal.weightKg, (25...300).contains(kg) else { return false }
+            return BodyMetricLimits.validate(kg, in: BodyMetricLimits.weightKg) != nil
+
+        case .logSupplement:
+            guard let id = proposal.targetId else { return false }
+            return appState.supplements.contains { $0.id == id && !$0.isArchived }
         }
+    }
+
+    /// Whether a proposal may be carried out the moment it arrives, without a
+    /// tap, when the person has let the coach act for them.
+    ///
+    /// Everything here is small and easy to put right by hand. `buildWorkout`
+    /// is excluded because it opens a sheet that needs its own confirmation —
+    /// performing it unasked would pop a builder over the conversation.
+    static func canActDirectly(_ proposal: CoachProposal) -> Bool {
+        proposal.kind != .buildWorkout
     }
 
     /// What performing a proposal did.
@@ -128,6 +162,36 @@ enum CoachActions {
 
         case .buildWorkout:
             return .opensBuilder(brief(from: proposal))
+
+        case .rescheduleTask:
+            guard let id = proposal.targetId,
+                  let task = appState.tasks.first(where: { $0.id == id }),
+                  let due = DueDate(rawValue: proposal.due ?? "") else { return .unavailable }
+            appState.scheduleTask(id: id, on: due.fixedDate())
+            return .changed("Moved “\(task.title)” to \(due.label.lowercased()).")
+
+        case .startWorkout:
+            guard let id = proposal.targetId,
+                  let routine = appState.routines.first(where: { $0.id == id }) else { return .unavailable }
+            appState.startSession(name: routine.name, routineId: id)
+            guard appState.activeSession != nil else { return .unavailable }
+            return .changed("Started \(routine.name). It's waiting in Train.")
+
+        case .logMeal:
+            let name = String((proposal.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines).prefix(60))
+            appState.addMeal(name: name)
+            return .changed(name.isEmpty ? "Logged a meal." : "Logged \(name).")
+
+        case .logWeight:
+            guard let kg = proposal.weightKg,
+                  appState.logBodyWeight(valueKg: kg) else { return .unavailable }
+            return .changed(String(format: "Logged your weight: %.1f kg.", kg))
+
+        case .logSupplement:
+            guard let id = proposal.targetId,
+                  let supplement = appState.supplements.first(where: { $0.id == id }) else { return .unavailable }
+            appState.logDose(supplementId: id)
+            return .changed("Logged \(supplement.name).")
         }
     }
 
