@@ -6,7 +6,7 @@ import SwiftUI
 ///
 /// The iPhone Duo is the reason this exists. Folded, its outer display is an
 /// ordinary phone (about 466pt wide). Unfolded, the inner display is roughly
-/// 626 × 890pt — square-ish, wider than any iPhone in portrait — and in
+/// 669 × 951pt (measured on the Duo simulator) — square-ish, wider than any iPhone in portrait — and in
 /// landscape it is wider still. It also runs two apps side by side, so the
 /// same device can hand Life a full inner screen, half of one, or the narrow
 /// outer screen, and can switch between them while the app is open.
@@ -26,8 +26,8 @@ enum AdaptiveLayout {
 
     /// At or above this width a screen splits into two full columns of cards.
     ///
-    /// Above the Duo's inner display held upright (~626pt) and below it turned
-    /// on its side (~890pt). Upright, two columns would leave each about 280pt
+    /// Above the Duo's inner display held upright (669pt) and below it turned
+    /// on its side (951pt). Upright, two columns would leave each about 300pt
     /// of content — narrower than an iPhone SE — and task titles get cut off.
     /// So upright the Duo shows extra side by side only where the pieces are
     /// small (the health tiles), and keeps lists full width; on its side each
