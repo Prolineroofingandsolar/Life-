@@ -97,6 +97,15 @@ struct MoreView: View {
                 // MARK: - Explore
                 Section("Explore") {
                     MoreRow(
+                        icon: "bubble.left.and.bubble.right.fill",
+                        color: .black,
+                        title: "Grok Bot",
+                        subtitle: "Chat with your bot"
+                    ) {
+                        GrokBotChatView()
+                    }
+
+                    MoreRow(
                         icon: "map.fill",
                         color: .blue,
                         title: "Travel",

@@ -46,11 +46,15 @@ struct LifeApp: App {
                         // screen, so returning to any other tab showed whatever
                         // was last fetched.
                         Task { await HealthSync.runIfStale(appState: appState) }
+                        // Carry out anything Grok Bot asked for while the app
+                        // was closed, then keep checking while it's open.
+                        LifeBotInbox.shared.start(appState: appState)
                     case .inactive, .background:
                         // Saves are debounced by 0.4s and uploads by a further
                         // 2s. Leaving the foreground is exactly when that
                         // window gets cut short, so it's forced closed here.
                         appState.flushPendingWrites()
+                        LifeBotInbox.shared.stop()
                         // A `BGAppRefreshTask` is one-shot. Leaving the
                         // foreground is the natural point to book the next one.
                         HealthBackgroundRefresh.schedule(appState: appState)
