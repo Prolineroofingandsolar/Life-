@@ -61,6 +61,7 @@ struct HabitsView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
+                .readableContentWidth()
             }
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Habits")

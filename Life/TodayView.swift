@@ -38,6 +38,7 @@ struct TodayView: View {
     @State private var dayToken = UUID()
     @State private var healthSyncTask: Task<Void, Never>? = nil
     @State private var hkManager = HealthKitManager()
+    @Environment(\.isWideLayout) private var isWideLayout
 
     /// Gaps between conceptual sections. Everything inside a section is tighter
     /// than this; nothing else is looser.
@@ -123,37 +124,17 @@ struct TodayView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                LazyVStack(spacing: Self.sectionSpacing) {
-                    GreetingHeader(greeting: greeting)
-
-                    // Health first, and swipeable. Every tile renders the
-                    // snapshot's *state* rather than a bare number, so a tile
-                    // that can't tell you something says so instead of showing
-                    // a zero that reads as a real reading.
-                    VStack(spacing: 12) {
-                        HealthCarousel()
-                        QuickActionRow(
-                            onLogMeal: { showMealSheet = true },
-                            onStartWorkout: startOrResumeWorkout
-                        )
+                Group {
+                    if isWideLayout {
+                        wideContent
+                    } else {
+                        compactContent
                     }
-
-                    // The AI makes the primary recommendation; Autopilot turns
-                    // the trusted data into one clear next action.
-                    CoachCard()
-
-                    todaySection
-
-                    // Reference, not an equal-weight card. The morning briefing
-                    // used to sit above the recommendation and open with "Good
-                    // morning", duplicating the navigation title two rows above
-                    // it.
-                    CoachBriefingView(kind: .morning)
-                    CoachBriefingView(kind: .evening)
                 }
                 .padding(.top, 4)
                 .padding(.bottom, 28)
                 .id(dayToken)
+                .readableContentWidth(AdaptiveLayout.wideReadableWidth)
             }
             .background(Color(.systemGroupedBackground))
             // The sync loop lives here rather than inside the health section it
@@ -219,6 +200,75 @@ struct TodayView: View {
                     ),
                     sessionId: workout.id
                 )
+            }
+        }
+    }
+
+    // MARK: Layouts
+
+    /// One column, health first: a phone, or the iPhone Duo folded.
+    private var compactContent: some View {
+        LazyVStack(spacing: Self.sectionSpacing) {
+            GreetingHeader(greeting: greeting)
+
+            // Health first, and swipeable. Every tile renders the
+            // snapshot's *state* rather than a bare number, so a tile
+            // that can't tell you something says so instead of showing
+            // a zero that reads as a real reading.
+            VStack(spacing: 12) {
+                HealthCarousel()
+                QuickActionRow(
+                    onLogMeal: { showMealSheet = true },
+                    onStartWorkout: startOrResumeWorkout
+                )
+            }
+
+            // The AI makes the primary recommendation; Autopilot turns
+            // the trusted data into one clear next action.
+            CoachCard()
+
+            todaySection
+
+            // Reference, not an equal-weight card. The morning briefing
+            // used to sit above the recommendation and open with "Good
+            // morning", duplicating the navigation title two rows above
+            // it.
+            CoachBriefingView(kind: .morning)
+            CoachBriefingView(kind: .evening)
+        }
+    }
+
+    /// Two columns, for the iPhone Duo unfolded (or any window 600pt+).
+    ///
+    /// Health runs across the top with both carousel pages visible at once,
+    /// then the page splits: what to do today on one side, the coach on the
+    /// other. On a phone the to-do list sits below the coach and the health
+    /// tiles and is usually below the fold; here everything that answers "what
+    /// now?" is on screen together. Each column carries its own 16pt margins,
+    /// so the gutter between them lands on the inner display's fold when
+    /// it is held upright.
+    private var wideContent: some View {
+        VStack(spacing: Self.sectionSpacing) {
+            GreetingHeader(greeting: greeting)
+
+            HealthCarousel()
+
+            HStack(alignment: .top, spacing: 0) {
+                VStack(spacing: Self.sectionSpacing) {
+                    todaySection
+                }
+                .frame(maxWidth: .infinity, alignment: .top)
+
+                VStack(spacing: Self.sectionSpacing) {
+                    QuickActionRow(
+                        onLogMeal: { showMealSheet = true },
+                        onStartWorkout: startOrResumeWorkout
+                    )
+                    CoachCard()
+                    CoachBriefingView(kind: .morning)
+                    CoachBriefingView(kind: .evening)
+                }
+                .frame(maxWidth: .infinity, alignment: .top)
             }
         }
     }

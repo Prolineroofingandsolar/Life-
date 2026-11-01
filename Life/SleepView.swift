@@ -109,6 +109,7 @@ struct SleepView: View {
                 }
             }
             .padding(16)
+            .readableContentWidth()
         }
         .background(Color(.systemGroupedBackground))
         .navigationTitle("Sleep")

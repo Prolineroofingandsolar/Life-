@@ -22,6 +22,7 @@ struct HealthCarousel: View {
 
     @Environment(AppState.self) private var appState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isWideLayout) private var isWideLayout
 
     @State private var page = 0
 
@@ -39,6 +40,33 @@ struct HealthCarousel: View {
     private static let pageHeight: CGFloat = 214
 
     var body: some View {
+        if isWideLayout {
+            sideBySide
+        } else {
+            paged
+        }
+    }
+
+    /// Both pages at once, for the iPhone Duo unfolded. Each page is laid out
+    /// at about a phone's width, which is what its tiles were designed for, so
+    /// nothing has to be hidden behind a swipe when there's room to show it.
+    private var sideBySide: some View {
+        HStack(alignment: .top, spacing: 0) {
+            primaryPage
+                .padding(.horizontal, 16)
+                .frame(maxWidth: .infinity)
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel("Today's activity")
+            secondaryPage
+                .padding(.horizontal, 16)
+                .frame(maxWidth: .infinity)
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel("Heart and body")
+        }
+        .frame(height: Self.pageHeight)
+    }
+
+    private var paged: some View {
         VStack(spacing: 8) {
             TabView(selection: $page) {
                 primaryPage
