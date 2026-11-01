@@ -78,9 +78,15 @@ export async function generateJSONWithGrok(request: GrokRequest): Promise<GrokRe
 
   let response = await post(structuredBody, apiKey, request.timeoutMs);
   if (response.status === 400 || response.status === 422) {
+    const reason = await errorSummary(response);
+    // xAI answers a bad key with 400, not 401. Reported as an auth failure so
+    // the app says "check the key" rather than blaming the model or schema.
+    if (/api key/i.test(reason)) {
+      console.error(`[grok] key rejected: ${reason} (key length ${apiKey.length})`);
+      throw new GrokError(401, "xAI rejected the API key");
+    }
     console.error(
-      `[grok] ${response.status} with structured output: ${await errorSummary(response)}. ` +
-      "Retrying in JSON mode."
+      `[grok] ${response.status} with structured output: ${reason}. Retrying in JSON mode.`
     );
     response = await post(jsonModeBody, apiKey, request.timeoutMs);
   }
