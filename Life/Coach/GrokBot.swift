@@ -18,7 +18,9 @@ import UIKit
 // MARK: Transport
 
 /// Calls the `lifeBotApp` callable over plain HTTPS, the same way the coach
-/// does, so no extra Firebase package is needed.
+/// does, so no extra Firebase package is needed. Main-actor isolated because
+/// `AuthManager` is, and every caller is already on the main actor.
+@MainActor
 enum LifeBotAPI {
 
     enum Failure: LocalizedError {
