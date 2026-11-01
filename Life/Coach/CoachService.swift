@@ -578,7 +578,7 @@ final class CoachService {
     /// is an error message where a perfectly good answer should be.
     private func proposals(from value: [String: Any]) -> [CoachProposal] {
         guard let raw = value["proposals"] as? [[String: Any]] else { return [] }
-        return raw.prefix(3).compactMap { item in
+        return raw.prefix(5).compactMap { item in
             guard let data = try? JSONSerialization.data(withJSONObject: item) else { return nil }
             return try? JSONDecoder().decode(CoachProposal.self, from: data)
         }
