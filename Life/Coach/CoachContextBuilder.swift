@@ -71,7 +71,7 @@ enum CoachContextBuilder {
     /// The coach picks one action, so this is a shortlist, not an inventory.
     /// Sending the whole task list would cost tokens on every request to
     /// transmit items that cannot be chosen.
-    private static let maximumCandidates = 5
+    static let maximumCandidates = 5
 
     /// Exercises worth reporting progress on.
     ///
@@ -84,7 +84,9 @@ enum CoachContextBuilder {
         permissions: Permissions = Permissions(),
         now: Date = Date(),
         calendar: Calendar = .current,
-        snapshot: HealthSnapshot? = nil
+        snapshot: HealthSnapshot? = nil,
+        candidateLimit: Int = maximumCandidates,
+        includeSupplements: Bool = false
     ) -> CoachContext {
         var warnings: [String] = []
 
@@ -109,10 +111,16 @@ enum CoachContextBuilder {
             ? trainingSection(appState: appState, permissions: permissions, now: now, calendar: calendar)
             : nil
         let tasks = permissions.tasks
-            ? tasksSection(appState: appState, permissions: permissions, now: now, calendar: calendar)
+            ? tasksSection(
+                appState: appState, permissions: permissions, now: now, calendar: calendar,
+                limit: candidateLimit
+            )
             : nil
         let habits = permissions.habits
-            ? habitsSection(appState: appState, permissions: permissions, dayKey: health.dayKey)
+            ? habitsSection(
+                appState: appState, permissions: permissions, dayKey: health.dayKey,
+                limit: candidateLimit
+            )
             : nil
 
         if !health.isFresh && health.hasConnectedSource {
@@ -161,6 +169,14 @@ enum CoachContextBuilder {
         }
         if permissions.activity {
             context.hydration = hydrationSection(appState: appState, now: now, calendar: calendar)
+        }
+        if includeSupplements && permissions.habits {
+            let active = appState.supplements.filter { !$0.isArchived }
+            if !active.isEmpty {
+                context.supplements = active.prefix(candidateLimit).map {
+                    CoachContext.Named(id: $0.id, name: permissions.includeTitles ? $0.name : "A supplement")
+                }
+            }
         }
 
         return context
@@ -801,7 +817,8 @@ enum CoachContextBuilder {
         appState: AppState,
         permissions: Permissions,
         now: Date,
-        calendar: Calendar
+        calendar: Calendar,
+        limit: Int = maximumCandidates
     ) -> CoachContext.Tasks? {
         let outstanding = appState.tasks.filter { !$0.done }
         guard !outstanding.isEmpty else {
@@ -839,7 +856,7 @@ enum CoachContextBuilder {
             }
         }
 
-        let candidates = ranked.prefix(maximumCandidates).map { task in
+        let candidates = ranked.prefix(limit).map { task in
             CoachContext.Tasks.Candidate(
                 id: task.id,
                 title: permissions.includeTitles ? task.title : "A task",
@@ -870,7 +887,8 @@ enum CoachContextBuilder {
     private static func habitsSection(
         appState: AppState,
         permissions: Permissions,
-        dayKey todayKey: String
+        dayKey todayKey: String,
+        limit: Int = maximumCandidates
     ) -> CoachContext.Habits? {
         let active = appState.habits.filter { !$0.isArchived }
         guard !active.isEmpty else { return nil }
@@ -893,7 +911,7 @@ enum CoachContextBuilder {
         let atRisk = outstanding
             .map { (habit: $0, streak: appState.streakFor($0)) }
             .sorted { $0.streak > $1.streak }
-            .prefix(maximumCandidates)
+            .prefix(limit)
             .map { entry in
                 CoachContext.Habits.Candidate(
                     id: entry.habit.id,

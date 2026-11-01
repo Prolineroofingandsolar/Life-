@@ -66,6 +66,9 @@ struct CoachContext: Codable, Equatable, Sendable {
     var training: Training?
     var tasks: Tasks?
     var habits: Habits?
+    /// Supplements the coach may log a dose of, each with the id it must quote.
+    /// Only sent to Ask Coach, and only when habits may be shared.
+    var supplements: [Named]? = nil
     /// Small already-derived deltas, so questions like "which figure changed
     /// most since yesterday?" can be answered without raw history being sent.
     var comparisons: Comparisons?

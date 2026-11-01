@@ -325,7 +325,7 @@ struct CoachServiceTests {
 
     // MARK: Secrets
 
-    @Test("No Gemini key is present in the app")
+    @Test("No Grok or Gemini key is present in the app")
     func noAPIKeyInTheBundle() throws {
         // The key lives in Secret Manager and is read only by the Cloud
         // Function. If it ever reached the app it could be extracted from the
@@ -341,12 +341,17 @@ struct CoachServiceTests {
         // Google API keys begin "AIza". Searching for the shape catches a key
         // pasted under any name at all.
         #expect(!plistText.contains("AIza"))
+        // Same for the xAI key, which the coach uses by default. xAI keys
+        // begin "xai-".
+        #expect(!plistText.contains("XAI_API_KEY"))
+        #expect(!plistText.contains("xai-"))
 
         // And nothing in the bundle's resources either.
         let resources = bundle.paths(forResourcesOfType: "plist", inDirectory: nil)
         for path in resources {
             guard let contents = try? String(contentsOfFile: path, encoding: .utf8) else { continue }
             #expect(!contents.contains("GEMINI_API_KEY"), "Found a Gemini key reference in \(path)")
+            #expect(!contents.contains("XAI_API_KEY"), "Found an xAI key reference in \(path)")
         }
     }
 

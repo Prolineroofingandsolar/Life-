@@ -83,7 +83,7 @@ struct MachineScanSheet: View {
                 }
 
                 VStack(alignment: .leading, spacing: 12) {
-                    point("photo", "The photo is sent to Gemini once, to recognise the equipment.")
+                    point("photo", "The photo is sent to Grok once, to recognise the equipment.")
                     point("trash", "It isn't saved to your device, your account, or any log.")
                     point("checkmark.shield", "If it matches something in your library, you'll get that. If it doesn't, you'll get a form to check before anything is added.")
                 }

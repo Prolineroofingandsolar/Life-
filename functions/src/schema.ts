@@ -109,9 +109,23 @@ export const PROPOSAL_TYPES = [
    * questions and requires a second confirmation before anything is written.
    */
   "buildWorkout",
+  /** Moves a task (targetId) to today, tomorrow or this week (due). */
+  "rescheduleTask",
+  /** Starts a workout now from a routine (targetId). */
+  "startWorkout",
+  /** Logs a meal for today, named in title. */
+  "logMeal",
+  /** Logs a body-weight reading in weightKg. */
+  "logWeight",
+  /** Logs one dose of a supplement (targetId). */
+  "logSupplement",
 ] as const;
 
-export const MAX_PROPOSALS = 3;
+/**
+ * Five rather than three, because "add milk, eggs and bread to my list" is one
+ * request and three actions.
+ */
+export const MAX_PROPOSALS = 5;
 export const MAX_ANSWER_CHARS = 1200;
 export const MAX_PROPOSAL_TITLE_CHARS = 80;
 
@@ -147,6 +161,8 @@ export const ASK_SCHEMA = {
           targetId: { type: "STRING", nullable: true },
           /** For logWater and addHabitLog. For buildWorkout, minutes. */
           count: { type: "INTEGER", nullable: true },
+          /** For logWeight: kilograms, converted from whatever the person said. */
+          weightKg: { type: "NUMBER", nullable: true },
         },
         required: ["type", "label"],
       },
@@ -198,6 +214,9 @@ export function validateAsk(value: unknown): ValidationResult {
     }
     if (p.label.length > MAX_PROPOSAL_TITLE_CHARS) {
       return { ok: false, reason: "proposal label too long" };
+    }
+    if (p.weightKg !== undefined && p.weightKg !== null && typeof p.weightKg !== "number") {
+      return { ok: false, reason: "proposal weightKg must be a number" };
     }
     if (p.title !== undefined && p.title !== null) {
       if (typeof p.title !== "string" || p.title.length > MAX_PROPOSAL_TITLE_CHARS) {

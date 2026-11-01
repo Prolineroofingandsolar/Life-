@@ -7,6 +7,11 @@ anywhere.
 
 Run everything from the repository root.
 
+> **The coach now uses Grok (xAI) by default.** Gemini is still supported and
+> is one line away (`COACH_PROVIDER=gemini`). If you're setting up Grok, follow
+> [Using Grok](#using-grok-xai) below in place of steps 2 and 3, then carry on
+> from step 4. If Gemini is already deployed, that section is all you need.
+
 ---
 
 ## 1. Before you start
@@ -18,6 +23,39 @@ Run everything from the repository root.
   npm install -g firebase-tools
   firebase login
   ```
+
+---
+
+## Using Grok (xAI)
+
+1. Create an API key at [console.x.ai](https://console.x.ai) and add credit to
+   the team. Check xAI's data-retention settings there too: the coach sends
+   your sleep and recovery figures.
+2. Pick the model from [xAI's model list](https://docs.x.ai/docs/models): a
+   fast, **non-reasoning** Grok model that supports structured outputs and
+   image input (the machine scan sends a photo). Reasoning models spend the
+   output budget thinking and get cut off mid-answer.
+3. Store the key as a secret:
+   ```
+   cd functions
+   firebase functions:secrets:set XAI_API_KEY --project life-1812f
+   ```
+   The function binds both `XAI_API_KEY` and `GEMINI_API_KEY`, so both must
+   exist for the deploy to succeed. If you've never set up Gemini, set
+   `GEMINI_API_KEY` to any placeholder.
+4. In `functions/.env.life-1812f` set:
+   ```
+   COACH_PROVIDER=grok
+   GROK_MODEL=<the identifier from 2>
+   GROK_INPUT_PRICE_PER_MILLION=<xAI's input price>
+   GROK_OUTPUT_PRICE_PER_MILLION=<xAI's output price>
+   ```
+   Raise `COACH_MONTHLY_COST_CEILING` if the model you chose costs more than
+   Gemini Flash-Lite did; the default of 1.00 is sized for that.
+5. Deploy (step 5 below). The app needs no change: it calls the same function
+   and never knows which provider answered.
+
+To go back to Gemini, set `COACH_PROVIDER=gemini` and redeploy.
 
 ---
 

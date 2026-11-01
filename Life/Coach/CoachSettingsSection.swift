@@ -87,21 +87,35 @@ struct CoachSettingsSection: View {
     private var cloudSection: some View {
         Section {
             Toggle("Use AI", isOn: cloudBinding)
-                .accessibilityHint("Sends a summary of your day to Gemini to write the wording")
+                .accessibilityHint("Sends a summary of your day to Grok to write the wording")
 
             if !settings.hasConsented {
                 Button("Read what gets sent") { showConsent = true }
                     .accessibilityHint("Opens the consent details")
+            }
+
+            if settings.mayUseCloud {
+                Toggle("Let Grok do what I ask", isOn: binding(\.coachActsDirectly))
+                    .accessibilityHint("When on, things you ask for in Ask Coach happen straight away. When off, each one is a button to tap.")
             }
         } header: {
             Text("AI")
         } footer: {
             // Says what turning it *off* gets you, not just what it costs.
             // "Off" here is a working feature, not a disabled one.
-            Text(settings.mayUseCloud
-                 ? "A short summary of your day goes to Google's Gemini. Your name, raw health records and sign-ins never leave this phone."
-                 : "The coach works entirely on this phone from your own data. Nothing is sent anywhere. Suggestions are plainer, and free.")
+            Text(cloudFooter)
         }
+    }
+
+    private var cloudFooter: String {
+        guard settings.mayUseCloud else {
+            return "The coach works entirely on this phone from your own data. Nothing is sent anywhere. Suggestions are plainer, and free."
+        }
+        let sent = "A short summary of your day goes to xAI's Grok. Your name, raw health records and sign-ins never leave this phone."
+        let acting = settings.coachActsDirectly
+            ? "In Ask Coach, Grok can add and move tasks, log habits, water, meals, weight and supplements, and start workouts when you ask it to."
+            : "In Ask Coach, anything Grok offers to do is a button you tap."
+        return "\(sent) \(acting)"
     }
 
     /// Turning AI on for the first time routes through consent rather than

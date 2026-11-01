@@ -39,7 +39,11 @@ struct AskCoachView: View {
         CoachContextBuilder.build(
             appState: appState,
             permissions: .init(settings),
-            snapshot: snapshot
+            snapshot: snapshot,
+            // Ask Coach is where the person tells it what to do, so it needs
+            // enough of their tasks and habits to find the one they mean.
+            candidateLimit: 15,
+            includeSupplements: true
         )
     }
 
@@ -48,8 +52,8 @@ struct AskCoachView: View {
         let id = UUID()
         var speaker: Speaker
         var text: String
-        /// Changes the coach offered to make. Buttons, not instructions —
-        /// nothing here happens until it is tapped.
+        /// Changes the coach offered to make, or — when the person lets it act
+        /// for them — has already made, in which case `applied` says so.
         var proposals: [CoachProposal] = []
         /// What tapping one did, once it has been tapped. Keyed by proposal id
         /// so an applied offer becomes a confirmation in place rather than
@@ -317,16 +321,28 @@ struct AskCoachView: View {
         Task {
             do {
                 let answer = try await service.ask(question, context: context, settings: settings)
-                turns.append(
-                    Turn(
-                        speaker: .coach,
-                        text: answer.text,
-                        // Filtered before anything is drawn. A proposal naming
-                        // a task that doesn't exist is dropped rather than
-                        // shown and then failed on tap.
-                        proposals: CoachActions.usable(answer.proposals, appState: appState)
-                    )
+                var turn = Turn(
+                    speaker: .coach,
+                    text: answer.text,
+                    // Filtered before anything is drawn. A proposal naming
+                    // a task that doesn't exist is dropped rather than
+                    // shown and then failed on tap.
+                    proposals: CoachActions.usable(answer.proposals, appState: appState)
                 )
+                // The person asked for these, so when they've let the coach
+                // act for them, it does — and each button becomes a line
+                // saying what changed, which is the record of it.
+                if appState.coachSettings.coachActsDirectly {
+                    var acted = false
+                    for proposal in turn.proposals where CoachActions.canActDirectly(proposal) {
+                        if case .changed(let outcome) = CoachActions.perform(proposal, appState: appState) {
+                            turn.applied[proposal.id] = outcome
+                            acted = true
+                        }
+                    }
+                    if acted { HapticManager.success() }
+                }
+                turns.append(turn)
                 state = .idle
             } catch {
                 let coachError = error as? CoachError
@@ -385,7 +401,7 @@ struct AskCoachView: View {
                         .clipShape(Capsule())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityHint("Makes this change. Nothing is changed until you tap.")
+                    .accessibilityHint("Makes this change.")
                 }
             }
         }
@@ -400,6 +416,11 @@ struct AskCoachView: View {
         case .logWater:     return "drop"
         case .planWorkout:  return "dumbbell"
         case .buildWorkout: return "sparkles"
+        case .rescheduleTask: return "calendar"
+        case .startWorkout: return "play.circle"
+        case .logMeal:      return "fork.knife"
+        case .logWeight:    return "scalemass"
+        case .logSupplement: return "pills"
         }
     }
 
