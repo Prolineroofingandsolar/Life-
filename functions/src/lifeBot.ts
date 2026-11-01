@@ -463,6 +463,109 @@ function describe(d: Record<string, unknown>): string {
   }
 }
 
+// MARK: - Chat
+//
+// Will talks to Grok Bot from inside Life. A message is stored here and sent
+// to a Grok Bot routine's webhook trigger, which wakes the bot with the
+// message as its input. The bot answers with the "reply" kind on this page,
+// which lands straight in the chat (it changes nothing in the app, so it
+// doesn't need the inbox).
+
+const MAX_CHAT_CHARS = 2000;
+
+async function chatHistory(uid: string, limit = 50) {
+  const snap = await getFirestore()
+    .collection("users").doc(uid).collection("botChat")
+    .orderBy("createdAt", "desc")
+    .limit(limit)
+    .get();
+  return snap.docs.reverse().map((d) => {
+    const data = d.data();
+    return {
+      id: d.id,
+      from: data.from === "bot" ? "bot" : "will",
+      text: String(data.text ?? ""),
+      status: typeof data.status === "string" ? data.status : null,
+      error: typeof data.error === "string" ? data.error : null,
+      createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toDate().toISOString() : new Date().toISOString(),
+    };
+  });
+}
+
+async function addBotReply(uid: string, reply: string): Promise<string> {
+  const ref = await getFirestore().collection("users").doc(uid).collection("botChat").add({
+    from: "bot",
+    text: reply,
+    createdAt: FieldValue.serverTimestamp(),
+  });
+  return ref.id;
+}
+
+/** Only Grok Bot's own webhook hosts, so this can't be pointed anywhere else. */
+function isAllowedWebhook(raw: string): boolean {
+  try {
+    const url = new URL(raw);
+    const host = url.hostname.toLowerCase();
+    return url.protocol === "https:" &&
+      ["cursor.sh", "cursor.com", "x.ai", "grok.com"].some((d) => host === d || host.endsWith(`.${d}`));
+  } catch {
+    return false;
+  }
+}
+
+async function sendToBot(uid: string, message: string): Promise<{ id: string; ok: boolean; error?: string }> {
+  const db = getFirestore();
+  const hook = await db.collection("users").doc(uid).collection("lifeBot").doc("webhook").get();
+  const url = hook.get("url");
+  const key = hook.get("key");
+  const chat = db.collection("users").doc(uid).collection("botChat");
+  const ref = await chat.add({ from: "will", text: message, status: "sending", createdAt: FieldValue.serverTimestamp() });
+
+  if (typeof url !== "string" || typeof key !== "string") {
+    await ref.update({ status: "failed", error: "Chat isn't connected to Grok Bot yet." });
+    return { id: ref.id, ok: false, error: "Chat isn't connected to Grok Bot yet. Add the webhook in Settings, Grok Bot." };
+  }
+
+  const recent = (await chatHistory(uid, 8)).map((m) => `${m.from === "bot" ? "You" : "Will"}: ${m.text}`);
+  const payload = {
+    source: "Life app",
+    type: "message",
+    from: "Will",
+    message,
+    messageId: ref.id,
+    sentAt: new Date().toISOString(),
+    recentConversation: recent,
+    howToReply:
+      "Reply to Will through your Life page (the private Life link he gave you): use the \"Reply to Will\" form, " +
+      "or POST /lifeBot/api/do with {\"kind\":\"reply\",\"text\":\"...\"}. If he asks you to do something in Life, " +
+      "do it with the same page first, then reply saying what you did.",
+  };
+
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) {
+      const error = response.status === 401
+        ? "Grok Bot refused the webhook key. Check it in Settings, Grok Bot."
+        : response.status === 400
+          ? "Grok Bot's routine is switched off. Turn it back on in Grok Bot."
+          : `Grok Bot didn't accept the message (${response.status}).`;
+      await ref.update({ status: "failed", error });
+      return { id: ref.id, ok: false, error };
+    }
+    await ref.update({ status: "sent" });
+    return { id: ref.id, ok: true };
+  } catch (error) {
+    console.error("[lifeBot:chat]", error instanceof Error ? `${error.name}: ${error.message}` : typeof error);
+    await ref.update({ status: "failed", error: "Couldn't reach Grok Bot." });
+    return { id: ref.id, ok: false, error: "Couldn't reach Grok Bot. Try again in a minute." };
+  }
+}
+
 // MARK: - The page
 
 function esc(value: unknown): string {
@@ -478,6 +581,7 @@ function renderPage(
   token: string,
   summary: Summary,
   recent: Awaited<ReturnType<typeof history>>,
+  chat: Awaited<ReturnType<typeof chatHistory>>,
   notice?: { ok: boolean; text: string }
 ): string {
   const k = `<input type="hidden" name="key" value="${esc(token)}">`;
@@ -529,6 +633,13 @@ ul{padding-left:20px;margin:0}li{margin:4px 0}
 <h1>Life for Grok Bot</h1>
 <p class="muted">This private page lets an assistant read and change Will's Life app. Every change goes to the app, which carries it out when Life is open on the phone (usually within a minute of opening it) and reports back. Each request's outcome is listed under "Recent requests", and also at <code>/lifeBot/api/requests</code>.</p>
 ${notice ? `<div class="notice ${notice.ok ? "ok" : "bad"}" role="status">${esc(notice.text)}</div>` : ""}
+
+<h2>Chat with Will</h2>
+<div class="card">${chat.length ? `<table>${chat.slice(-10).map((m) =>
+  `<tr><td><b>${m.from === "bot" ? "You" : "Will"}</b></td><td>${esc(m.text)}</td><td class="muted">${esc(m.createdAt.replace("T", " ").slice(0, 16))}</td></tr>`).join("")}</table>` : "<p class=muted>No messages yet.</p>"}</div>
+${form("reply", "Reply to Will", `
+  <label for="r-t">Message (shows in the Life app)</label>
+  <textarea id="r-t" name="text" maxlength="${MAX_CHAT_CHARS}" style="min-height:90px" required></textarea>`, "Send reply")}
 
 <h2>Recent requests</h2>
 <div class="card">${recent.length ? `<table><tr><th>When (UTC)</th><th>Request</th><th>Status</th></tr>${recent.map((r) =>
@@ -627,6 +738,7 @@ ${summary.recentWeights.length ? form("deleteWeight", "Delete a weight", `
 <ul>
 <li><code>GET /lifeBot/api/state</code>: everything above, as JSON.</li>
 <li><code>GET /lifeBot/api/requests</code>: recent requests and what the app did with each.</li>
+<li><code>GET /lifeBot/api/chat</code>: the conversation with Will. Reply with <code>{"kind":"reply","text":"…"}</code> to <code>/api/do</code>.</li>
 <li><code>POST /lifeBot/api/do</code> with a JSON body: <code>kind</code> plus the form's fields, e.g. <code>{"kind":"createWorkout","name":"Legs","exercises":"Squat, 5x5, 3 min\\nLeg Press, 3x10","when":"today"}</code>. Kinds: createWorkout, planWorkout, updateRoutine, deleteRoutine, deletePlannedWorkout, addTask, updateTask, completeTask, deleteTask, logHabit, logWater, logMeal (meal, kcal, proteinG), logSupplement, logWeight, updateWeight, deleteWeight. Ids are in <code>/api/state</code>.</li>
 </ul>
 </div>
@@ -680,8 +792,13 @@ export const lifeBot = onRequest(
         .set({ lastUsedAt: FieldValue.serverTimestamp() }, { merge: true });
 
       if (req.method === "GET" && path === "/api/state") {
-        const [summary, recent] = await Promise.all([readSnapshot(uid).then(summarise), history(uid)]);
-        res.json({ ok: true, ...summary, recentRequests: recent });
+        const [summary, recent, chat] = await Promise.all([readSnapshot(uid).then(summarise), history(uid), chatHistory(uid, 20)]);
+        res.json({ ok: true, ...summary, recentRequests: recent, chat });
+        return;
+      }
+
+      if (req.method === "GET" && path === "/api/chat") {
+        res.json({ ok: true, chat: await chatHistory(uid) });
         return;
       }
 
@@ -694,6 +811,26 @@ export const lifeBot = onRequest(
         const body = (req.body ?? {}) as Record<string, unknown>;
         const summary = summarise(await readSnapshot(uid));
         let notice: { ok: boolean; text: string };
+        if (body.kind === "reply") {
+          const reply = String(body.text ?? "").trim().slice(0, MAX_CHAT_CHARS);
+          if (!reply) {
+            notice = { ok: false, text: "Write a message first." };
+          } else {
+            const id = await addBotReply(uid, reply);
+            notice = { ok: true, text: "Sent to Will. It shows in the Life app's Grok Bot chat." };
+            if (isApi) {
+              res.json({ ok: true, id, message: notice.text });
+              return;
+            }
+          }
+          if (isApi) {
+            res.status(400).json({ ok: false, error: notice.text });
+            return;
+          }
+          res.status(notice.ok ? 200 : 400).type("html")
+            .send(renderPage(token, summary, await history(uid), await chatHistory(uid), notice));
+          return;
+        }
         try {
           const item = buildItem(String(body.kind ?? ""), body, summary);
           const id = await enqueue(uid, item);
@@ -710,13 +847,13 @@ export const lifeBot = onRequest(
           }
           notice = { ok: false, text: error.message };
         }
-        res.status(notice.ok ? 200 : 400).type("html").send(renderPage(token, summary, await history(uid), notice));
+        res.status(notice.ok ? 200 : 400).type("html").send(renderPage(token, summary, await history(uid), await chatHistory(uid), notice));
         return;
       }
 
       if (req.method === "GET" && path === "/") {
-        const [summary, recent] = await Promise.all([readSnapshot(uid).then(summarise), history(uid)]);
-        res.type("html").send(renderPage(token, summary, recent));
+        const [summary, recent, chat] = await Promise.all([readSnapshot(uid).then(summarise), history(uid), chatHistory(uid)]);
+        res.type("html").send(renderPage(token, summary, recent, chat));
         return;
       }
 
@@ -731,8 +868,12 @@ export const lifeBot = onRequest(
 // MARK: - Callable for the app
 
 interface AppRequest {
-  action: "status" | "createLink" | "revokeLink" | "claim" | "complete";
+  action: "status" | "createLink" | "revokeLink" | "claim" | "complete"
+    | "setWebhook" | "clearWebhook" | "sendChat" | "chat";
   results?: Array<{ id: string; ok: boolean; message?: string }>;
+  url?: string;
+  key?: string;
+  text?: string;
 }
 
 /**
@@ -750,9 +891,43 @@ export const lifeBotApp = onCall(
 
     switch (request.data?.action) {
       case "status": {
-        const link = await linkRef.get();
-        return { connected: link.exists, createdAt: link.get("createdAt")?.toDate?.()?.toISOString() ?? null };
+        const [link, hook] = await Promise.all([
+          linkRef.get(),
+          db.collection("users").doc(uid).collection("lifeBot").doc("webhook").get(),
+        ]);
+        return {
+          connected: link.exists,
+          chatConnected: hook.exists,
+          createdAt: link.get("createdAt")?.toDate?.()?.toISOString() ?? null,
+        };
       }
+
+      case "setWebhook": {
+        const url = String(request.data.url ?? "").trim();
+        const key = String(request.data.key ?? "").trim();
+        if (!isAllowedWebhook(url)) {
+          throw new HttpsError("invalid-argument", "That doesn't look like a Grok Bot webhook address. It should start with https://api2.cursor.sh/");
+        }
+        if (key.length < 8 || key.length > 500) {
+          throw new HttpsError("invalid-argument", "Paste the routine's secret key too.");
+        }
+        await db.collection("users").doc(uid).collection("lifeBot").doc("webhook")
+          .set({ url, key, updatedAt: FieldValue.serverTimestamp() });
+        return { chatConnected: true };
+      }
+
+      case "clearWebhook":
+        await db.collection("users").doc(uid).collection("lifeBot").doc("webhook").delete();
+        return { chatConnected: false };
+
+      case "sendChat": {
+        const message = String(request.data.text ?? "").trim().slice(0, MAX_CHAT_CHARS);
+        if (!message) throw new HttpsError("invalid-argument", "Write a message first.");
+        return await sendToBot(uid, message);
+      }
+
+      case "chat":
+        return { messages: await chatHistory(uid) };
 
       case "createLink": {
         // One link at a time: making a new one switches the old one off.

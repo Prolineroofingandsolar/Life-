@@ -53,3 +53,27 @@ For agents that prefer JSON: `GET /lifeBot/api/state?key=…` returns the same
 data as the page, and `POST /lifeBot/api/do?key=…` takes a JSON body with the
 same fields as the forms (e.g. `{"kind":"createWorkout","name":"Legs",
 "exercises":"Squat, 5x5, 3 min\nLeg Press, 3x10","when":"today"}`).
+
+## Chat with Grok Bot in Life (More → Grok Bot)
+
+Messages typed (or dictated) in Life go to a Grok Bot routine through its
+webhook trigger. Grok Bot answers with the page's "Reply to Will" form, and
+the reply appears in the chat, usually within a minute or two.
+
+Set it up once:
+
+1. In Grok Bot, make a new routine called "Life chat". Give it this
+   instruction:
+   > A message from Will has arrived from his Life app. It is in the
+   > `message` field of the input, with the recent conversation in
+   > `recentConversation`. If he asks you to do something in Life, do it with
+   > the Life page. Then reply to him with the "Reply to Will" form on the
+   > Life page (or POST /lifeBot/api/do with {"kind":"reply","text":"..."}).
+   > Keep replies short.
+2. Tap **Add trigger**, choose **Webhook**, and copy the address and secret
+   key. Switch the routine on.
+3. In Life: **More → Grok Bot → ⚙︎**, paste both, and tap Save.
+
+The key is stored on the server (`users/{uid}/lifeBot/webhook`) and only
+Grok Bot's own hosts are accepted as the address. Grok Bot can also message
+Will first with the same Reply form, for example a morning check-in.
