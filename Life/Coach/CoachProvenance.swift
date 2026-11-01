@@ -59,14 +59,14 @@ struct CoachProvenance: Codable, Equatable, Sendable {
         let time = generatedAt.formatted(date: .omitted, time: .shortened)
         if wasCached {
             switch origin {
-            case .gemini:  return "Gemini · cached from \(time)"
+            case .gemini:  return "Grok · cached from \(time)"
             default:       return "On-device suggestion · cached from \(time)"
             }
         }
         switch origin {
-        case .gemini:          return "Gemini · updated \(time)"
+        case .gemini:          return "Grok · updated \(time)"
         case .onDevice:        return "On-device suggestion"
-        case .offlineFallback: return "Offline suggestion · Gemini unavailable"
+        case .offlineFallback: return "Offline suggestion · Grok unavailable"
         case .usageLimited:    return "On-device suggestion · AI limit reached"
         }
     }
@@ -140,7 +140,7 @@ struct CoachProvenanceLabel: View {
             }
 
             if provenance.isRetryable, let onRetry {
-                Button("Try Gemini again", action: onRetry)
+                Button("Try Grok again", action: onRetry)
                     .font(.caption2.weight(.semibold))
                     .foregroundColor(AppTheme.primary)
             }

@@ -108,7 +108,7 @@ struct CoachExplanationSheet: View {
             ExplanationRow(
                 label: "Wording",
                 value: recommendation.origin == .cloud
-                    ? "Written by Gemini from the figures above"
+                    ? "Written by Grok from the figures above"
                     : "Written by Life on this phone, no AI involved"
             )
         }

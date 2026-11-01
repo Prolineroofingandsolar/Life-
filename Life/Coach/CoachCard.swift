@@ -214,7 +214,7 @@ struct CoachCard: View {
     /// Two different waits, named as two different things.
     private var loadingMessage: String {
         if appState.isSyncingHealth { return "Updating health data…" }
-        if isAsking && settings.mayUseCloud && settings.enabled { return "Asking Gemini…" }
+        if isAsking && settings.mayUseCloud && settings.enabled { return "Asking Grok…" }
         return "Working out what matters today…"
     }
 

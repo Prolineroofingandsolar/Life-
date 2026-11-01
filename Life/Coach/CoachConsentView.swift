@@ -57,7 +57,7 @@ struct CoachConsentView: View {
                 .accessibilityHidden(true)
             Text("Let the coach use AI?")
                 .font(.title2.bold())
-            Text("Life can send a short summary of your day to Google's Gemini to write your briefing and pick your next action. You can turn this off at any time.")
+            Text("Life can send a short summary of your day to xAI's Grok to write your briefing and pick your next action. You can turn this off at any time.")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -118,7 +118,7 @@ struct CoachConsentView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Use AI coaching")
-            .accessibilityHint("Allows the summary described above to be sent to Gemini")
+            .accessibilityHint("Allows the summary described above to be sent to Grok")
 
             Button("Keep it on this phone only") { decline() }
                 .font(.subheadline)

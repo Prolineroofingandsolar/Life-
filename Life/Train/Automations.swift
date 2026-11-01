@@ -107,7 +107,7 @@ struct AutomationOutcome: Equatable, Sendable, Identifiable {
         var label: String {
             switch self {
             case .rules:  return "Worked out by the app"
-            case .gemini: return "Written by Gemini from the app's figures"
+            case .gemini: return "Written by Grok from the app's figures"
             }
         }
     }

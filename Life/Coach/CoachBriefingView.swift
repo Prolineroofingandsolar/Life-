@@ -141,7 +141,7 @@ struct CoachBriefingView: View {
     private var summaryLine: String {
         if let outcome { return outcome.briefing.headline }
         if appState.isSyncingHealth { return "Updating health data…" }
-        if isLoading { return settings.mayUseCloud ? "Asking Gemini…" : "Putting it together…" }
+        if isLoading { return settings.mayUseCloud ? "Asking Grok…" : "Putting it together…" }
         return kind == .morning ? "Morning briefing" : "Evening review"
     }
 

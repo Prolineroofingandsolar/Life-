@@ -166,7 +166,7 @@ struct AutomationsView: View {
                                 .fixedSize(horizontal: false, vertical: true)
                             if kind.mayUseModel {
                                 Text(settings.mayUseCloud
-                                     ? "Uses Gemini when you open it."
+                                     ? "Uses Grok when you open it."
                                      : "Uses the app's own rules — AI is off.")
                                     .font(.caption2)
                                     .foregroundColor(Color(.tertiaryLabel))

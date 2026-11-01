@@ -420,7 +420,7 @@ struct WorkoutPreviewSheet: View {
         VStack(spacing: 16) {
             ProgressView()
                 .controlSize(.large)
-            Text(settings.mayUseCloud ? "Asking Gemini…" : "Putting it together…")
+            Text(settings.mayUseCloud ? "Asking Grok…" : "Putting it together…")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
             Text("This takes a few seconds.")

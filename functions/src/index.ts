@@ -2,6 +2,7 @@ import { initializeApp } from "firebase-admin/app";
 import { onCall, HttpsError, CallableRequest } from "firebase-functions/v2/https";
 import { defineSecret, defineString, defineInt } from "firebase-functions/params";
 import { generateJSON, GeminiError } from "./gemini";
+import { generateJSONWithGrok, GrokError } from "./grok";
 import {
   RECOMMENDATION_SCHEMA,
   BRIEFING_SCHEMA,
@@ -40,7 +41,20 @@ const GEMINI_API_KEY = defineSecret("GEMINI_API_KEY");
  * without a code change, and because model identifiers change often enough
  * that hardcoding one guarantees a future outage.
  */
-const GEMINI_MODEL = defineString("GEMINI_MODEL");
+const GEMINI_MODEL = defineString("GEMINI_MODEL", { default: "" });
+
+/**
+ * Which model provider the coach uses: "grok" (xAI) or "gemini" (Google).
+ * Grok by default. Switching back is one line in the env file and a redeploy;
+ * the app doesn't change, because it never knew which one answered.
+ */
+const COACH_PROVIDER = defineString("COACH_PROVIDER", { default: "grok" });
+
+/** The xAI key, held the same way as the Gemini one: a secret, never in source. */
+const XAI_API_KEY = defineSecret("XAI_API_KEY");
+
+/** The exact xAI model identifier. Blank by default for the same reason as GEMINI_MODEL. */
+const GROK_MODEL = defineString("GROK_MODEL", { default: "" });
 
 const HOURLY_CALL_LIMIT = defineInt("COACH_HOURLY_CALLS", { default: 20 });
 const MONTHLY_COST_CEILING = defineString("COACH_MONTHLY_COST_CEILING", {
@@ -51,6 +65,12 @@ const INPUT_PRICE_PER_MILLION = defineString("GEMINI_INPUT_PRICE_PER_MILLION", {
 });
 const OUTPUT_PRICE_PER_MILLION = defineString("GEMINI_OUTPUT_PRICE_PER_MILLION", {
   default: "0.40",
+});
+const GROK_INPUT_PRICE_PER_MILLION = defineString("GROK_INPUT_PRICE_PER_MILLION", {
+  default: "0.20",
+});
+const GROK_OUTPUT_PRICE_PER_MILLION = defineString("GROK_OUTPUT_PRICE_PER_MILLION", {
+  default: "0.50",
 });
 const COACH_ENABLED = defineString("COACH_ENABLED", { default: "true" });
 
@@ -113,6 +133,34 @@ const MODES_REQUIRING_QUESTION: ReadonlySet<Mode> = new Set<Mode>([
  * request. Anything that isn't an Error is described by type only, because an
  * arbitrary thrown value could be a response body carrying the prompt back.
  */
+type Provider = "grok" | "gemini";
+
+function currentProvider(): Provider {
+  return COACH_PROVIDER.value().trim().toLowerCase() === "gemini" ? "gemini" : "grok";
+}
+
+/** What an xAI status actually means, and what to do about it. */
+function describeGrokStatus(status: number): string {
+  switch (status) {
+    case 400:
+    case 422:
+      return "Grok rejected the request. Check GROK_MODEL is a current model that supports structured output (and images, for machine scans).";
+    case 401:
+    case 403:
+      return "Grok refused the API key. Check the XAI_API_KEY secret, and that the xAI team has credit.";
+    case 404:
+      return "Grok doesn't recognise that model. Check GROK_MODEL.";
+    case 429:
+      return "Grok is rate limited or out of credit. Check billing at console.x.ai, or wait a minute and retry.";
+    case 500:
+    case 502:
+    case 503:
+      return "Grok is having trouble at their end. Try again shortly.";
+    default:
+      return `Grok returned ${status}.`;
+  }
+}
+
 /** What a Gemini status actually means, and what to do about it. */
 function describeGeminiStatus(status: number): string {
   switch (status) {
@@ -502,7 +550,9 @@ function systemInstruction(mode: Mode): string {
 
 export const coach = onCall(
   {
-    secrets: [GEMINI_API_KEY],
+    // Both bound so the provider can be switched in the env file alone. Each
+    // secret must exist in Secret Manager for the deploy to succeed.
+    secrets: [GEMINI_API_KEY, XAI_API_KEY],
     region: "europe-west2",
     // Small and short. This is one user's occasional request, not a service.
     memory: "256MiB",
@@ -531,10 +581,13 @@ export const coach = onCall(
     // Checked before anything else is attempted. An unset model produces a
     // request to `/models/:generateContent`, whose 404 reads as a broken
     // integration rather than a missing line in an env file.
-    if (!GEMINI_MODEL.value()) {
+    const provider = currentProvider();
+    const model = provider === "grok" ? GROK_MODEL.value() : GEMINI_MODEL.value();
+    if (!model) {
+      const name = provider === "grok" ? "GROK_MODEL" : "GEMINI_MODEL";
       throw new HttpsError(
         "failed-precondition",
-        "GEMINI_MODEL isn't set. Add it to functions/.env.<project> and redeploy."
+        `${name} isn't set. Add it to functions/.env.<project> and redeploy.`
       );
     }
 
@@ -558,10 +611,15 @@ export const coach = onCall(
     const limits = {
       hourlyCalls: HOURLY_CALL_LIMIT.value(),
       monthlyCostCeiling: Number(MONTHLY_COST_CEILING.value()),
-      pricing: {
-        inputPerMillion: Number(INPUT_PRICE_PER_MILLION.value()),
-        outputPerMillion: Number(OUTPUT_PRICE_PER_MILLION.value()),
-      },
+      pricing: provider === "grok"
+        ? {
+          inputPerMillion: Number(GROK_INPUT_PRICE_PER_MILLION.value()),
+          outputPerMillion: Number(GROK_OUTPUT_PRICE_PER_MILLION.value()),
+        }
+        : {
+          inputPerMillion: Number(INPUT_PRICE_PER_MILLION.value()),
+          outputPerMillion: Number(OUTPUT_PRICE_PER_MILLION.value()),
+        },
     };
 
     try {
@@ -594,9 +652,10 @@ export const coach = onCall(
       .join("\n\n");
 
     try {
-      const result = await generateJSON({
-        apiKey: GEMINI_API_KEY.value(),
-        model: GEMINI_MODEL.value(),
+      const generate = provider === "grok" ? generateJSONWithGrok : generateJSON;
+      const result = await generate({
+        apiKey: provider === "grok" ? XAI_API_KEY.value() : GEMINI_API_KEY.value(),
+        model,
         systemInstruction: systemInstruction(mode),
         userContent,
         responseSchema: RESPONSE_SCHEMAS[mode],
@@ -637,6 +696,11 @@ export const coach = onCall(
       // health summary and an error body can echo it, so neither is returned.
       // The log gets the error's type and message but never the prompt.
       if (error instanceof HttpsError) throw error;
+
+      if (error instanceof GrokError) {
+        logFailure("grok", error);
+        throw new HttpsError("unavailable", describeGrokStatus(error.status));
+      }
 
       if (error instanceof GeminiError) {
         logFailure("gemini", error);

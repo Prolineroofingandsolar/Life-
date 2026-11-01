@@ -87,7 +87,7 @@ struct CoachSettingsSection: View {
     private var cloudSection: some View {
         Section {
             Toggle("Use AI", isOn: cloudBinding)
-                .accessibilityHint("Sends a summary of your day to Gemini to write the wording")
+                .accessibilityHint("Sends a summary of your day to Grok to write the wording")
 
             if !settings.hasConsented {
                 Button("Read what gets sent") { showConsent = true }
@@ -99,7 +99,7 @@ struct CoachSettingsSection: View {
             // Says what turning it *off* gets you, not just what it costs.
             // "Off" here is a working feature, not a disabled one.
             Text(settings.mayUseCloud
-                 ? "A short summary of your day goes to Google's Gemini. Your name, raw health records and sign-ins never leave this phone."
+                 ? "A short summary of your day goes to xAI's Grok. Your name, raw health records and sign-ins never leave this phone."
                  : "The coach works entirely on this phone from your own data. Nothing is sent anywhere. Suggestions are plainer, and free.")
         }
     }

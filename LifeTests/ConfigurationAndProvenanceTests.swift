@@ -116,7 +116,7 @@ struct CoachProvenanceTests {
     func geminiIsNamed() {
         let provenance = CoachProvenance.cloud(at: Self.noon)
 
-        #expect(provenance.primaryLabel.hasPrefix("Gemini · updated"))
+        #expect(provenance.primaryLabel.hasPrefix("Grok · updated"))
         #expect(provenance.needsAttention == false)
     }
 
@@ -140,7 +140,7 @@ struct CoachProvenanceTests {
             isRetryable: true
         )
 
-        #expect(provenance.primaryLabel == "Offline suggestion · Gemini unavailable")
+        #expect(provenance.primaryLabel == "Offline suggestion · Grok unavailable")
         #expect(provenance.needsAttention)
         #expect(provenance.isRetryable)
     }
@@ -165,7 +165,7 @@ struct CoachProvenanceTests {
         provenance.wasCached = true
 
         #expect(provenance.primaryLabel.contains("cached from"))
-        #expect(provenance.primaryLabel.contains("Gemini"))
+        #expect(provenance.primaryLabel.contains("Grok"))
     }
 
     @Test("Data freshness is a separate claim from when the words were written")

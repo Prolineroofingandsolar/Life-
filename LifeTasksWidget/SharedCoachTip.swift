@@ -24,7 +24,7 @@ struct SharedCoachTip: Codable {
     /// a wrong label would go uncorrected.
     var originLabel: String {
         switch origin {
-        case "gemini":           return "Gemini"
+        case "gemini":           return "Grok"
         case "onDevice":         return "On-device"
         case "offlineFallback":  return "Offline suggestion"
         case "usageLimited":     return "On-device · AI limit reached"
