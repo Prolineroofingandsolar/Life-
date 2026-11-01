@@ -38,7 +38,7 @@ struct TodayView: View {
     @State private var dayToken = UUID()
     @State private var healthSyncTask: Task<Void, Never>? = nil
     @State private var hkManager = HealthKitManager()
-    @Environment(\.isWideLayout) private var isWideLayout
+    @Environment(\.isTwoColumnLayout) private var isTwoColumnLayout
 
     /// Gaps between conceptual sections. Everything inside a section is tighter
     /// than this; nothing else is looser.
@@ -125,9 +125,13 @@ struct TodayView: View {
         NavigationStack {
             ScrollView {
                 Group {
-                    if isWideLayout {
+                    if isTwoColumnLayout {
                         wideContent
                     } else {
+                        // Phones, the Duo folded, and the Duo unfolded and held
+                        // upright. In the last case the health carousel shows
+                        // both pages side by side on its own; everything else
+                        // stays full width so task titles aren't cut short.
                         compactContent
                     }
                 }
@@ -206,7 +210,8 @@ struct TodayView: View {
 
     // MARK: Layouts
 
-    /// One column, health first: a phone, or the iPhone Duo folded.
+    /// One column, health first: a phone, the iPhone Duo folded, or the Duo
+    /// unfolded and held upright (where the health tiles go side by side).
     private var compactContent: some View {
         LazyVStack(spacing: Self.sectionSpacing) {
             GreetingHeader(greeting: greeting)
@@ -238,15 +243,14 @@ struct TodayView: View {
         }
     }
 
-    /// Two columns, for the iPhone Duo unfolded (or any window 600pt+).
+    /// Two columns, for the iPhone Duo unfolded and turned on its side (or any
+    /// window 800pt+), where each column is about a phone's width.
     ///
     /// Health runs across the top with both carousel pages visible at once,
     /// then the page splits: what to do today on one side, the coach on the
     /// other. On a phone the to-do list sits below the coach and the health
     /// tiles and is usually below the fold; here everything that answers "what
-    /// now?" is on screen together. Each column carries its own 16pt margins,
-    /// so the gutter between them lands on the inner display's fold when
-    /// it is held upright.
+    /// now?" is on screen together.
     private var wideContent: some View {
         VStack(spacing: Self.sectionSpacing) {
             GreetingHeader(greeting: greeting)

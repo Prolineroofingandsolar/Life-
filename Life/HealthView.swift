@@ -13,7 +13,7 @@ struct HealthView: View {
 
     @Environment(AppState.self) private var appState
     @Environment(\.scenePhase) private var scenePhase
-    @Environment(\.isWideLayout) private var isWideLayout
+    @Environment(\.isTwoColumnLayout) private var isTwoColumnLayout
     @State private var isSyncing = false
     @State private var syncMessage: String? = nil
     @State private var sources: [String] = []
@@ -33,7 +33,7 @@ struct HealthView: View {
         NavigationStack {
             ScrollView {
                 Group {
-                    if isWideLayout && !health.isEmpty {
+                    if isTwoColumnLayout && !health.isEmpty {
                         wideContent
                     } else {
                         compactContent
@@ -41,7 +41,7 @@ struct HealthView: View {
                 }
                 .padding(16)
                 .readableContentWidth(
-                    isWideLayout ? AdaptiveLayout.wideReadableWidth : AdaptiveLayout.readableWidth
+                    isTwoColumnLayout ? AdaptiveLayout.wideReadableWidth : AdaptiveLayout.readableWidth
                 )
             }
             .background(Color(.systemGroupedBackground))
@@ -86,7 +86,7 @@ struct HealthView: View {
         }
     }
 
-    /// The iPhone Duo unfolded: today's verdict across the top, then the
+    /// The iPhone Duo unfolded on its side: today's verdict across the top, then the
     /// "how am I doing" cards on the left and the measurements on the right,
     /// so the scores and the readings behind them are on screen together.
     private var wideContent: some View {

@@ -24,6 +24,17 @@ enum AdaptiveLayout {
     /// display, and below the Duo's inner display in portrait.
     static let wideThreshold: CGFloat = 600
 
+    /// At or above this width a screen splits into two full columns of cards.
+    ///
+    /// Above the Duo's inner display held upright (~626pt) and below it turned
+    /// on its side (~890pt). Upright, two columns would leave each about 280pt
+    /// of content — narrower than an iPhone SE — and task titles get cut off.
+    /// So upright the Duo shows extra side by side only where the pieces are
+    /// small (the health tiles), and keeps lists full width; on its side each
+    /// column is about as wide as a phone, which is what the cards were built
+    /// for.
+    static let twoColumnThreshold: CGFloat = 800
+
     /// The widest a single column of cards is allowed to get. Rows of text and
     /// a chevron stretched across a landscape inner display are harder to read
     /// than the same rows on a phone, not easier.
@@ -48,9 +59,13 @@ extension EnvironmentValues {
         set { self[LayoutWidthKey.self] = newValue }
     }
 
-    /// True when there is room for a two-column layout — the Duo unfolded, in
+    /// True when the window is wider than any phone — the Duo unfolded, in
     /// either orientation, or any other window at least 600pt wide.
     var isWideLayout: Bool { layoutWidth >= AdaptiveLayout.wideThreshold }
+
+    /// True when there is room for two full columns of cards — the Duo's inner
+    /// display turned on its side, or any window at least 800pt wide.
+    var isTwoColumnLayout: Bool { layoutWidth >= AdaptiveLayout.twoColumnThreshold }
 }
 
 // MARK: - Measuring
