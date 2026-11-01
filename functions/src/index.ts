@@ -750,3 +750,4 @@ export const coachUsage = onCall(
     };
   }
 );
+export { lifeBot, lifeBotApp } from "./lifeBot";

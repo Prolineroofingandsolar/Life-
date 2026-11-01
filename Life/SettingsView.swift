@@ -137,6 +137,8 @@ struct SettingsView: View {
 
                 CoachSettingsSection()
 
+                GrokBotSettingsSection()
+
                 // Habit Reminders
                 Section("Habit Reminders") {
                     Toggle("Morning Summary", isOn: $careSettings.morningSummaryEnabled)
