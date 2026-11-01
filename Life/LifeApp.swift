@@ -32,6 +32,10 @@ struct LifeApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                // Measured once here so every screen agrees on whether there
+                // is room for two columns — the iPhone Duo's inner display, or
+                // landscape — and they all switch together on a fold.
+                .measuresLayoutWidth()
                 .environment(appState)
                 .environmentObject(authManager)
                 .tint(AppTheme.primary)

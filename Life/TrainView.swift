@@ -276,6 +276,10 @@ struct TrainView: View {
                         .accessibilityHidden(true)
                 }
                 .padding(.vertical, 8)
+                // A single column, capped. On the unfolded iPhone Duo the
+                // cards stay a readable width instead of stretching across
+                // both halves of the screen.
+                .readableContentWidth()
             }
             .background(AppTheme.trainBg)
             .navigationTitle("Train")

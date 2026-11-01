@@ -182,6 +182,7 @@ struct ActiveWorkoutView: View {
                             }
                         }
                         .padding(.vertical, 16)
+                        .readableContentWidth()
                     }
                 }
                 .overlay(alignment: .bottom) {

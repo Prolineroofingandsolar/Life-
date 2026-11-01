@@ -13,6 +13,7 @@ struct HealthView: View {
 
     @Environment(AppState.self) private var appState
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.isTwoColumnLayout) private var isTwoColumnLayout
     @State private var isSyncing = false
     @State private var syncMessage: String? = nil
     @State private var sources: [String] = []
@@ -31,22 +32,17 @@ struct HealthView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    if health.isEmpty {
-                        emptyState
+                Group {
+                    if isTwoColumnLayout && !health.isEmpty {
+                        wideContent
                     } else {
-                        guidanceLine
-                        scoreCard
-                        guidanceCard
-                        calloutsSection
-                        exertionRow
-                        bodyCard
-                        vitalsCard
+                        compactContent
                     }
-                    sourcesCard
-                    allDataLink
                 }
                 .padding(16)
+                .readableContentWidth(
+                    isTwoColumnLayout ? AdaptiveLayout.wideReadableWidth : AdaptiveLayout.readableWidth
+                )
             }
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Health")
@@ -66,6 +62,52 @@ struct HealthView: View {
                 } else {
                     heartRate.stop()
                 }
+            }
+        }
+    }
+
+    // MARK: Layouts
+
+    private var compactContent: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if health.isEmpty {
+                emptyState
+            } else {
+                guidanceLine
+                scoreCard
+                guidanceCard
+                calloutsSection
+                exertionRow
+                bodyCard
+                vitalsCard
+            }
+            sourcesCard
+            allDataLink
+        }
+    }
+
+    /// The iPhone Duo unfolded on its side: today's verdict across the top, then the
+    /// "how am I doing" cards on the left and the measurements on the right,
+    /// so the scores and the readings behind them are on screen together.
+    private var wideContent: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            guidanceLine
+            HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 14) {
+                    scoreCard
+                    guidanceCard
+                    calloutsSection
+                    exertionRow
+                }
+                .frame(maxWidth: .infinity, alignment: .top)
+
+                VStack(alignment: .leading, spacing: 14) {
+                    bodyCard
+                    vitalsCard
+                    sourcesCard
+                    allDataLink
+                }
+                .frame(maxWidth: .infinity, alignment: .top)
             }
         }
     }
