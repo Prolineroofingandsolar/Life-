@@ -14,12 +14,24 @@ so on there, and the app carries them out the next time it's open.
 3. Open Life. Whatever Grok Bot sent is done within a few seconds, and listed
    under Settings → Grok Bot. The page shows each request's status too.
 
-What the page can do: create a workout (and plan it for today or tomorrow),
-plan an existing routine, add or tick off a task, log a habit, water, a meal,
-weight, or a supplement. It can't delete anything.
+What the page shows: every set (kg × reps) of the last four weeks of
+workouts, routines, planned workouts, open tasks, 30 weights, each habit's
+last 14 days, and water, meals (with calories and protein when given) and
+steps for the last 14 days.
 
-The link is the only key. Anyone with it can add things to Life. "Make a new
-link" replaces it and "Switch off Grok Bot" stops it working straight away.
+What it can do: create a workout or save a routine, plan, edit or delete a
+routine, remove a planned workout, add, edit, tick off or delete a task, log a
+habit, water, a meal (with kcal and protein), a supplement or weight, and
+correct or delete a weight. It can't touch finished workouts, money or
+settings.
+
+Requests are done when Life is open, and also when iOS wakes the app in the
+background for a health sync. The app reports each outcome back, so the page
+and `/lifeBot/api/requests` show whether it worked.
+
+The link is the only key. Anyone with it can change Life. "Make a new link"
+replaces it and "Switch off Grok Bot" stops it working straight away. Agents
+using the API can send the key in an `X-Life-Key` header instead of the URL.
 
 ## Server
 

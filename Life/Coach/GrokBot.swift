@@ -194,6 +194,94 @@ final class LifeBotInbox {
             appState.planSession(date: day, routineId: id, name: routine.name)
             return (true, "Planned \(routine.name) for \(Self.describe(day)).")
 
+        case "logMeal":
+            // Not through CoachActions, which trims a meal to 60 characters:
+            // calories and protein ride on the end of the name.
+            let name = String((item["title"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines).prefix(100))
+            appState.addMeal(name: name)
+            return (true, name.isEmpty ? "Logged a meal." : "Logged \(name).")
+
+        case "updateTask":
+            guard let id = item["targetId"] as? String,
+                  let task = appState.tasks.first(where: { $0.id == id }) else {
+                return (false, "That task isn't in Life any more.")
+            }
+            let title = (item["title"] as? String).flatMap { $0.isEmpty ? nil : String($0.prefix(120)) }
+            let notes = item["notes"] as? String
+            let listId = (item["listId"] as? String).flatMap { id in
+                appState.taskLists.contains(where: { $0.id == id }) ? id : nil
+            }
+            let relative = (item["due"] as? String).flatMap(DueDate.init(rawValue:))
+            let exact = (item["dueDate"] as? String).flatMap(Self.day(fromKey:))
+            appState.updateTask(id: id, title: title, notes: notes, listId: listId)
+            // A due date is stored as a fixed day, the way the coach moves a
+            // task, so "tomorrow" doesn't slide forward every day.
+            if let exact {
+                appState.scheduleTask(id: id, on: exact)
+            } else if let relative {
+                appState.scheduleTask(id: id, on: relative.fixedDate())
+            }
+            return (true, "Updated “\(title ?? task.title)”.")
+
+        case "deleteTask":
+            guard let id = item["targetId"] as? String,
+                  let task = appState.tasks.first(where: { $0.id == id }) else {
+                return (false, "That task was already gone.")
+            }
+            appState.deleteTask(id: id)
+            return (true, "Deleted the task “\(task.title)”.")
+
+        case "updateRoutine":
+            guard let id = item["targetId"] as? String,
+                  let routine = appState.routines.first(where: { $0.id == id }) else {
+                return (false, "That routine isn't in Life any more.")
+            }
+            let name = (item["name"] as? String).flatMap { $0.isEmpty ? nil : String($0.prefix(60)) }
+            var exercises: [RoutineExercise]?
+            if let rows = item["exercises"] as? [[String: Any]] {
+                let built = routineExercises(rows, appState: appState)
+                guard !built.isEmpty else { return (false, "None of those exercises are in Life's library.") }
+                exercises = built
+            }
+            appState.updateRoutine(id: id, name: name, exercises: exercises)
+            return (true, "Updated the routine \(name ?? routine.name).")
+
+        case "deleteRoutine":
+            guard let id = item["targetId"] as? String,
+                  let routine = appState.routines.first(where: { $0.id == id }) else {
+                return (false, "That routine was already gone.")
+            }
+            appState.deleteRoutine(id: id)
+            return (true, "Deleted the routine \(routine.name). Past workouts are kept.")
+
+        case "deletePlannedWorkout":
+            guard let id = item["targetId"] as? String,
+                  let plan = appState.plannedSessions.first(where: { $0.id == id }) else {
+                return (false, "That planned workout was already gone.")
+            }
+            appState.deletePlannedSession(id: id)
+            return (true, "Removed \(plan.routineName) from \(Self.describe(plan.date))'s plan.")
+
+        case "updateWeight":
+            guard let id = item["targetId"] as? String,
+                  let kg = (item["weightKg"] as? NSNumber)?.doubleValue,
+                  (25...300).contains(kg),
+                  let index = appState.weightEntries.firstIndex(where: { $0.id == id }) else {
+                return (false, "That weight entry couldn't be corrected.")
+            }
+            let old = appState.weightEntries[index].valueKg
+            appState.weightEntries[index].valueKg = kg
+            appState.save()
+            return (true, String(format: "Corrected a weight from %.1f kg to %.1f kg.", old, kg))
+
+        case "deleteWeight":
+            guard let id = item["targetId"] as? String,
+                  let entry = appState.weightEntries.first(where: { $0.id == id }) else {
+                return (false, "That weight entry was already gone.")
+            }
+            appState.deleteWeightEntry(id: id)
+            return (true, String(format: "Deleted the %.1f kg weight entry.", entry.valueKg))
+
         default:
             guard let proposal = Self.proposal(kind: kind, item: item) else {
                 return (false, "This version of Life doesn't know how to do that.")
@@ -206,9 +294,30 @@ final class LifeBotInbox {
     }
 
     private func createWorkout(_ item: [String: Any], createdAt: Date, appState: AppState) -> (ok: Bool, message: String) {
-        let rows = item["exercises"] as? [[String: Any]] ?? []
+        let exercises = routineExercises(item["exercises"] as? [[String: Any]] ?? [], appState: appState)
+        guard !exercises.isEmpty else {
+            return (false, "None of those exercises are in Life's library.")
+        }
+
+        let name = (item["name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "Grok Bot workout"
+        appState.addRoutine(name: name, exercises: exercises)
+        guard let routine = appState.routines.last, routine.name == name else {
+            return (false, "The workout couldn't be saved.")
+        }
+        appState.updateRoutine(id: routine.id, emoji: "🤖")
+
+        let when = item["when"] as? String ?? "today"
+        if when == "none" {
+            return (true, "Saved the routine \(name) (\(exercises.count) exercises).")
+        }
+        let day = Self.day(for: when, createdAt: createdAt)
+        appState.planSession(date: day, routineId: routine.id, name: name)
+        return (true, "Created \(name) (\(exercises.count) exercises) and planned it for \(Self.describe(day)).")
+    }
+
+    private func routineExercises(_ rows: [[String: Any]], appState: AppState) -> [RoutineExercise] {
         let known = Set(appState.exercises.map(\.id))
-        let exercises: [RoutineExercise] = rows.compactMap { row in
+        return rows.compactMap { row in
             guard let exerciseId = row["exerciseId"] as? String, known.contains(exerciseId) else { return nil }
             let sets = min(max(row["sets"] as? Int ?? 3, 1), 10)
             let low = min(max(row["repsMin"] as? Int ?? 10, 1), 100)
@@ -223,24 +332,6 @@ final class LifeBotInbox {
                 restSeconds: rest
             )
         }
-        guard !exercises.isEmpty else {
-            return (false, "None of those exercises are in Life's library.")
-        }
-
-        let name = (item["name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "Grok Bot workout"
-        appState.addRoutine(name: name, exercises: exercises)
-        guard let routine = appState.routines.last, routine.name == name else {
-            return (false, "The workout couldn't be saved.")
-        }
-        appState.updateRoutine(id: routine.id, emoji: "🤖")
-
-        let when = item["when"] as? String ?? "today"
-        if when == "none" {
-            return (true, "Saved \(name) (\(exercises.count) exercises) to your routines.")
-        }
-        let day = Self.day(for: when, createdAt: createdAt)
-        appState.planSession(date: day, routineId: routine.id, name: name)
-        return (true, "Created \(name) (\(exercises.count) exercises) and planned it for \(Self.describe(day)).")
     }
 
     /// The small requests are the coach's own actions, so they get the same
@@ -280,6 +371,13 @@ final class LifeBotInbox {
         let base = cal.startOfDay(for: createdAt)
         let asked = when == "tomorrow" ? (cal.date(byAdding: .day, value: 1, to: base) ?? base) : base
         return max(asked, cal.startOfDay(for: Date()))
+    }
+
+    /// A "2026-11-05" from the page, as the start of that day here.
+    private static func day(fromKey key: String) -> Date? {
+        let parts = key.split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3 else { return nil }
+        return Calendar.current.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2]))
     }
 
     private static func describe(_ day: Date) -> String {
@@ -354,8 +452,8 @@ struct GrokBotSettingsSection: View {
             Text("Grok Bot")
         } footer: {
             Text(link == nil
-                 ? "Gives Grok Bot a private page where it can add workouts, tasks, water, meals and more to Life. Needs you to be signed in."
-                 : "Give this link to Grok Bot, then tell it what to do, for example \"make me a new workout every morning\". Anyone with the link can add things to Life, so keep it private. Grok Bot's requests are carried out whenever Life is open.")
+                 ? "Gives Grok Bot a private page where it can see your workouts, habits and meals, and add, edit or delete workouts, routines, tasks and logs. Needs you to be signed in."
+                 : "Give this link to Grok Bot, then tell it what to do, for example \"make me a new workout every morning\". Anyone with the link can add, change and delete things in Life, so keep it private. If it ever leaks, tap Make a new link and the old one stops working.")
         }
         .confirmationDialog("Switch off Grok Bot?", isPresented: $confirmOff, titleVisibility: .visible) {
             Button("Switch off", role: .destructive) { Task { await switchOff() } }

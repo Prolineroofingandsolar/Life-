@@ -131,7 +131,11 @@ enum HealthBackgroundRefresh {
         schedule(appState: appState)
 
         let work = Task { @MainActor in
+            // Anything Grok Bot asked for gets done on a background wake too,
+            // not only when the app is opened.
+            await LifeBotInbox.shared.drain(appState: appState)
             await runSync(appState: appState)
+            appState.flushPendingWrites()
         }
 
         task.expirationHandler = { work.cancel() }
