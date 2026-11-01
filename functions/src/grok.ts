@@ -43,7 +43,9 @@ export async function generateJSONWithGrok(request: GrokRequest): Promise<GrokRe
   }
   userParts.push({ type: "text", text: request.userContent });
 
-  const body = {
+  const schema = toJSONSchema(request.responseSchema);
+
+  const structuredBody = {
     model: request.model,
     messages: [
       { role: "system", content: request.systemInstruction },
@@ -53,32 +55,40 @@ export async function generateJSONWithGrok(request: GrokRequest): Promise<GrokRe
     max_tokens: request.maxOutputTokens,
     response_format: {
       type: "json_schema",
-      json_schema: {
-        name: "coach_response",
-        schema: toJSONSchema(request.responseSchema),
-      },
+      json_schema: { name: "coach_response", schema },
     },
   };
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), request.timeoutMs);
-
-  let response: Response;
-  try {
-    response = await fetch(GROK_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
+  // The fallback if xAI won't take the schema: plain JSON mode, with the
+  // schema written into the system prompt. The validators on the way back are
+  // the real guarantee either way.
+  const jsonModeBody = {
+    ...structuredBody,
+    messages: [
+      {
+        role: "system",
+        content:
+          `${request.systemInstruction}\n\nReply with a single JSON object only, ` +
+          `matching this JSON Schema exactly:\n${JSON.stringify(schema)}`,
       },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-  } finally {
-    clearTimeout(timeout);
+      { role: "user", content: userParts },
+    ],
+    response_format: { type: "json_object" },
+  };
+
+  let response = await post(structuredBody, apiKey, request.timeoutMs);
+  if (response.status === 400 || response.status === 422) {
+    console.error(
+      `[grok] ${response.status} with structured output: ${await errorSummary(response)}. ` +
+      "Retrying in JSON mode."
+    );
+    response = await post(jsonModeBody, apiKey, request.timeoutMs);
   }
 
   if (!response.ok) {
+    if (response.status === 400 || response.status === 422) {
+      console.error(`[grok] ${response.status} in JSON mode: ${await errorSummary(response)}`);
+    }
     // As with Gemini, the body can echo the prompt, so only the status travels.
     if (response.status === 401 || response.status === 403) {
       console.error(
@@ -143,7 +153,6 @@ export function toJSONSchema(schema: unknown): unknown {
 
   const source = schema as Record<string, unknown>;
   const out: Record<string, unknown> = {};
-  const nullable = source.nullable === true;
 
   for (const [key, value] of Object.entries(source)) {
     if (key === "nullable" || key === "propertyOrdering") continue;
@@ -160,18 +169,52 @@ export function toJSONSchema(schema: unknown): unknown {
     }
   }
 
-  if (out.type === "object" && out.properties) {
-    out.additionalProperties = false;
-  }
-
-  if (nullable && typeof out.type === "string") {
-    out.type = [out.type, "null"];
-    if (Array.isArray(out.enum)) {
-      out.enum = [...out.enum, null];
-    }
-  }
-
+  // Deliberately the plainest JSON Schema there is: no type arrays, no null
+  // in enums, no additionalProperties. xAI rejected the richer form with a
+  // 400. Every nullable field in our schemas is also optional (none is in a
+  // `required` list), so "may be null" becomes "may be left out", which the
+  // validators already treat the same way.
   return out;
+}
+
+async function post(body: unknown, apiKey: string, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(GROK_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/**
+ * xAI's own one-line reason for rejecting a request, for the log.
+ *
+ * Only the `error` field, cut short. That field describes what was wrong with
+ * the request shape ("invalid schema at ..."); the prompt itself is never
+ * logged.
+ */
+async function errorSummary(response: Response): Promise<string> {
+  try {
+    const payload = (await response.json()) as { error?: unknown; code?: unknown };
+    const error = payload?.error;
+    const text = typeof error === "string"
+      ? error
+      : typeof (error as { message?: unknown })?.message === "string"
+        ? (error as { message: string }).message
+        : String(payload?.code ?? "no error field");
+    return text.replace(/xai-[A-Za-z0-9]+/g, "[redacted]").slice(0, 300);
+  } catch {
+    return "unreadable error body";
+  }
 }
 
 export class GrokError extends Error {
